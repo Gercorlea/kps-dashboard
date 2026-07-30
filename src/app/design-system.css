@@ -1,0 +1,302 @@
+/* =============================================================
+   Cronos Retail — Design System Arcanum
+   Tokens copiados literales del spec (§4.2). No modificar valores
+   sin actualizar lib/docs/DESIGN.md.
+   ============================================================= */
+
+:root {
+  /* Superficies */
+  --cr-bg: #ffffff;
+  --cr-surface: #ffffff;
+  --cr-surface-2: #fafaf9;      /* hover filas, headers secundarios */
+  --cr-surface-3: #f4f4f1;      /* fondos terciarios, wells, chips */
+  --cr-canvas: #d9d9d5;         /* fondo del app shell */
+
+  /* Tinta (texto) */
+  --cr-ink: #15171c;            /* títulos, números, texto principal */
+  --cr-ink-2: #5a616c;          /* cuerpo, descripciones */
+  --cr-ink-3: #99a0ab;          /* labels, placeholders, metadata */
+  --cr-on-accent: #ffffff;
+
+  /* Líneas / bordes */
+  --cr-line-soft: rgba(10, 12, 18, 0.06);
+  --cr-line: rgba(10, 12, 18, 0.10);
+  --cr-line-2: rgba(10, 12, 18, 0.16);
+
+  /* Acento IA — SOLO módulo Cronos IA */
+  --cr-accent: #5b3df5;
+  --cr-accent-ink: #4a2fe0;
+  --cr-accent-tint: rgba(91, 61, 245, 0.08);
+  --cr-accent-tint-2: rgba(91, 61, 245, 0.14);
+
+  /* Estados */
+  --cr-ok: #1f9468;
+  --cr-ok-tint: rgba(31, 148, 104, 0.10);
+  --cr-warn: #b9791c;
+  --cr-warn-tint: rgba(184, 121, 28, 0.12);
+  --cr-danger: #cf4733;
+  --cr-danger-tint: rgba(207, 71, 51, 0.10);
+
+  /* Radios — CUADRADOS */
+  --cr-r-xs: 2px;
+  --cr-r-sm: 3px;
+  --cr-r-md: 4px;
+  --cr-r-pill: 999px;
+
+  /* Sombras */
+  --cr-shadow-1: 0 1px 2px rgba(10, 12, 18, 0.04);
+  --cr-shadow-2: 0 6px 24px -10px rgba(10, 12, 18, 0.18);
+
+  /* Espaciado */
+  --cr-s1: 4px;  --cr-s2: 8px;  --cr-s3: 12px; --cr-s4: 16px;
+  --cr-s5: 20px; --cr-s6: 24px; --cr-s8: 32px; --cr-s10: 40px;
+
+  /* Layout */
+  --cr-sidebar-width: 240px;
+  --cr-mobile-nav-height: 56px;
+
+  /* Fuentes */
+  --cr-font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --cr-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* Las fuentes reales se cargan con next/font en app/layout.tsx; estas
+   variables re-apuntan los tokens a la familia servida por Next. */
+:root {
+  --cr-font-sans: var(--font-hanken-grotesk), "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --cr-font-mono: var(--font-ibm-plex-mono), "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* ============================ Tipografía ============================ */
+
+.cr-display { font-size: 40px; font-weight: 600; letter-spacing: -0.02em; color: var(--cr-ink); }
+.cr-h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; color: var(--cr-ink); }
+.cr-h2 { font-size: 19px; font-weight: 600; color: var(--cr-ink); }
+.cr-h3 { font-size: 14px; font-weight: 600; color: var(--cr-ink); }
+.cr-body { font-size: 13.5px; font-weight: 400; color: var(--cr-ink-2); }
+.cr-small { font-size: 12px; color: var(--cr-ink-2); }
+.cr-label {
+  font-family: var(--cr-font-mono); font-size: 9.5px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.12em; color: var(--cr-ink-3);
+}
+.cr-metric { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--cr-ink); }
+.cr-mono { font-family: var(--cr-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* ============================ Botones ============================ */
+
+.cr-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 11px 18px; font-size: 13px; font-weight: 500;
+  border-radius: 2px; border: 1px solid transparent;
+  transition: background .12s, border-color .12s;
+  cursor: pointer; white-space: nowrap;
+}
+.cr-btn:disabled { opacity: .5; cursor: not-allowed; }
+.cr-btn--primary   { background: #15171c; color: #fff; border-color: #15171c; }
+.cr-btn--primary:hover:not(:disabled) { background: #2a2d35; }
+.cr-btn--secondary { background: #fff; color: #15171c; border-color: rgba(10,12,18,.16); }
+.cr-btn--secondary:hover:not(:disabled) { background: #fafaf9; }
+.cr-btn--ai        { background: #5b3df5; color: #fff; }   /* solo Cronos IA */
+.cr-btn--ai:hover:not(:disabled)  { background: #4a2fe0; }
+.cr-btn--ghost     { background: transparent; color: #5a616c; }
+.cr-btn--ghost:hover:not(:disabled) { background: #f4f4f1; color: #15171c; }
+.cr-btn--danger    { background: #fff; color: var(--cr-danger); border-color: rgba(207,71,51,.35); }
+.cr-btn--danger:hover:not(:disabled) { background: var(--cr-danger-tint); }
+.cr-btn--sm        { padding: 7px 12px; font-size: 11.5px; }
+/* Iconos dentro de botones: 14×14px */
+.cr-btn svg { width: 14px; height: 14px; }
+
+/* ============================ Inputs ============================ */
+
+.cr-input {
+  width: 100%; background: #fff; border: 1px solid rgba(10,12,18,.16);
+  border-radius: 2px; padding: 9px 12px; font-size: 13px; color: #15171c;
+  min-height: 37px;
+}
+.cr-input:focus { outline: none; border-color: #15171c; box-shadow: 0 0 0 3px #f4f4f1; }
+.cr-input::placeholder { color: #99a0ab; }
+select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a616c' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }
+
+.cr-field { display: flex; flex-direction: column; gap: 6px; }
+
+/* ============ Segmented control — lo usan las dos pestañas ============ */
+
+.cr-segment { display: inline-flex; border: 1px solid rgba(10,12,18,.10);
+  border-radius: 2px; overflow: hidden; background: #fff; }
+.cr-segment__item { padding: 8px 14px; font-size: 13px; color: #5a616c;
+  border-right: 1px solid rgba(10,12,18,.10); cursor: pointer;
+  transition: background .12s; white-space: nowrap; }
+.cr-segment__item:last-child { border-right: none; }
+.cr-segment__item:hover { background: #fafaf9; }
+.cr-segment__item--active { background: #15171c; color: #fff; font-weight: 500; }
+.cr-segment__item--active:hover { background: #15171c; }
+
+/* ============================ Cards y paneles ============================ */
+
+.cr-card, .cr-panel { background: #fff; border: 1px solid rgba(10,12,18,.10);
+  border-radius: 3px; box-shadow: 0 1px 2px rgba(10,12,18,.04); }
+.cr-panel__head { padding: 14px 18px; border-bottom: 1px solid rgba(10,12,18,.06);
+  display: flex; justify-content: space-between; align-items: center; }
+.cr-panel__body { padding: 16px 18px; }
+
+/* ============================ KPI cards ============================ */
+
+.cr-kpi { background: #fff; border: 1px solid rgba(10,12,18,.10); border-radius: 3px;
+  padding: 18px 20px; box-shadow: 0 1px 2px rgba(10,12,18,.04);
+  position: relative; overflow: hidden; }
+.cr-kpi::before { content: ""; position: absolute; top: 0; left: 0; right: 0;
+  height: 2px; background: #15171c; }              /* rojo #cf4733 si alerta */
+.cr-kpi--alert::before { background: #cf4733; }
+.cr-kpi__label { font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .1em; color: #99a0ab; }
+.cr-kpi__value { font-size: 30px; font-weight: 800; letter-spacing: -.025em; color: #15171c; }
+
+/* ============================ Badges ============================ */
+
+.cr-badge { display: inline-flex; font-family: var(--cr-font-mono);
+  font-size: 9px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: 2px; border: 1px solid rgba(10,12,18,.10);
+  background: #fafaf9; color: #5a616c; align-items: center; gap: 4px; }
+.cr-badge--ok     { background: rgba(31,148,104,.10);  color: #1f9468; }
+.cr-badge--warn   { background: rgba(184,121,28,.12);  color: #b9791c; }
+.cr-badge--danger { background: rgba(207,71,51,.10);   color: #cf4733; }
+.cr-badge--ai     { background: rgba(91,61,245,.08);   color: #5b3df5; }
+
+/* ============================ Tablas de datos ============================ */
+
+.cr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cr-table thead th { font-family: var(--cr-font-mono); font-size: 9px;
+  font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: #99a0ab;
+  padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(10,12,18,.06);
+  background: #fff; white-space: nowrap; }
+.cr-table tbody td { padding: 12px 14px; color: #15171c;
+  border-bottom: 1px solid rgba(10,12,18,.06); vertical-align: middle; }
+.cr-table tbody tr:hover td { background: #fafaf9; }
+.cr-table .num { font-family: var(--cr-font-mono); font-size: 12px;
+  text-align: right; font-variant-numeric: tabular-nums; }
+.cr-table thead th.num { text-align: right; }
+
+/* Columnas sticky (SKU + descripción) — solo desktop */
+@media (min-width: 1024px) {
+  .cr-table th.cr-sticky, .cr-table td.cr-sticky {
+    position: sticky; left: 0; background: #fff; z-index: 1;
+    box-shadow: inset -1px 0 0 rgba(10,12,18,.06);
+  }
+  .cr-table th.cr-sticky-2, .cr-table td.cr-sticky-2 {
+    position: sticky; left: var(--cr-sticky-2-left, 110px); background: #fff; z-index: 1;
+    box-shadow: inset -1px 0 0 rgba(10,12,18,.06);
+  }
+  .cr-table tbody tr:hover td.cr-sticky,
+  .cr-table tbody tr:hover td.cr-sticky-2 { background: #fafaf9; }
+}
+
+/* Contenedor con scroll para toda tabla (envolver en .cr-panel) */
+.cr-table-scroll { overflow-x: auto; }
+
+/* ============================ Barras de progreso ============================ */
+
+.cr-meter { height: 5px; background: rgba(10,12,18,.08); border-radius: 2px; overflow: hidden; }
+.cr-meter__fill { height: 100%; background: #1f9468; border-radius: 2px; transition: width .3s; }
+.cr-meter__fill--warn { background: #b9791c; }
+.cr-meter__fill--danger { background: #cf4733; }
+.cr-meter__fill--ink { background: #15171c; }
+
+/* ============================ App shell ============================ */
+
+.cr-shell { min-height: 100dvh; background: var(--cr-canvas); }
+.cr-shell__main { min-height: 100dvh; display: flex; flex-direction: column; background: var(--cr-bg); }
+
+@media (min-width: 1024px) {
+  .cr-shell { display: grid; grid-template-columns: var(--cr-sidebar-width) 1fr; }
+}
+
+.cr-sidebar {
+  background: #fff; border-right: 1px solid var(--cr-line);
+  display: flex; flex-direction: column;
+  position: fixed; inset: 0 auto 0 0; width: var(--cr-sidebar-width);
+  z-index: 40; transform: translateX(-100%); transition: transform .18s ease;
+}
+.cr-sidebar--open { transform: translateX(0); }
+@media (min-width: 1024px) {
+  .cr-sidebar { position: sticky; top: 0; height: 100dvh; transform: none; }
+}
+
+.cr-sidebar__head { height: 64px; display: flex; align-items: center; gap: 10px;
+  padding: 0 18px; border-bottom: 1px solid var(--cr-line-soft); }
+.cr-sidebar__section { padding: 14px 18px 4px; }
+.cr-sidebar__nav { flex: 1; overflow-y: auto; padding-bottom: 12px; }
+
+.cr-navlink {
+  display: flex; align-items: center; gap: 10px; height: 34px;
+  padding: 0 12px; margin: 1px 8px; border-radius: 2px;
+  font-size: 13px; color: var(--cr-ink-2); transition: background .12s, color .12s;
+}
+.cr-navlink svg { width: 15px; height: 15px; opacity: .7; }
+.cr-navlink:hover { background: var(--cr-surface-2); color: var(--cr-ink); }
+.cr-navlink--active { background: var(--cr-surface-3); color: var(--cr-ink); font-weight: 600; }
+.cr-navlink--active svg { opacity: 1; }
+/* Link de Cronos IA: morado; activo con tint morado */
+.cr-navlink--ai { color: var(--cr-accent); }
+.cr-navlink--ai:hover { background: var(--cr-accent-tint); color: var(--cr-accent-ink); }
+.cr-navlink--ai.cr-navlink--active { background: var(--cr-accent-tint); color: var(--cr-accent-ink); }
+
+.cr-mobile-nav {
+  position: fixed; top: 0; left: 0; right: 0; height: var(--cr-mobile-nav-height);
+  background: #fff; border-bottom: 1px solid var(--cr-line);
+  display: flex; align-items: center; gap: 12px; padding: 0 16px; z-index: 30;
+}
+@media (min-width: 1024px) { .cr-mobile-nav { display: none; } }
+
+.cr-backdrop {
+  position: fixed; inset: 0; background: rgba(10,12,18,0.32); z-index: 35;
+}
+
+.cr-page-head {
+  background: #fff; border-bottom: 1px solid var(--cr-line-soft);
+  padding: 16px; display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between; min-height: 56px;
+}
+.cr-page-content { flex: 1; padding: 16px; background: var(--cr-bg); }
+@media (min-width: 768px)  { .cr-page-head { padding: 18px 24px; } .cr-page-content { padding: 24px; } }
+@media (min-width: 1280px) { .cr-page-head { padding: 20px 40px; } .cr-page-content { padding: 40px; } }
+
+@media (max-width: 1023.9px) {
+  .cr-shell__main { padding-top: var(--cr-mobile-nav-height); }
+}
+
+/* ============================ Chat (Cronos IA) ============================ */
+
+.cr-chat { display: flex; height: 100dvh; background: #fff; }
+@media (max-width: 1023.9px) { .cr-chat { height: calc(100dvh - var(--cr-mobile-nav-height)); } }
+.cr-chat__sidebar { width: 18rem; border-right: 1px solid var(--cr-line);
+  display: flex; flex-direction: column; background: #fff; }
+.cr-chat__main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.cr-chat__scroll { flex: 1; overflow-y: auto; }
+
+.cr-msg-user {
+  background: #fafaf9; border-radius: 3px; padding: 10px 14px;
+  max-width: 88%; margin-left: auto; font-size: 13.5px; color: var(--cr-ink);
+  white-space: pre-wrap; word-break: break-word;
+}
+.cr-msg-assistant {
+  padding: 4px 0 14px; border-bottom: 1px solid var(--cr-accent-tint);
+  font-size: 13.5px; color: var(--cr-ink); white-space: pre-wrap; word-break: break-word;
+}
+.cr-chat-send {
+  width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 2px; background: var(--cr-surface-3); color: var(--cr-ink-2);
+  transition: background .12s, color .12s; flex-shrink: 0; cursor: pointer;
+}
+.cr-chat-send--active { background: var(--cr-ink); color: #fff; }
+.cr-chat-send svg { width: 14px; height: 14px; }
+
+/* ============================ Utilidades ============================ */
+
+.cr-spin { animation: cr-spin 0.9s linear infinite; }
+@keyframes cr-spin { to { transform: rotate(360deg); } }
+
+.cr-pulse { animation: cr-pulse 1.6s ease-in-out infinite; }
+@keyframes cr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+.cr-link { color: var(--cr-ink); text-decoration: underline; text-underline-offset: 2px; }
+.cr-link:hover { color: var(--cr-ink-2); }
