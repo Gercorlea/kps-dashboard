@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "prepare": "husky",
-    "commit": "cz"
+    "commit": "cz",
+    "test": "vitest run",
+    "seed:superadmin": "tsx scripts/seed-superadmin.ts"
   },
   "config": {
     "commitizen": {
@@ -19,22 +21,42 @@
     "*.{js,jsx,ts,tsx}": "eslint --fix"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.67",
+    "@aws-sdk/client-s3": "^3.1109.0",
+    "@aws-sdk/s3-request-presigner": "^3.1109.0",
+    "ai": "^7.0.64",
+    "bcryptjs": "^3.0.3",
+    "framer-motion": "^13.1.0",
+    "jose": "^6.2.8",
+    "lucide-react": "^1.31.0",
+    "mongoose": "^9.9.2",
     "next": "16.2.11",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "recharts": "^3.10.1",
+    "resend": "^6.19.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.5",
     "commitizen": "^4.3.2",
     "cz-conventional-changelog": "^3.3.0",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
     "husky": "^9.1.7",
+    "jsdom": "^30.0.1",
     "lint-staged": "^17.3.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.23.12",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

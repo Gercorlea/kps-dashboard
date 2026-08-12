@@ -1,26 +1,33 @@
 @import "tailwindcss";
+@import "./design-system.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-cr-bg: #ffffff;
+  --color-cr-surface-2: #fafaf9;
+  --color-cr-surface-3: #f4f4f1;
+  --color-cr-canvas: #d9d9d5;
+  --color-cr-ink: #15171c;
+  --color-cr-ink-2: #5a616c;
+  --color-cr-ink-3: #99a0ab;
+  --color-cr-accent: #5b3df5;
+  --color-cr-ok: #1f9468;
+  --color-cr-warn: #b9791c;
+  --color-cr-danger: #cf4733;
+  --radius-cr-xs: 2px;
+  --radius-cr-sm: 3px;
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* La app es light-first: sin dark mode por defecto. */
+html {
+  color-scheme: light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--cr-bg);
+  color: var(--cr-ink);
+  font-family: var(--cr-font-sans);
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
 }
