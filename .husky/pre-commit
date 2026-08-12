@@ -1,0 +1,8 @@
+# Bloquear secretos: .env y llaves privadas nunca se commitean
+if git diff --cached --name-only | grep -qE '(^|/)\.env(\..*)?$|\.pem$'; then
+  echo "❌ Commit bloqueado: estás intentando commitear un archivo .env o .pem (secretos)."
+  echo "   Sácalo del stage con: git restore --staged <archivo>"
+  exit 1
+fi
+
+pnpm exec lint-staged
