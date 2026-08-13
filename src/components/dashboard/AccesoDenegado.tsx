@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 export function AccesoDenegado({ modulo }: { modulo: string }) {
   return (
     <>
-      <PageHeader titulo="Acceso denegado" />
+      <PageHeader title="Acceso denegado" />
       <div className="cr-page-content">
         <div className="cr-panel">
           <div className="flex flex-col items-center gap-3 py-16 text-center">

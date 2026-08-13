@@ -5,42 +5,42 @@ import { Schema, model, models, type Model, type Types } from "mongoose";
 export interface IForecastDiario {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
-  cuenta: string;
-  fechaCorte: Date;
-  fecha: Date;
-  codigoTienda: string;
-  nombreTienda: string;
+  account: string;
+  cutoffDate: Date;
+  date: Date;
+  storeCode: string;
+  storeName: string;
   sku: string;
-  idCompuesto: string;
-  descripcion: string;
-  marca: string;
+  compositeId: string;
+  description: string;
+  brand: string;
   division: string;
-  numProveedor: string;
-  proveedor: string;
-  valor: number;
+  vendorCode: string;
+  vendorName: string;
+  value: number;
 }
 
 const ForecastDiarioSchema = new Schema<IForecastDiario>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
-    cuenta: { type: String, required: true },
-    fechaCorte: { type: Date, required: true },
-    fecha: { type: Date, required: true },
-    codigoTienda: { type: String, required: true },
-    nombreTienda: { type: String, default: "" },
+    account: { type: String, required: true },
+    cutoffDate: { type: Date, required: true },
+    date: { type: Date, required: true },
+    storeCode: { type: String, required: true },
+    storeName: { type: String, default: "" },
     sku: { type: String, required: true },
-    idCompuesto: { type: String, default: "" },
-    descripcion: { type: String, default: "" },
-    marca: { type: String, default: "SIN CLASIFICAR" },
+    compositeId: { type: String, default: "" },
+    description: { type: String, default: "" },
+    brand: { type: String, default: "SIN CLASIFICAR" },
     division: { type: String, default: "" },
-    numProveedor: { type: String, default: "" },
-    proveedor: { type: String, default: "" },
-    valor: { type: Number, required: true },
+    vendorCode: { type: String, default: "" },
+    vendorName: { type: String, default: "" },
+    value: { type: Number, required: true },
   },
   { versionKey: false }
 );
 
-ForecastDiarioSchema.index({ cuenta: 1, fecha: -1, sku: 1 });
+ForecastDiarioSchema.index({ account: 1, date: -1, sku: 1 });
 ForecastDiarioSchema.index({ uploadId: 1 });
 
 export const ForecastDiario: Model<IForecastDiario> =

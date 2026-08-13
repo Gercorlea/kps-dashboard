@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       await sendPasswordResetEmail(user.email, `${base}/restablecer/${token}`);
     }
     return ok({
-      mensaje: "Si el correo existe, se envió un enlace de recuperación.",
+      message: "Si el correo existe, se envió un enlace de recuperación.",
     });
   } catch (e) {
     return handleApiError(e);

@@ -6,7 +6,7 @@ import { api, ClientApiError } from "@/components/lib/api-client";
 
 export default function RecuperarPage() {
   const [email, setEmail] = useState("");
-  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [message, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
@@ -15,11 +15,11 @@ export default function RecuperarPage() {
     setError(null);
     setCargando(true);
     try {
-      const r = await api<{ mensaje: string }>("/api/auth/recuperar", {
+      const r = await api<{ message: string }>("/api/auth/recuperar", {
         method: "POST",
         body: JSON.stringify({ email }),
       });
-      setMensaje(r.mensaje);
+      setMensaje(r.message);
     } catch (err) {
       setError(err instanceof ClientApiError ? err.message : "No se pudo enviar el correo");
     } finally {
@@ -27,11 +27,11 @@ export default function RecuperarPage() {
     }
   }
 
-  if (mensaje) {
+  if (message) {
     return (
       <div className="flex flex-col gap-4 text-center">
         <h1 className="cr-h2">Revisa tu correo</h1>
-        <p className="cr-body">{mensaje}</p>
+        <p className="cr-body">{message}</p>
         <a href="/login" className="cr-small cr-link">
           Volver al inicio de sesión
         </a>

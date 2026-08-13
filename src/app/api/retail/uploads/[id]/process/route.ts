@@ -28,15 +28,15 @@ export async function POST(
     await connectDB();
     const upload = await Upload.findById(id);
     if (!upload) throw new ApiError(404, "NO_ENCONTRADO", "Carga no encontrada");
-    upload.fechaCorte = new Date(`${body.fechaCorte}T00:00:00.000Z`);
+    upload.cutoffDate = new Date(`${body.cutoffDate}T00:00:00.000Z`);
     await upload.save();
 
-    const resultado = await procesarUpload(id);
+    const result = await procesarUpload(id);
     return ok({
-      status: resultado.status,
-      resumen: resultado.resumen,
-      hojasDetectadas: resultado.hojasDetectadas,
-      incidencias: resultado.incidencias,
+      status: result.status,
+      summary: result.summary,
+      detectedSheets: result.detectedSheets,
+      issues: result.issues,
     });
   } catch (e) {
     return handleApiError(e);

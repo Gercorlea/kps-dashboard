@@ -36,40 +36,40 @@ export const createUploadSchema = z.object({
     .int()
     .positive()
     .max(MAX_XLSX_BYTES, "El archivo supera el máximo de 25 MB"),
-  cuenta: z.enum(CUENTAS).default("san-pablo"),
+  account: z.enum(CUENTAS).default("san-pablo"),
 });
 
 export const processUploadSchema = z.object({
-  fechaCorte: fechaISO,
+  cutoffDate: fechaISO,
 });
 
 export const uploadsQuerySchema = z.object({
-  cuenta: z.enum(CUENTAS).optional(),
+  account: z.enum(CUENTAS).optional(),
   buscar: z.string().max(120).optional(),
-  status: z.enum(["pendiente", "procesando", "procesado", "error"]).optional(),
+  status: z.enum(["pending", "processing", "processed", "error"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
 export const rowsQuerySchema = z.object({
-  hoja: z.enum(HOJAS),
+  sheet: z.enum(HOJAS),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   buscar: z.string().max(120).optional(),
   tienda: z.string().max(60).optional(),
-  marca: z.string().max(60).optional(),
+  brand: z.string().max(60).optional(),
   sku: z.string().max(30).optional(),
   orden: z.string().max(40).optional(),
   dir: z.enum(["asc", "desc"]).default("desc"),
 });
 
 export const scorecardQuerySchema = z.object({
-  cuenta: z.enum(CUENTAS).default("san-pablo"),
+  account: z.enum(CUENTAS).default("san-pablo"),
   hasta: fechaISO.optional(),
 });
 
 export const historicoQuerySchema = z.object({
-  cuenta: z.enum(CUENTAS).default("san-pablo"),
+  account: z.enum(CUENTAS).default("san-pablo"),
   desde: fechaISO.optional(),
   hasta: fechaISO.optional(),
 });
@@ -78,94 +78,94 @@ export const historicoQuerySchema = z.object({
 // toNumber ya trató "", null, "ND", "-" como null (un cero y un dato
 // ausente NO son lo mismo). Aquí se valida la forma final del documento.
 
-const codigoTienda = z.string().regex(/^\d{4}$/, "Código de tienda de 4 dígitos");
+const storeCode = z.string().regex(/^\d{4}$/, "Código de tienda de 4 dígitos");
 const sku = z.string().regex(/^\d+$/, "SKU numérico como string");
 const numeroNullable = z.number().finite().nullable();
 
 export const ventaRowSchema = z.object({
-  fecha: z.date(),
-  codigoTienda,
-  nombreTienda: z.string(),
+  date: z.date(),
+  storeCode,
+  storeName: z.string(),
   sku,
-  idCompuesto: z.string(),
-  descripcion: z.string(),
-  marca: z.string(),
+  compositeId: z.string(),
+  description: z.string(),
+  brand: z.string(),
   division: z.string(),
-  numProveedor: z.string(),
-  proveedor: z.string(),
-  unidades: z.number().finite(),
+  vendorCode: z.string(),
+  vendorName: z.string(),
+  units: z.number().finite(),
 });
 
 export const pronosticoRowSchema = ventaRowSchema
-  .omit({ fecha: true, unidades: true })
-  .extend({ semanaInicio: z.date(), valor: z.number().finite() });
+  .omit({ date: true, units: true })
+  .extend({ weekStart: z.date(), value: z.number().finite() });
 
 export const forecastRowSchema = ventaRowSchema
-  .omit({ unidades: true })
-  .extend({ valor: z.number().finite() });
+  .omit({ units: true })
+  .extend({ value: z.number().finite() });
 
 export const cedisRowSchema = z.object({
   sku,
-  descripcion: z.string(),
-  marca: z.string(),
+  description: z.string(),
+  brand: z.string(),
   division: z.string(),
-  numProveedor: z.string(),
-  proveedor: z.string(),
-  disponibilidadRealCD: numeroNullable,
-  transitos: numeroNullable,
-  sinCita: numeroNullable,
-  citas: z.array(z.object({ fecha: z.date(), cantidad: z.number().finite() })),
-  caracteristicaPlan: z.string(), // viene "21" y "ND" → string, no número
-  minimo: numeroNullable,
-  cobertura: numeroNullable,
-  puntoPedido: numeroNullable,
-  stockObjetivo: numeroNullable,
+  vendorCode: z.string(),
+  vendorName: z.string(),
+  realAvailabilityDC: numeroNullable,
+  inTransit: numeroNullable,
+  withoutAppointment: numeroNullable,
+  appointments: z.array(z.object({ date: z.date(), quantity: z.number().finite() })),
+  planCharacteristic: z.string(), // viene "21" y "ND" → string, no número
+  minimum: numeroNullable,
+  coverage: numeroNullable,
+  reorderPoint: numeroNullable,
+  targetStock: numeroNullable,
 });
 
 export const farmaciaRowSchema = z.object({
-  idCompuesto: z.string(),
-  codigoTienda,
-  nombreTienda: z.string(),
+  compositeId: z.string(),
+  storeCode,
+  storeName: z.string(),
   sku,
-  descripcion: z.string(),
-  marca: z.string(),
+  description: z.string(),
+  brand: z.string(),
   division: z.string(),
-  numProveedor: z.string(),
-  nombreProveedor: z.string(),
-  tipoArticulo: z.string(),
+  vendorCode: z.string(),
+  vendorName: z.string(),
+  itemType: z.string(),
   abc: z.string(),
   sm: z.string(),
   cap: z.string(),
-  stockSegMin: numeroNullable,
-  cobertObjMin: numeroNullable,
-  stockObjetivo: numeroNullable,
-  puntoPedido: numeroNullable,
-  stockDinamico: numeroNullable,
-  stockMaximo: numeroNullable,
-  libreUtilizacion: numeroNullable,
-  transitoFarma: numeroNullable,
+  minSafetyStock: numeroNullable,
+  minTargetCoverage: numeroNullable,
+  targetStock: numeroNullable,
+  reorderPoint: numeroNullable,
+  dynamicStock: numeroNullable,
+  maxStock: numeroNullable,
+  unrestrictedStock: numeroNullable,
+  pharmacyInTransit: numeroNullable,
   sellingClass: numeroNullable,
-  nivelInventario: numeroNullable,
+  inventoryLevel: numeroNullable,
 });
 
 export const lineaOcRowSchema = z.object({
-  documentoCompras: z.string().min(1),
-  posicion: numeroNullable,
-  numProveedor: z.string(),
-  nombreProveedor: z.string(),
+  purchaseDoc: z.string().min(1),
+  lineNumber: numeroNullable,
+  vendorCode: z.string(),
+  vendorName: z.string(),
   sku,
-  descripcion: z.string(),
-  marca: z.string(),
+  description: z.string(),
+  brand: z.string(),
   division: z.string(),
-  fechaPedido: z.date().nullable(),
-  cantidadReparto: numeroNullable,
-  unidadMedida: z.string(),
-  cantidadEntregada: numeroNullable,
-  fechaEntrega: z.date().nullable(),
+  orderDate: z.date().nullable(),
+  allocatedQty: numeroNullable,
+  uom: z.string(),
+  deliveredQty: numeroNullable,
+  deliveryDate: z.date().nullable(),
   fillRate: numeroNullable, // fracción: 1 = 100%
-  estatusOC: z.string(),
-  negociador: z.string(),
-  pedidoEnUMA: numeroNullable,
-  ciDoctoCompras: z.string(),
+  poStatus: z.string(),
+  buyer: z.string(),
+  orderInUMA: numeroNullable,
+  purchaseDocRef: z.string(),
   cpfr: z.string(),
 });

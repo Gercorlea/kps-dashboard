@@ -15,8 +15,8 @@ export default async function AdminUsuariosPage() {
   return (
     <>
       <PageHeader
-        titulo="Usuarios"
-        descripcion="Altas, permisos por módulo y control de sesiones"
+        title="Usuarios"
+        description="Altas, permisos por módulo y control de sesiones"
       />
       <div className="cr-page-content">
         <UsuariosAdmin esSuperadmin={usuario.role === "superadmin"} />

@@ -14,7 +14,7 @@ import { api, ClientApiError } from "@/components/lib/api-client";
 import { Panel } from "@/components/ui/basicos";
 
 // Colores del design system: tinta para las series, ok/danger para
-// estados. Nada de morado fuera de Cronos IA (§10).
+// estados. Nada de morado fuera de KPS AI (§10).
 const INK = "#15171c";
 const OK = "#1f9468";
 const DANGER = "#cf4733";
@@ -22,7 +22,7 @@ const GRID = "rgba(10,12,18,0.06)";
 const LABEL = "#99a0ab";
 
 interface Serie {
-  ventasPorSemana: Array<{ semana: string; unidades: number }>;
+  ventasPorSemana: Array<{ semana: string; units: number }>;
   inventarioPorCorte: Array<{ corte: string; inventario: number; moh: number | null }>;
   fillRatePorCorte: Array<{ corte: string; fillRate: number | null }>;
 }
@@ -41,7 +41,7 @@ export function HistoricoCharts() {
   const cargar = useCallback(async () => {
     setError(null);
     try {
-      const q = new URLSearchParams({ cuenta: "san-pablo" });
+      const q = new URLSearchParams({ account: "san-pablo" });
       if (desde) q.set("desde", desde);
       if (hasta) q.set("hasta", hasta);
       setSerie(await api<Serie>(`/api/retail/historico?${q.toString()}`));
@@ -82,7 +82,7 @@ export function HistoricoCharts() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel titulo="Venta por semana (unidades)">
+        <Panel title="Venta por semana (unidades)">
           <div style={{ height: 260 }}>
             <ResponsiveContainer>
               <LineChart data={serie?.ventasPorSemana ?? []}>
@@ -90,13 +90,13 @@ export function HistoricoCharts() {
                 <XAxis dataKey="semana" {...ejes} />
                 <YAxis {...ejes} width={48} />
                 <Tooltip contentStyle={{ fontSize: 12, borderRadius: 2 }} />
-                <Line type="monotone" dataKey="unidades" stroke={INK} strokeWidth={1.75} dot={false} />
+                <Line type="monotone" dataKey="units" stroke={INK} strokeWidth={1.75} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </Panel>
 
-        <Panel titulo="Fill rate por corte">
+        <Panel title="Fill rate por corte">
           <div style={{ height: 260 }}>
             <ResponsiveContainer>
               <LineChart data={serie?.fillRatePorCorte ?? []}>
@@ -118,7 +118,7 @@ export function HistoricoCharts() {
           </div>
         </Panel>
 
-        <Panel titulo="Evolución de inventario">
+        <Panel title="Evolución de inventario">
           <div style={{ height: 260 }}>
             <ResponsiveContainer>
               <LineChart data={serie?.inventarioPorCorte ?? []}>
@@ -132,7 +132,7 @@ export function HistoricoCharts() {
           </div>
         </Panel>
 
-        <Panel titulo="MOH por corte (meses de inventario)">
+        <Panel title="MOH por corte (meses de inventario)">
           <div style={{ height: 260 }}>
             <ResponsiveContainer>
               <LineChart data={serie?.inventarioPorCorte ?? []}>

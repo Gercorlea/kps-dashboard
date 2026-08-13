@@ -62,13 +62,13 @@ export function StatsAdmin() {
           value={fmtNum(Object.values(stats.filas).reduce((t, n) => t + n, 0))}
         />
         <Kpi
-          label="Chats de Cronos IA"
+          label="Chats de KPS AI"
           value={fmtNum(stats.chats.total)}
           detalle={`${fmtNum(stats.chats.mensajes)} mensajes`}
         />
       </div>
 
-      <Panel titulo="Filas por colección" sinPadding>
+      <Panel title="Filas por colección" sinPadding>
         <div className="cr-table-scroll">
           <table className="cr-table">
             <thead>

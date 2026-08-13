@@ -8,8 +8,8 @@ type Fila = unknown[];
 
 function libro(hojas: Record<string, Fila[]>): Buffer {
   const wb = XLSX.utils.book_new();
-  for (const [nombre, aoa] of Object.entries(hojas)) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa, { cellDates: true }), nombre);
+  for (const [name, aoa] of Object.entries(hojas)) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa, { cellDates: true }), name);
   }
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx", cellDates: true }) as Buffer;
 }
@@ -33,10 +33,10 @@ describe("Trampa 1: tablas dinámicas plantadas a la derecha", () => {
         [141, "AV. CHALMA", 70890001, "14170890001", "GOLI GOMITAS", 10913, "KPS", "SPN", 3, 5, null, "GOLI", 8],
       ],
     });
-    const hoja = parseWorkbook(buf).hojas.find((h) => h.tipo === "ventas")!;
-    expect(hoja.leidas).toBe(1);
-    expect(hoja.docs).toHaveLength(2); // solo las 2 fechas reales
-    for (const doc of hoja.docs) {
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "ventas")!;
+    expect(sheet.read).toBe(1);
+    expect(sheet.docs).toHaveLength(2); // solo las 2 fechas reales
+    for (const doc of sheet.docs) {
       expect(Object.keys(doc)).not.toContain("Etiquetas de fila");
     }
   });
@@ -50,10 +50,10 @@ describe("Trampa 2: fechas dd.mm.yyyy con día > 12", () => {
         [141, "AV. CHALMA", 70890001, "14170890001", "GOLI GOMITAS", 10913, "KPS", "SPN", 7],
       ],
     });
-    const hoja = parseWorkbook(buf).hojas.find((h) => h.tipo === "ventas")!;
-    const doc = hoja.docs[0] as { fecha: Date; unidades: number };
-    expect(doc.fecha.toISOString()).toBe("2026-05-13T00:00:00.000Z");
-    expect(doc.unidades).toBe(7);
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "ventas")!;
+    const doc = sheet.docs[0] as { date: Date; units: number };
+    expect(doc.date.toISOString()).toBe("2026-05-13T00:00:00.000Z");
+    expect(doc.units).toBe(7);
   });
 });
 
@@ -65,9 +65,9 @@ describe("Trampa 3: encabezados con espacios sobrantes", () => {
         [141, "AV. CHALMA", 70890001, "14170890001", "GOLI GOMITAS", 10913, "KPS", "SPN", 1],
       ],
     });
-    const hoja = parseWorkbook(buf).hojas.find((h) => h.tipo === "ventas")!;
-    expect((hoja.docs[0] as { numProveedor: string }).numProveedor).toBe("10913");
-    expect(hoja.incidencias.some((i) => i.campo === "numProveedor")).toBe(false);
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "ventas")!;
+    expect((sheet.docs[0] as { vendorCode: string }).vendorCode).toBe("10913");
+    expect(sheet.issues.some((i) => i.field === "vendorCode")).toBe(false);
   });
 });
 
@@ -88,9 +88,9 @@ describe("Trampa 4: columna con el mes hardcodeado (Fill Rate)", () => {
         ],
       ],
     });
-    const hoja = parseWorkbook(buf).hojas.find((h) => h.tipo === "fillRate")!;
-    const doc = hoja.docs[0] as { fechaEntrega: Date | null; fillRate: number };
-    expect(doc.fechaEntrega?.toISOString()).toBe("2026-04-07T00:00:00.000Z");
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "fillRate")!;
+    const doc = sheet.docs[0] as { deliveryDate: Date | null; fillRate: number };
+    expect(doc.deliveryDate?.toISOString()).toBe("2026-04-07T00:00:00.000Z");
     expect(doc.fillRate).toBe(1); // fracción, se guarda tal cual (§7.5)
   });
 
@@ -101,9 +101,9 @@ describe("Trampa 4: columna con el mes hardcodeado (Fill Rate)", () => {
         ["7000179223", 70000781, "MULTIBLUE MULTIVIT"],
       ],
     });
-    const hoja = parseWorkbook(buf).hojas.find((h) => h.tipo === "fillRate")!;
-    expect(hoja.leidas).toBe(1);
-    expect(hoja.incidencias.some((i) => i.campo === "negociador")).toBe(true);
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "fillRate")!;
+    expect(sheet.read).toBe(1);
+    expect(sheet.issues.some((i) => i.field === "buyer")).toBe(true);
   });
 });
 
@@ -126,22 +126,22 @@ describe("Trampa 5: códigos con ceros a la izquierda", () => {
     });
     const r = parseWorkbook(buf);
     const venta = r.hojas.find((h) => h.tipo === "ventas")!.docs[0] as {
-      codigoTienda: string;
+      storeCode: string;
       sku: string;
     };
-    expect(venta.codigoTienda).toBe("0141");
+    expect(venta.storeCode).toBe("0141");
     expect(venta.sku).toBe("70890001");
 
     const cedis = r.hojas.find((h) => h.tipo === "cedis")!.docs[0] as {
       sku: string;
-      caracteristicaPlan: string;
-      cobertura: number | null;
-      citas: Array<{ fecha: Date; cantidad: number }>;
+      planCharacteristic: string;
+      coverage: number | null;
+      appointments: Array<{ date: Date; quantity: number }>;
     };
     expect(cedis.sku).toBe("70006147");
-    expect(cedis.caracteristicaPlan).toBe("21"); // string, no número
-    expect(cedis.cobertura).toBeNull(); // "ND" → null, no 0 (§7.5)
-    expect(cedis.citas[0].cantidad).toBe(4); // fechas EN MEDIO de la tabla (§7.2)
+    expect(cedis.planCharacteristic).toBe("21"); // string, no número
+    expect(cedis.coverage).toBeNull(); // "ND" → null, no 0 (§7.5)
+    expect(cedis.appointments[0].quantity).toBe(4); // fechas EN MEDIO de la tabla (§7.2)
   });
 });
 
@@ -160,9 +160,9 @@ describe("Trampa 6: filas vacías al final", () => {
         [70006148, "FILA FANTASMA", "SPN", 10913, "KPS", 1, 0, 0, "21", 1, 0, 0, 0],
       ],
     });
-    const hoja = parseWorkbook(buf).hojas.find((h) => h.tipo === "cedis")!;
-    expect(hoja.leidas).toBe(1); // la fila fantasma tras el hueco no se lee
-    expect((hoja.docs[0] as { sku: string }).sku).toBe("70006147");
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "cedis")!;
+    expect(sheet.read).toBe(1); // la fila fantasma tras el hueco no se lee
+    expect((sheet.docs[0] as { sku: string }).sku).toBe("70006147");
   });
 });
 
@@ -174,9 +174,9 @@ describe("FC_Mean: Total y Total red no son fechas ni datos (§7.2)", () => {
         [141, "AV. CHALMA", 70890001, "14170890001", "GOLI GOMITAS", 10913, "KPS", "SPN", 0.5, 0.6, 99, 88],
       ],
     });
-    const hoja = parseWorkbook(buf).hojas.find((h) => h.tipo === "fcMean")!;
-    expect(hoja.docs).toHaveLength(2);
-    const valores = hoja.docs.map((d) => (d as { valor: number }).valor);
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "fcMean")!;
+    expect(sheet.docs).toHaveLength(2);
+    const valores = sheet.docs.map((d) => (d as { value: number }).value);
     expect(valores).toEqual([0.5, 0.6]);
   });
 });
@@ -191,9 +191,9 @@ describe("hojas no reconocidas (§7.2)", () => {
       ],
     });
     const r = parseWorkbook(buf);
-    const desconocida = r.hojas.find((h) => h.nombre === "Notas del analista")!;
+    const desconocida = r.hojas.find((h) => h.name === "Notas del analista")!;
     expect(desconocida.tipo).toBeNull();
-    expect(desconocida.incidencias[0].mensaje).toMatch(/no mapeada/);
+    expect(desconocida.issues[0].message).toMatch(/no mapeada/);
     expect(r.hojas.find((h) => h.tipo === "ventas")!.docs).toHaveLength(1);
   });
 });

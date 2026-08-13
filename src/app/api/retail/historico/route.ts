@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     await requireModule("retail");
     const q = parseQuery(request.url, historicoQuerySchema);
-    const serie = await serieHistorica(q.cuenta, q.desde, q.hasta);
+    const serie = await serieHistorica(q.account, q.desde, q.hasta);
     return ok(serie);
   } catch (e) {
     return handleApiError(e);

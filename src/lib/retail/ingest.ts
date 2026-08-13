@@ -31,26 +31,26 @@ const MODELOS: Record<TipoHoja, Model<any>> = {
 
 async function borrarFilasDeUpload(uploadId: Types.ObjectId) {
   await Promise.all(
-    Object.values(MODELOS).map((modelo) => modelo.deleteMany({ uploadId }))
+    Object.values(MODELOS).map((model) => model.deleteMany({ uploadId }))
   );
 }
 
 // Las claves de `resumen` no pueden llevar "." (path de Mongo).
-function claveHoja(nombre: string): string {
-  return nombre.replace(/\./g, "·");
+function claveHoja(name: string): string {
+  return name.replace(/\./g, "·");
 }
 
 export async function procesarUpload(uploadId: string): Promise<IUpload> {
   await connectDB();
   const upload = await Upload.findById(uploadId);
   if (!upload) throw new ApiError(404, "NO_ENCONTRADO", "Carga no encontrada");
-  if (upload.status === "procesando") {
+  if (upload.status === "processing") {
     throw new ApiError(409, "EN_PROCESO", "La carga ya se está procesando");
   }
 
   await Upload.updateOne(
     { _id: upload._id },
-    { $set: { status: "procesando", resumen: {}, incidencias: [], hojasDetectadas: [] } }
+    { $set: { status: "processing", summary: {}, issues: [], detectedSheets: [] } }
   );
 
   try {
@@ -68,48 +68,48 @@ export async function procesarUpload(uploadId: string): Promise<IUpload> {
         {
           $set: {
             status: "error",
-            incidencias: [
+            issues: [
               {
-                hoja: "-",
-                mensaje: `Archivo idéntico a la carga existente "${duplicado.filename}"`,
+                sheet: "-",
+                message: `Archivo idéntico a la carga existente "${duplicado.filename}"`,
               },
             ],
             processedAt: new Date(),
           },
         }
       );
-      throw new ApiError(409, "DUPLICADO", "Este archivo ya fue cargado anteriormente", {
+      throw new ApiError(409, "DUPLICADO", "Este fileName ya fue cargado anteriormente", {
         uploadId: String(duplicado._id),
       });
     }
 
-    const resultado = parseWorkbook(buffer);
+    const result = parseWorkbook(buffer);
 
     // Reproceso: borrar primero TODAS las filas con este uploadId (§6.3).
     await borrarFilasDeUpload(upload._id);
 
-    const incidencias: IIncidencia[] = [];
-    const hojasDetectadas: string[] = [];
+    const issues: IIncidencia[] = [];
+    const detectedSheets: string[] = [];
 
-    for (const hoja of resultado.hojas) {
-      hojasDetectadas.push(hoja.nombre);
-      incidencias.push(...hoja.incidencias);
-      if (!hoja.tipo) continue;
+    for (const sheet of result.hojas) {
+      detectedSheets.push(sheet.name);
+      issues.push(...sheet.issues);
+      if (!sheet.tipo) continue;
 
-      const modelo = MODELOS[hoja.tipo];
+      const model = MODELOS[sheet.tipo];
       const meta = {
         uploadId: upload._id,
-        cuenta: upload.cuenta,
-        fechaCorte: upload.fechaCorte,
+        account: upload.account,
+        cutoffDate: upload.cutoffDate,
       };
 
-      let insertadas = 0;
-      for (let i = 0; i < hoja.docs.length; i += LOTE) {
-        const lote = hoja.docs
+      let inserted = 0;
+      for (let i = 0; i < sheet.docs.length; i += LOTE) {
+        const lote = sheet.docs
           .slice(i, i + LOTE)
           .map((doc) => ({ insertOne: { document: { ...doc, ...meta } } }));
-        const res = await modelo.bulkWrite(lote, { ordered: false });
-        insertadas += res.insertedCount ?? 0;
+        const res = await model.bulkWrite(lote, { ordered: false });
+        inserted += res.insertedCount ?? 0;
       }
 
       // Actualización progresiva: la UI hace polling y muestra avance por hoja.
@@ -117,11 +117,11 @@ export async function procesarUpload(uploadId: string): Promise<IUpload> {
         { _id: upload._id },
         {
           $set: {
-            hojasDetectadas,
-            [`resumen.${claveHoja(hoja.nombre)}`]: {
-              leidas: hoja.leidas,
-              insertadas,
-              rechazadas: hoja.rechazadas,
+            detectedSheets,
+            [`summary.${claveHoja(sheet.name)}`]: {
+              read: sheet.read,
+              inserted,
+              rejected: sheet.rejected,
             },
           },
         }
@@ -133,9 +133,9 @@ export async function procesarUpload(uploadId: string): Promise<IUpload> {
       {
         $set: {
           fileHash,
-          status: "procesado",
-          hojasDetectadas,
-          incidencias: incidencias.slice(0, MAX_INCIDENCIAS_UPLOAD),
+          status: "processed",
+          detectedSheets,
+          issues: issues.slice(0, MAX_INCIDENCIAS_UPLOAD),
           processedAt: new Date(),
         },
       }
@@ -151,7 +151,7 @@ export async function procesarUpload(uploadId: string): Promise<IUpload> {
       {
         $set: {
           status: "error",
-          incidencias: [{ hoja: "-", mensaje: "Error interno al procesar el archivo" }],
+          issues: [{ sheet: "-", message: "Error interno al procesar el archivo" }],
           processedAt: new Date(),
         },
       }

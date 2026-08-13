@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   try {
     await requireModule("retail");
     const q = parseQuery(request.url, scorecardQuerySchema);
-    const scorecard = await generarScorecard(q.cuenta, q.hasta);
+    const scorecard = await generarScorecard(q.account, q.hasta);
     return ok(scorecard);
   } catch (e) {
     return handleApiError(e);

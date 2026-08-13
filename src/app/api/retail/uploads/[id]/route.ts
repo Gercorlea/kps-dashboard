@@ -18,7 +18,7 @@ export async function GET(
     if (!isValidObjectId(id)) throw new ApiError(404, "NO_ENCONTRADO", "Carga no encontrada");
 
     await connectDB();
-    const upload = await Upload.findById(id).populate("subidoPor", "nombre").lean();
+    const upload = await Upload.findById(id).populate("uploadedBy", "name").lean();
     if (!upload) throw new ApiError(404, "NO_ENCONTRADO", "Carga no encontrada");
 
     // Descarga del original: presigned GET de vida corta emitido por este
@@ -30,14 +30,14 @@ export async function GET(
       carga: {
         id: String(upload._id),
         filename: upload.filename,
-        cuenta: upload.cuenta,
-        fechaCorte: fechaISO(new Date(upload.fechaCorte)),
+        account: upload.account,
+        cutoffDate: fechaISO(new Date(upload.cutoffDate)),
         status: upload.status,
         sizeBytes: upload.sizeBytes,
-        hojasDetectadas: upload.hojasDetectadas,
-        resumen: upload.resumen ?? {},
-        incidencias: upload.incidencias ?? [],
-        subidoPor: (upload.subidoPor as unknown as { nombre?: string })?.nombre ?? "—",
+        detectedSheets: upload.detectedSheets,
+        summary: upload.summary ?? {},
+        issues: upload.issues ?? [],
+        uploadedBy: (upload.uploadedBy as unknown as { name?: string })?.name ?? "—",
         createdAt: new Date(upload.createdAt).toISOString(),
         processedAt: upload.processedAt ? new Date(upload.processedAt).toISOString() : null,
       },

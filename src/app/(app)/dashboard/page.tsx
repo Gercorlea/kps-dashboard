@@ -20,39 +20,39 @@ export default async function DashboardPage() {
   if (!usuario) redirect("/login");
 
   const tieneRetail = canAccess(usuario, "retail");
-  const resumen = tieneRetail ? await resumenDashboard() : null;
+  const summary = tieneRetail ? await resumenDashboard() : null;
 
   return (
     <>
       <PageHeader
-        titulo="Dashboard"
-        descripcion="Resumen operativo de Cronos Retail"
+        title="Dashboard"
+        description="Resumen operativo de Cronos Retail"
       />
       <div className="cr-page-content flex flex-col gap-6">
-        {resumen ? (
+        {summary ? (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Kpi label="Cargas del mes" value={fmtNum(resumen.cargasDelMes)} />
+              <Kpi label="Cargas del mes" value={fmtNum(summary.cargasDelMes)} />
               <Kpi
                 label="Filas del último corte"
-                value={fmtNum(resumen.filasUltimoCorte)}
-                detalle={resumen.ultimoCorte ? `Corte ${resumen.ultimoCorte}` : "Sin cortes"}
+                value={fmtNum(summary.filasUltimoCorte)}
+                detalle={summary.ultimoCorte ? `Corte ${summary.ultimoCorte}` : "Sin cortes"}
               />
               <Kpi
                 label="Fill rate último corte"
-                value={fmtPct(resumen.fillRatePromedio)}
+                value={fmtPct(summary.fillRatePromedio)}
               />
               <Kpi
                 label={`SKUs con MOH > ${UMBRAL_MOH}`}
-                value={fmtNum(resumen.skusMohAlto)}
-                alerta={resumen.skusMohAlto > 0}
+                value={fmtNum(summary.skusMohAlto)}
+                alerta={summary.skusMohAlto > 0}
               />
             </div>
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
               <div className="xl:col-span-2">
                 <Panel
-                  titulo="Últimas cargas"
+                  title="Últimas cargas"
                   acciones={
                     <Link href="/retail" className="cr-btn cr-btn--ghost cr-btn--sm">
                       Ver todas
@@ -72,21 +72,21 @@ export default async function DashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {resumen.ultimasCargas.length === 0 ? (
+                        {summary.ultimasCargas.length === 0 ? (
                           <tr>
                             <td colSpan={5} className="cr-body py-8 text-center">
                               Aún no hay cargas. Sube el primer Excel semanal.
                             </td>
                           </tr>
                         ) : (
-                          resumen.ultimasCargas.map((c) => (
+                          summary.ultimasCargas.map((c) => (
                             <tr key={c.id}>
                               <td>
                                 <Link href={`/retail/${c.id}`} className="cr-link">
                                   {c.filename}
                                 </Link>
                               </td>
-                              <td className="cr-mono">{c.fechaCorte}</td>
+                              <td className="cr-mono">{c.cutoffDate}</td>
                               <td>
                                 <Badge tono={TONO_STATUS[c.status] ?? "neutro"}>{c.status}</Badge>
                               </td>
@@ -100,19 +100,19 @@ export default async function DashboardPage() {
                   </div>
                 </Panel>
               </div>
-              <Panel titulo="Cobertura de datos">
+              <Panel title="Cobertura de datos">
                 <dl className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <dt className="cr-label">Desde</dt>
-                    <dd className="cr-mono">{resumen.cobertura.desde ?? "—"}</dd>
+                    <dd className="cr-mono">{summary.coverage.desde ?? "—"}</dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="cr-label">Hasta</dt>
-                    <dd className="cr-mono">{resumen.cobertura.hasta ?? "—"}</dd>
+                    <dd className="cr-mono">{summary.coverage.hasta ?? "—"}</dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="cr-label">Cortes disponibles</dt>
-                    <dd className="cr-mono">{fmtNum(resumen.cobertura.cortes)}</dd>
+                    <dd className="cr-mono">{fmtNum(summary.coverage.cortes)}</dd>
                   </div>
                 </dl>
               </Panel>
@@ -124,7 +124,7 @@ export default async function DashboardPage() {
               <BrandMark variant="mark" tone="ink" height={32} />
               <p className="cr-h3">Bienvenido a Cronos Retail</p>
               <p className="cr-body max-w-sm">
-                Tu cuenta no tiene el módulo Retail asignado. Usa el menú para ir a los
+                Tu account no tiene el módulo Retail asignado. Usa el menú para ir a los
                 módulos disponibles.
               </p>
             </div>

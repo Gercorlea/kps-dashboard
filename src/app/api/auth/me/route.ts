@@ -14,7 +14,7 @@ export async function GET() {
     }
     return ok({
       id: String(user._id),
-      nombre: user.nombre,
+      name: user.name,
       email: user.email,
       role: user.role,
       modules: user.modules.map(String),

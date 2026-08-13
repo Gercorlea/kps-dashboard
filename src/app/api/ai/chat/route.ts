@@ -3,6 +3,7 @@ import { isValidObjectId } from "mongoose";
 import type { NextRequest } from "next/server";
 import { ApiError, handleApiError, parseJson } from "@/lib/api";
 import { chat } from "@/lib/ai";
+import { MODELO_DEFECTO, costUSD, esModeloValido } from "@/lib/ai-modelos";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
@@ -15,15 +16,15 @@ export const maxDuration = 120;
 
 const TITULO_DEFECTO = "Nueva conversación";
 
-function textoDe(mensaje: { parts: Array<{ type: string; text?: string }> }): string {
-  return mensaje.parts
+function textoDe(message: { parts: Array<{ type: string; text?: string }> }): string {
+  return message.parts
     .filter((p) => p.type === "text" && typeof p.text === "string")
     .map((p) => p.text)
     .join("\n")
     .trim();
 }
 
-// Chat de Cronos IA (§9): módulo independiente — NO recibe datos de Retail.
+// Chat de KPS AI (§9): módulo independiente — NO recibe datos de Retail.
 // Streaming vía Vercel AI Gateway; historial persistido y scopeado por
 // usuario: la propiedad se verifica en cada request, no solo en el listado.
 export async function POST(request: NextRequest) {
@@ -54,24 +55,30 @@ export async function POST(request: NextRequest) {
     await Mensaje.create({
       chatId: conversacion._id,
       userId: session.id,
-      rol: "user",
-      contenido: textoUsuario,
+      role: "user",
+      content: textoUsuario,
     });
-    if (conversacion.titulo === TITULO_DEFECTO) {
-      conversacion.titulo = textoUsuario.slice(0, 60);
+    if (conversacion.title === TITULO_DEFECTO) {
+      conversacion.title = textoUsuario.slice(0, 60);
     }
     conversacion.updatedAt = new Date();
     await conversacion.save();
 
     const mensajesModelo = await convertToModelMessages(body.messages as unknown as UIMessage[]);
-    const resultado = chat(mensajesModelo, {
-      onFinish: async (texto) => {
+    const result = chat(mensajesModelo, {
+      model: body.model,
+      onFinish: async ({ texto, model, entrada, salida, tools }) => {
         try {
           await Mensaje.create({
             chatId: conversacion._id,
             userId: session.id,
-            rol: "assistant",
-            contenido: texto,
+            role: "assistant",
+            content: texto,
+            model,
+            inputTokens: entrada,
+            outputTokens: salida,
+            costUSD: costUSD(model, entrada, salida),
+            tools: tools.length ? tools : undefined,
           });
           await Chat.updateOne({ _id: conversacion._id }, { $set: { updatedAt: new Date() } });
         } catch (e) {
@@ -80,7 +87,22 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return resultado.toUIMessageStreamResponse();
+    // El consumo viaja al cliente como metadata del mensaje: así el chat
+    // muestra tokens y costo sin una petición extra.
+    const modeloUsado = esModeloValido(body.model) ? body.model : MODELO_DEFECTO;
+    return result.toUIMessageStreamResponse({
+      messageMetadata: ({ part }) => {
+        if (part.type !== "finish") return undefined;
+        const entrada = part.totalUsage?.inputTokens ?? 0;
+        const salida = part.totalUsage?.outputTokens ?? 0;
+        return {
+          model: modeloUsado,
+          entrada,
+          salida,
+          costo: costUSD(modeloUsado, entrada, salida),
+        };
+      },
+    });
   } catch (e) {
     return handleApiError(e);
   }

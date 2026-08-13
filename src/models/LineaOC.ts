@@ -4,60 +4,60 @@ import { Schema, model, models, type Model, type Types } from "mongoose";
 export interface ILineaOC {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
-  cuenta: string;
-  fechaCorte: Date;
-  documentoCompras: string;
-  posicion: number | null;
-  numProveedor: string;
-  nombreProveedor: string;
+  account: string;
+  cutoffDate: Date;
+  purchaseDoc: string;
+  lineNumber: number | null;
+  vendorCode: string;
+  vendorName: string;
   sku: string;
-  descripcion: string;
-  marca: string;
+  description: string;
+  brand: string;
   division: string;
-  fechaPedido: Date | null;
-  cantidadReparto: number | null;
-  unidadMedida: string;
-  cantidadEntregada: number | null;
-  fechaEntrega: Date | null;
+  orderDate: Date | null;
+  allocatedQty: number | null;
+  uom: string;
+  deliveredQty: number | null;
+  deliveryDate: Date | null;
   fillRate: number | null; // fracción: 1 = 100% (§7.5)
-  estatusOC: string;
-  negociador: string;
-  pedidoEnUMA: number | null;
-  ciDoctoCompras: string;
+  poStatus: string;
+  buyer: string;
+  orderInUMA: number | null;
+  purchaseDocRef: string;
   cpfr: string;
 }
 
 const LineaOCSchema = new Schema<ILineaOC>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
-    cuenta: { type: String, required: true },
-    fechaCorte: { type: Date, required: true },
-    documentoCompras: { type: String, required: true },
-    posicion: { type: Number, default: null },
-    numProveedor: { type: String, default: "" },
-    nombreProveedor: { type: String, default: "" },
+    account: { type: String, required: true },
+    cutoffDate: { type: Date, required: true },
+    purchaseDoc: { type: String, required: true },
+    lineNumber: { type: Number, default: null },
+    vendorCode: { type: String, default: "" },
+    vendorName: { type: String, default: "" },
     sku: { type: String, required: true },
-    descripcion: { type: String, default: "" },
-    marca: { type: String, default: "SIN CLASIFICAR" },
+    description: { type: String, default: "" },
+    brand: { type: String, default: "SIN CLASIFICAR" },
     division: { type: String, default: "" },
-    fechaPedido: { type: Date, default: null },
-    cantidadReparto: { type: Number, default: null },
-    unidadMedida: { type: String, default: "" },
-    cantidadEntregada: { type: Number, default: null },
-    fechaEntrega: { type: Date, default: null },
+    orderDate: { type: Date, default: null },
+    allocatedQty: { type: Number, default: null },
+    uom: { type: String, default: "" },
+    deliveredQty: { type: Number, default: null },
+    deliveryDate: { type: Date, default: null },
     fillRate: { type: Number, default: null },
-    estatusOC: { type: String, default: "" },
-    negociador: { type: String, default: "" },
-    pedidoEnUMA: { type: Number, default: null },
-    ciDoctoCompras: { type: String, default: "" },
+    poStatus: { type: String, default: "" },
+    buyer: { type: String, default: "" },
+    orderInUMA: { type: Number, default: null },
+    purchaseDocRef: { type: String, default: "" },
     cpfr: { type: String, default: "" },
   },
   { versionKey: false }
 );
 
-LineaOCSchema.index({ cuenta: 1, fechaCorte: -1 });
+LineaOCSchema.index({ account: 1, cutoffDate: -1 });
 LineaOCSchema.index({ uploadId: 1 });
-LineaOCSchema.index({ cuenta: 1, fechaCorte: -1, negociador: 1 });
+LineaOCSchema.index({ account: 1, cutoffDate: -1, buyer: 1 });
 
 export const LineaOC: Model<ILineaOC> =
   (models.LineaOC as Model<ILineaOC>) ?? model<ILineaOC>("LineaOC", LineaOCSchema);

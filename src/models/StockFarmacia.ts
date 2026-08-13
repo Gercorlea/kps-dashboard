@@ -4,68 +4,68 @@ import { Schema, model, models, type Model, type Types } from "mongoose";
 export interface IStockFarmacia {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
-  cuenta: string;
-  fechaCorte: Date;
-  idCompuesto: string;
-  codigoTienda: string;
-  nombreTienda: string;
+  account: string;
+  cutoffDate: Date;
+  compositeId: string;
+  storeCode: string;
+  storeName: string;
   sku: string;
-  descripcion: string;
-  marca: string;
+  description: string;
+  brand: string;
   division: string;
-  numProveedor: string;
-  nombreProveedor: string;
-  tipoArticulo: string;
+  vendorCode: string;
+  vendorName: string;
+  itemType: string;
   abc: string;
   sm: string;
   cap: string;
-  stockSegMin: number | null;
-  cobertObjMin: number | null;
-  stockObjetivo: number | null;
-  puntoPedido: number | null;
-  stockDinamico: number | null;
-  stockMaximo: number | null;
-  libreUtilizacion: number | null;
-  transitoFarma: number | null;
+  minSafetyStock: number | null;
+  minTargetCoverage: number | null;
+  targetStock: number | null;
+  reorderPoint: number | null;
+  dynamicStock: number | null;
+  maxStock: number | null;
+  unrestrictedStock: number | null;
+  pharmacyInTransit: number | null;
   sellingClass: number | null;
-  nivelInventario: number | null;
+  inventoryLevel: number | null;
 }
 
 const StockFarmaciaSchema = new Schema<IStockFarmacia>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
-    cuenta: { type: String, required: true },
-    fechaCorte: { type: Date, required: true },
-    idCompuesto: { type: String, default: "" },
-    codigoTienda: { type: String, required: true },
-    nombreTienda: { type: String, default: "" },
+    account: { type: String, required: true },
+    cutoffDate: { type: Date, required: true },
+    compositeId: { type: String, default: "" },
+    storeCode: { type: String, required: true },
+    storeName: { type: String, default: "" },
     sku: { type: String, required: true },
-    descripcion: { type: String, default: "" },
-    marca: { type: String, default: "SIN CLASIFICAR" },
+    description: { type: String, default: "" },
+    brand: { type: String, default: "SIN CLASIFICAR" },
     division: { type: String, default: "" },
-    numProveedor: { type: String, default: "" },
-    nombreProveedor: { type: String, default: "" },
-    tipoArticulo: { type: String, default: "" },
+    vendorCode: { type: String, default: "" },
+    vendorName: { type: String, default: "" },
+    itemType: { type: String, default: "" },
     abc: { type: String, default: "" },
     sm: { type: String, default: "" },
     cap: { type: String, default: "" },
-    stockSegMin: { type: Number, default: null },
-    cobertObjMin: { type: Number, default: null },
-    stockObjetivo: { type: Number, default: null },
-    puntoPedido: { type: Number, default: null },
-    stockDinamico: { type: Number, default: null },
-    stockMaximo: { type: Number, default: null },
-    libreUtilizacion: { type: Number, default: null },
-    transitoFarma: { type: Number, default: null },
+    minSafetyStock: { type: Number, default: null },
+    minTargetCoverage: { type: Number, default: null },
+    targetStock: { type: Number, default: null },
+    reorderPoint: { type: Number, default: null },
+    dynamicStock: { type: Number, default: null },
+    maxStock: { type: Number, default: null },
+    unrestrictedStock: { type: Number, default: null },
+    pharmacyInTransit: { type: Number, default: null },
     sellingClass: { type: Number, default: null },
-    nivelInventario: { type: Number, default: null },
+    inventoryLevel: { type: Number, default: null },
   },
   { versionKey: false }
 );
 
-StockFarmaciaSchema.index({ cuenta: 1, fechaCorte: -1, sku: 1 });
+StockFarmaciaSchema.index({ account: 1, cutoffDate: -1, sku: 1 });
 StockFarmaciaSchema.index({ uploadId: 1 });
-StockFarmaciaSchema.index({ cuenta: 1, fechaCorte: -1, marca: 1 });
+StockFarmaciaSchema.index({ account: 1, cutoffDate: -1, brand: 1 });
 
 export const StockFarmacia: Model<IStockFarmacia> =
   (models.StockFarmacia as Model<IStockFarmacia>) ??

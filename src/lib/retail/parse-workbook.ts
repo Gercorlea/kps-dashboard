@@ -21,10 +21,10 @@ import {
 // las seis trampas del §7.1 está blindada y cubierta por tests.
 
 export interface IncidenciaParseo {
-  hoja: string;
-  fila?: number;
-  campo?: string;
-  mensaje: string;
+  sheet: string;
+  row?: number;
+  field?: string;
+  message: string;
 }
 
 export type TipoHoja =
@@ -36,11 +36,11 @@ export type TipoHoja =
   | "invFarma";
 
 export interface HojaParseada {
-  nombre: string;
+  name: string;
   tipo: TipoHoja | null;
-  leidas: number;
-  rechazadas: number;
-  incidencias: IncidenciaParseo[];
+  read: number;
+  rejected: number;
+  issues: IncidenciaParseo[];
   docs: Record<string, unknown>[];
 }
 
@@ -63,8 +63,8 @@ const TIPO_POR_NOMBRE: Record<string, TipoHoja> = {
 
 // Reconocimiento por nombre normalizado, tolerando mayúsculas, espacios
 // y acentos ("PRONÓSTICOS" → PRONOSTICOS) (§7.2).
-export function tipoDeHoja(nombre: string): TipoHoja | null {
-  const clave = normHeader(nombre)
+export function tipoDeHoja(name: string): TipoHoja | null {
+  const clave = normHeader(name)
     .toUpperCase()
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "");
@@ -72,29 +72,29 @@ export function tipoDeHoja(nombre: string): TipoHoja | null {
 }
 
 class Registrador {
-  incidencias: IncidenciaParseo[] = [];
+  issues: IncidenciaParseo[] = [];
   private omitidas = 0;
 
-  constructor(private hoja: string) {}
+  constructor(private sheet: string) {}
 
-  agregar(mensaje: string, fila?: number, campo?: string) {
-    if (this.incidencias.length >= MAX_INCIDENCIAS_POR_HOJA) {
+  agregar(message: string, row?: number, field?: string) {
+    if (this.issues.length >= MAX_INCIDENCIAS_POR_HOJA) {
       this.omitidas++;
       return;
     }
-    this.incidencias.push({
-      hoja: this.hoja,
-      ...(fila !== undefined ? { fila } : {}),
-      ...(campo ? { campo } : {}),
-      mensaje,
+    this.issues.push({
+      sheet: this.sheet,
+      ...(row !== undefined ? { row } : {}),
+      ...(field ? { field } : {}),
+      message,
     });
   }
 
   cerrar() {
     if (this.omitidas > 0) {
-      this.incidencias.push({
-        hoja: this.hoja,
-        mensaje: `…y ${this.omitidas} incidencias más (solo se registran las primeras ${MAX_INCIDENCIAS_POR_HOJA}).`,
+      this.issues.push({
+        sheet: this.sheet,
+        message: `…y ${this.omitidas} incidencias más (solo se registran las primeras ${MAX_INCIDENCIAS_POR_HOJA}).`,
       });
     }
   }
@@ -125,10 +125,10 @@ function anchoTabla(encabezados: Celda[]): number {
 }
 
 // Trampa 6: corta en la primera fila completamente vacía DENTRO del ancho
-// de la tabla; no confiar en sheet['!ref'].
-function filaVacia(fila: Celda[], ancho: number): boolean {
+// de la tabla; no confiar en hoja['!ref'].
+function filaVacia(row: Celda[], ancho: number): boolean {
   for (let c = 0; c < ancho; c++) {
-    const v = fila[c];
+    const v = row[c];
     if (v !== null && v !== undefined && String(v).trim() !== "") return false;
   }
   return true;
@@ -143,7 +143,7 @@ function primerError(error: ZodError): string {
 
 interface ColumnaFecha {
   col: number;
-  fecha: Date;
+  date: Date;
 }
 
 interface Clasificacion {
@@ -162,7 +162,7 @@ function clasificarColumnas(
   reg: Registrador,
   opciones?: {
     excluir?: (h: string) => boolean;
-    prefijos?: Array<{ prefijo: string; campo: string }>;
+    prefijos?: Array<{ prefijo: string; field: string }>;
   }
 ): Clasificacion {
   const dims: Record<string, number> = {};
@@ -170,9 +170,9 @@ function clasificarColumnas(
 
   for (let c = 0; c < ancho; c++) {
     const bruto = encabezados[c];
-    const fecha = parseHeaderDate(bruto);
-    if (fecha) {
-      fechas.push({ col: c, fecha });
+    const date = parseHeaderDate(bruto);
+    if (date) {
+      fechas.push({ col: c, date });
       continue;
     }
     const h = normHeader(bruto);
@@ -180,12 +180,12 @@ function clasificarColumnas(
     // Trampa 4: columnas con el mes hardcodeado se mapean por prefijo.
     const porPrefijo = opciones?.prefijos?.find((p) => h.startsWith(p.prefijo));
     if (porPrefijo) {
-      dims[porPrefijo.campo] = c;
+      dims[porPrefijo.field] = c;
       continue;
     }
-    const campo = mapa[h];
-    if (campo !== undefined) {
-      dims[campo] = c;
+    const field = mapa[h];
+    if (field !== undefined) {
+      dims[field] = c;
       continue;
     }
     reg.agregar(`Columna no reconocida, ignorada: "${h}"`, 1);
@@ -194,18 +194,18 @@ function clasificarColumnas(
   // Si un encabezado esperado no aparece, no truena la carga: incidencia,
   // campo en null y seguimos (Trampa 4).
   const esperados = new Map<string, string>();
-  for (const [nombre, campo] of Object.entries(mapa)) {
-    if (!esperados.has(campo)) esperados.set(campo, nombre);
+  for (const [name, field] of Object.entries(mapa)) {
+    if (!esperados.has(field)) esperados.set(field, name);
   }
   for (const p of opciones?.prefijos ?? []) {
-    if (!esperados.has(p.campo)) esperados.set(p.campo, `${p.prefijo}…`);
+    if (!esperados.has(p.field)) esperados.set(p.field, `${p.prefijo}…`);
   }
-  for (const [campo, nombre] of esperados) {
-    if (!(campo in dims)) {
+  for (const [field, name] of esperados) {
+    if (!(field in dims)) {
       reg.agregar(
-        `Columna esperada no encontrada: "${nombre}" — el campo ${campo} quedará vacío`,
+        `Columna esperada no encontrada: "${name}" — el campo ${field} quedará vacío`,
         1,
-        campo
+        field
       );
     }
   }
@@ -213,12 +213,12 @@ function clasificarColumnas(
   return { dims, fechas };
 }
 
-type Lector = (campo: string) => Celda;
+type Lector = (field: string) => Celda;
 
-function lectorDeFila(fila: Celda[], dims: Record<string, number>): Lector {
-  return (campo: string) => {
-    const c = dims[campo];
-    return c === undefined ? null : fila[c];
+function lectorDeFila(row: Celda[], dims: Record<string, number>): Lector {
+  return (field: string) => {
+    const c = dims[field];
+    return c === undefined ? null : row[c];
   };
 }
 
@@ -227,60 +227,60 @@ function lectorDeFila(fila: Celda[], dims: Record<string, number>): Lector {
 class MarcasSinClasificar {
   private mapa = new Map<string, number>();
 
-  registrar(descripcion: string) {
-    if (!descripcion) return;
-    this.mapa.set(descripcion, (this.mapa.get(descripcion) ?? 0) + 1);
+  registrar(description: string) {
+    if (!description) return;
+    this.mapa.set(description, (this.mapa.get(description) ?? 0) + 1);
   }
 
   volcar(reg: Registrador) {
-    for (const [descripcion, filas] of this.mapa) {
-      reg.agregar(`Marca sin clasificar (${filas} filas): "${descripcion}"`, undefined, "marca");
+    for (const [description, filas] of this.mapa) {
+      reg.agregar(`Marca sin clasificar (${filas} filas): "${description}"`, undefined, "brand");
     }
   }
 }
 
 function validarIdCompuesto(
-  doc: { idCompuesto: string; codigoTienda: string; sku: string },
-  fila: number,
+  doc: { compositeId: string; storeCode: string; sku: string },
+  row: number,
   reg: Registrador
 ) {
-  if (!doc.idCompuesto || !doc.codigoTienda || !doc.sku) return;
-  const esperado = `${doc.codigoTienda}${doc.sku}`;
+  if (!doc.compositeId || !doc.storeCode || !doc.sku) return;
+  const esperado = `${doc.storeCode}${doc.sku}`;
   // Excel guarda el ID como número y pierde el cero inicial de la tienda
   // ("0141" + "70890001" → 14170890001): comparar con ceros normalizados.
-  if (doc.idCompuesto.padStart(esperado.length, "0") !== esperado) {
+  if (doc.compositeId.padStart(esperado.length, "0") !== esperado) {
     reg.agregar(
-      `ID compuesto inconsistente: "${doc.idCompuesto}" ≠ tienda "${doc.codigoTienda}" + SKU "${doc.sku}"`,
-      fila,
-      "idCompuesto"
+      `ID compuesto inconsistente: "${doc.compositeId}" ≠ tienda "${doc.storeCode}" + SKU "${doc.sku}"`,
+      row,
+      "compositeId"
     );
   }
 }
 
 interface CuerpoHoja {
-  leidas: number;
-  rechazadas: number;
+  read: number;
+  rejected: number;
   docs: Record<string, unknown>[];
 }
 
 // ---------------------------------------------------------------------
 // VENTAS / PRONOSTICOS / FC_Mean: mismas dimensiones + columnas de fecha
 // dinámicas al final. Se desnormalizan (unpivot) a documentos individuales
-// { …dimensiones, fecha, valor } (§6.1).
+// { …dimensiones, date, value } (§6.1).
 // ---------------------------------------------------------------------
 
 const MAPA_LARGO: Record<string, string> = {
-  "Ubic.": "codigoTienda",
-  "Nombre de Farmacias": "nombreTienda",
+  "Ubic.": "storeCode",
+  "Nombre de Farmacias": "storeName",
   "Prod.": "sku",
-  ID: "idCompuesto",
-  Descripción: "descripcion",
+  ID: "compositeId",
+  Descripción: "description",
   División: "division",
-  "Num Proveedor": "numProveedor",
-  Proveedor: "proveedor",
+  "Num Proveedor": "vendorCode",
+  Proveedor: "vendorName",
 };
 
-const baseLargaSchema = ventaRowSchema.omit({ fecha: true, unidades: true });
+const baseLargaSchema = ventaRowSchema.omit({ date: true, units: true });
 
 function parseHojaLarga(
   matriz: Celda[][],
@@ -291,7 +291,7 @@ function parseHojaLarga(
   const ancho = anchoTabla(encabezados);
   if (ancho === 0) {
     reg.agregar("La hoja no tiene encabezados en la fila 1");
-    return { leidas: 0, rechazadas: 0, docs: [] };
+    return { read: 0, rejected: 0, docs: [] };
   }
 
   // En FC_Mean, "Total" y "Total red" NO son fechas ni datos: los totales
@@ -309,52 +309,52 @@ function parseHojaLarga(
     reg.agregar("No se detectaron columnas de fecha en la hoja");
   }
 
-  const campoFecha = tipo === "pronosticos" ? "semanaInicio" : "fecha";
-  const campoValor = tipo === "ventas" ? "unidades" : "valor";
+  const campoFecha = tipo === "pronosticos" ? "weekStart" : "date";
+  const campoValor = tipo === "ventas" ? "units" : "value";
   const sinMarca = new MarcasSinClasificar();
   const docs: Record<string, unknown>[] = [];
-  let leidas = 0;
-  let rechazadas = 0;
+  let read = 0;
+  let rejected = 0;
 
   for (let r = 1; r < matriz.length; r++) {
-    const fila = matriz[r] ?? [];
-    if (filaVacia(fila, ancho)) break;
-    leidas++;
-    const get = lectorDeFila(fila, dims);
+    const row = matriz[r] ?? [];
+    if (filaVacia(row, ancho)) break;
+    read++;
+    const get = lectorDeFila(row, dims);
 
-    const descripcion = toText(get("descripcion"));
-    const { marca, clasificada } = derivarMarca(descripcion);
-    if (!clasificada) sinMarca.registrar(descripcion);
+    const description = toText(get("description"));
+    const { brand, clasificada } = derivarMarca(description);
+    if (!clasificada) sinMarca.registrar(description);
 
     const base = {
-      codigoTienda: toCodigoTienda(get("codigoTienda")),
-      nombreTienda: toText(get("nombreTienda")),
+      storeCode: toCodigoTienda(get("storeCode")),
+      storeName: toText(get("storeName")),
       sku: toCode(get("sku")),
-      idCompuesto: toCode(get("idCompuesto")),
-      descripcion,
-      marca,
+      compositeId: toCode(get("compositeId")),
+      description,
+      brand,
       division: toText(get("division")),
-      numProveedor: toCode(get("numProveedor")),
-      proveedor: toText(get("proveedor")),
+      vendorCode: toCode(get("vendorCode")),
+      vendorName: toText(get("vendorName")),
     };
 
     const check = baseLargaSchema.safeParse(base);
     if (!check.success) {
-      rechazadas++;
+      rejected++;
       reg.agregar(`Fila rechazada: ${primerError(check.error)}`, r + 1);
       continue;
     }
     validarIdCompuesto(base, r + 1, reg);
 
-    for (const { col, fecha } of fechas) {
-      const valor = toNumber(fila[col]);
-      if (valor === null) continue; // ausente ≠ 0 (§7.5)
-      docs.push({ ...base, [campoFecha]: fecha, [campoValor]: valor });
+    for (const { col, date } of fechas) {
+      const value = toNumber(row[col]);
+      if (value === null) continue; // ausente ≠ 0 (§7.5)
+      docs.push({ ...base, [campoFecha]: date, [campoValor]: value });
     }
   }
 
   sinMarca.volcar(reg);
-  return { leidas, rechazadas, docs };
+  return { read, rejected, docs };
 }
 
 // ---------------------------------------------------------------------
@@ -363,21 +363,21 @@ function parseHojaLarga(
 
 const MAPA_CEDIS: Record<string, string> = {
   Artículo: "sku",
-  "Texto breve de artículo": "descripcion",
+  "Texto breve de artículo": "description",
   División: "division",
-  "Num Proveedor": "numProveedor",
-  Proveedor: "proveedor",
-  "Disponibilidad Real CD": "disponibilidadRealCD",
-  Tránsitos: "transitos",
-  Transitos: "transitos",
-  "SIN CITA": "sinCita",
-  "Caracteristica de plan": "caracteristicaPlan",
-  "Característica de plan": "caracteristicaPlan",
-  Mínimo: "minimo",
-  Minimo: "minimo",
-  Cobertura: "cobertura",
-  "Punto de Pedido": "puntoPedido",
-  "Stock Objetivo": "stockObjetivo",
+  "Num Proveedor": "vendorCode",
+  Proveedor: "vendorName",
+  "Disponibilidad Real CD": "realAvailabilityDC",
+  Tránsitos: "inTransit",
+  Transitos: "inTransit",
+  "SIN CITA": "withoutAppointment",
+  "Caracteristica de plan": "planCharacteristic",
+  "Característica de plan": "planCharacteristic",
+  Mínimo: "minimum",
+  Minimo: "minimum",
+  Cobertura: "coverage",
+  "Punto de Pedido": "reorderPoint",
+  "Stock Objetivo": "targetStock",
 };
 
 function parseCedis(matriz: Celda[][], reg: Registrador): CuerpoHoja {
@@ -385,53 +385,53 @@ function parseCedis(matriz: Celda[][], reg: Registrador): CuerpoHoja {
   const ancho = anchoTabla(encabezados);
   if (ancho === 0) {
     reg.agregar("La hoja no tiene encabezados en la fila 1");
-    return { leidas: 0, rechazadas: 0, docs: [] };
+    return { read: 0, rejected: 0, docs: [] };
   }
 
   const { dims, fechas } = clasificarColumnas(encabezados, ancho, MAPA_CEDIS, reg);
   const sinMarca = new MarcasSinClasificar();
   const docs: Record<string, unknown>[] = [];
-  let leidas = 0;
-  let rechazadas = 0;
+  let read = 0;
+  let rejected = 0;
 
   for (let r = 1; r < matriz.length; r++) {
-    const fila = matriz[r] ?? [];
-    if (filaVacia(fila, ancho)) break;
-    leidas++;
-    const get = lectorDeFila(fila, dims);
+    const row = matriz[r] ?? [];
+    if (filaVacia(row, ancho)) break;
+    read++;
+    const get = lectorDeFila(row, dims);
 
-    const descripcion = toText(get("descripcion"));
-    const { marca, clasificada } = derivarMarca(descripcion);
-    if (!clasificada) sinMarca.registrar(descripcion);
+    const description = toText(get("description"));
+    const { brand, clasificada } = derivarMarca(description);
+    if (!clasificada) sinMarca.registrar(description);
 
-    const citas: Array<{ fecha: Date; cantidad: number }> = [];
-    for (const { col, fecha } of fechas) {
-      const cantidad = toNumber(fila[col]);
-      if (cantidad === null) continue;
-      citas.push({ fecha, cantidad });
+    const appointments: Array<{ date: Date; quantity: number }> = [];
+    for (const { col, date } of fechas) {
+      const quantity = toNumber(row[col]);
+      if (quantity === null) continue;
+      appointments.push({ date, quantity });
     }
 
     const doc = {
       sku: toCode(get("sku")),
-      descripcion,
-      marca,
+      description,
+      brand,
       division: toText(get("division")),
-      numProveedor: toCode(get("numProveedor")),
-      proveedor: toText(get("proveedor")),
-      disponibilidadRealCD: toNumber(get("disponibilidadRealCD")),
-      transitos: toNumber(get("transitos")),
-      sinCita: toNumber(get("sinCita")),
-      citas,
-      caracteristicaPlan: toText(get("caracteristicaPlan")), // "21" y "ND" → string
-      minimo: toNumber(get("minimo")),
-      cobertura: toNumber(get("cobertura")),
-      puntoPedido: toNumber(get("puntoPedido")),
-      stockObjetivo: toNumber(get("stockObjetivo")),
+      vendorCode: toCode(get("vendorCode")),
+      vendorName: toText(get("vendorName")),
+      realAvailabilityDC: toNumber(get("realAvailabilityDC")),
+      inTransit: toNumber(get("inTransit")),
+      withoutAppointment: toNumber(get("withoutAppointment")),
+      appointments,
+      planCharacteristic: toText(get("planCharacteristic")), // "21" y "ND" → string
+      minimum: toNumber(get("minimum")),
+      coverage: toNumber(get("coverage")),
+      reorderPoint: toNumber(get("reorderPoint")),
+      targetStock: toNumber(get("targetStock")),
     };
 
     const check = cedisRowSchema.safeParse(doc);
     if (!check.success) {
-      rechazadas++;
+      rejected++;
       reg.agregar(`Fila rechazada: ${primerError(check.error)}`, r + 1);
       continue;
     }
@@ -439,7 +439,7 @@ function parseCedis(matriz: Celda[][], reg: Registrador): CuerpoHoja {
   }
 
   sinMarca.volcar(reg);
-  return { leidas, rechazadas, docs };
+  return { read, rejected, docs };
 }
 
 // ---------------------------------------------------------------------
@@ -448,22 +448,22 @@ function parseCedis(matriz: Celda[][], reg: Registrador): CuerpoHoja {
 // ---------------------------------------------------------------------
 
 const MAPA_OC: Record<string, string> = {
-  "Documento compras": "documentoCompras",
-  Posición: "posicion",
-  Posicion: "posicion",
-  Proveedor: "numProveedor",
-  "Nombre de Proveedor": "nombreProveedor",
+  "Documento compras": "purchaseDoc",
+  Posición: "lineNumber",
+  Posicion: "lineNumber",
+  Proveedor: "vendorCode",
+  "Nombre de Proveedor": "vendorName",
   Artículo: "sku",
-  "Texto breve": "descripcion",
+  "Texto breve": "description",
   División: "division",
-  "Cantidad de reparto": "cantidadReparto",
-  "Unidad medida pedido": "unidadMedida",
-  "Cantidad entregada": "cantidadEntregada",
+  "Cantidad de reparto": "allocatedQty",
+  "Unidad medida pedido": "uom",
+  "Cantidad entregada": "deliveredQty",
   "Fill Rate": "fillRate",
-  "Estatus de OC": "estatusOC",
-  Negociador: "negociador",
-  "Pedido en UMA": "pedidoEnUMA",
-  "CI Docto Compras": "ciDoctoCompras",
+  "Estatus de OC": "poStatus",
+  Negociador: "buyer",
+  "Pedido en UMA": "orderInUMA",
+  "CI Docto Compras": "purchaseDocRef",
   CPFR: "cpfr",
 };
 
@@ -472,56 +472,56 @@ function parseFillRate(matriz: Celda[][], reg: Registrador): CuerpoHoja {
   const ancho = anchoTabla(encabezados);
   if (ancho === 0) {
     reg.agregar("La hoja no tiene encabezados en la fila 1");
-    return { leidas: 0, rechazadas: 0, docs: [] };
+    return { read: 0, rejected: 0, docs: [] };
   }
 
   const { dims } = clasificarColumnas(encabezados, ancho, MAPA_OC, reg, {
     prefijos: [
-      { prefijo: "Fecha de entrega", campo: "fechaEntrega" },
-      { prefijo: "Fecha de pedido", campo: "fechaPedido" },
+      { prefijo: "Fecha de entrega", field: "deliveryDate" },
+      { prefijo: "Fecha de pedido", field: "orderDate" },
     ],
   });
 
   const sinMarca = new MarcasSinClasificar();
   const docs: Record<string, unknown>[] = [];
-  let leidas = 0;
-  let rechazadas = 0;
+  let read = 0;
+  let rejected = 0;
 
   for (let r = 1; r < matriz.length; r++) {
-    const fila = matriz[r] ?? [];
-    if (filaVacia(fila, ancho)) break;
-    leidas++;
-    const get = lectorDeFila(fila, dims);
+    const row = matriz[r] ?? [];
+    if (filaVacia(row, ancho)) break;
+    read++;
+    const get = lectorDeFila(row, dims);
 
-    const descripcion = toText(get("descripcion"));
-    const { marca, clasificada } = derivarMarca(descripcion);
-    if (!clasificada) sinMarca.registrar(descripcion);
+    const description = toText(get("description"));
+    const { brand, clasificada } = derivarMarca(description);
+    if (!clasificada) sinMarca.registrar(description);
 
     const doc = {
-      documentoCompras: toCode(get("documentoCompras")),
-      posicion: toNumber(get("posicion")),
-      numProveedor: toCode(get("numProveedor")),
-      nombreProveedor: toText(get("nombreProveedor")),
+      purchaseDoc: toCode(get("purchaseDoc")),
+      lineNumber: toNumber(get("lineNumber")),
+      vendorCode: toCode(get("vendorCode")),
+      vendorName: toText(get("vendorName")),
       sku: toCode(get("sku")),
-      descripcion,
-      marca,
+      description,
+      brand,
       division: toText(get("division")),
-      fechaPedido: parseCellDate(get("fechaPedido")),
-      cantidadReparto: toNumber(get("cantidadReparto")),
-      unidadMedida: toText(get("unidadMedida")),
-      cantidadEntregada: toNumber(get("cantidadEntregada")),
-      fechaEntrega: parseCellDate(get("fechaEntrega")),
+      orderDate: parseCellDate(get("orderDate")),
+      allocatedQty: toNumber(get("allocatedQty")),
+      uom: toText(get("uom")),
+      deliveredQty: toNumber(get("deliveredQty")),
+      deliveryDate: parseCellDate(get("deliveryDate")),
       fillRate: toNumber(get("fillRate")), // fracción: 1 = 100%
-      estatusOC: toText(get("estatusOC")),
-      negociador: toText(get("negociador")),
-      pedidoEnUMA: toNumber(get("pedidoEnUMA")),
-      ciDoctoCompras: toText(get("ciDoctoCompras")),
+      poStatus: toText(get("poStatus")),
+      buyer: toText(get("buyer")),
+      orderInUMA: toNumber(get("orderInUMA")),
+      purchaseDocRef: toText(get("purchaseDocRef")),
       cpfr: toText(get("cpfr")),
     };
 
     const check = lineaOcRowSchema.safeParse(doc);
     if (!check.success) {
-      rechazadas++;
+      rejected++;
       reg.agregar(`Fila rechazada: ${primerError(check.error)}`, r + 1);
       continue;
     }
@@ -529,7 +529,7 @@ function parseFillRate(matriz: Celda[][], reg: Registrador): CuerpoHoja {
   }
 
   sinMarca.volcar(reg);
-  return { leidas, rechazadas, docs };
+  return { read, rejected, docs };
 }
 
 // ---------------------------------------------------------------------
@@ -538,28 +538,28 @@ function parseFillRate(matriz: Celda[][], reg: Registrador): CuerpoHoja {
 // ---------------------------------------------------------------------
 
 const MAPA_FARMA: Record<string, string> = {
-  ID: "idCompuesto",
-  "Ce.": "codigoTienda",
-  "Nombre de Farmacia": "nombreTienda",
+  ID: "compositeId",
+  "Ce.": "storeCode",
+  "Nombre de Farmacia": "storeName",
   Artículo: "sku",
-  "Texto breve de artículo": "descripcion",
+  "Texto breve de artículo": "description",
   División: "division",
-  Proveedor: "numProveedor",
-  "Nombre proveedor": "nombreProveedor",
-  "Tipo de Artículo": "tipoArticulo",
+  Proveedor: "vendorCode",
+  "Nombre vendorName": "vendorName",
+  "Tipo de Artículo": "itemType",
   ABC: "abc",
   SM: "sm",
   CaP: "cap",
-  "Stock seg.mín.": "stockSegMin",
-  CobertObjMín: "cobertObjMin",
-  "Stock objetivo": "stockObjetivo",
-  "Punto pedido": "puntoPedido",
-  "Stock dinámico": "stockDinamico",
-  "Stock máximo": "stockMaximo",
-  "Libre utiliz.": "libreUtilizacion",
-  "Tránsito Farma": "transitoFarma",
+  "Stock seg.mín.": "minSafetyStock",
+  CobertObjMín: "minTargetCoverage",
+  "Stock objetivo": "targetStock",
+  "Punto pedido": "reorderPoint",
+  "Stock dinámico": "dynamicStock",
+  "Stock máximo": "maxStock",
+  "Libre utiliz.": "unrestrictedStock",
+  "Tránsito Farma": "pharmacyInTransit",
   "Selling Class": "sellingClass",
-  "Nivel de inventario": "nivelInventario",
+  "Nivel de inventario": "inventoryLevel",
 };
 
 function parseInvFarma(matriz: Celda[][], reg: Registrador): CuerpoHoja {
@@ -567,54 +567,54 @@ function parseInvFarma(matriz: Celda[][], reg: Registrador): CuerpoHoja {
   const ancho = anchoTabla(encabezados);
   if (ancho === 0) {
     reg.agregar("La hoja no tiene encabezados en la fila 1");
-    return { leidas: 0, rechazadas: 0, docs: [] };
+    return { read: 0, rejected: 0, docs: [] };
   }
 
   const { dims } = clasificarColumnas(encabezados, ancho, MAPA_FARMA, reg);
   const sinMarca = new MarcasSinClasificar();
   const docs: Record<string, unknown>[] = [];
-  let leidas = 0;
-  let rechazadas = 0;
+  let read = 0;
+  let rejected = 0;
 
   for (let r = 1; r < matriz.length; r++) {
-    const fila = matriz[r] ?? [];
-    if (filaVacia(fila, ancho)) break;
-    leidas++;
-    const get = lectorDeFila(fila, dims);
+    const row = matriz[r] ?? [];
+    if (filaVacia(row, ancho)) break;
+    read++;
+    const get = lectorDeFila(row, dims);
 
-    const descripcion = toText(get("descripcion"));
-    const { marca, clasificada } = derivarMarca(descripcion);
-    if (!clasificada) sinMarca.registrar(descripcion);
+    const description = toText(get("description"));
+    const { brand, clasificada } = derivarMarca(description);
+    if (!clasificada) sinMarca.registrar(description);
 
     const doc = {
-      idCompuesto: toCode(get("idCompuesto")),
-      codigoTienda: toCodigoTienda(get("codigoTienda")),
-      nombreTienda: toText(get("nombreTienda")),
+      compositeId: toCode(get("compositeId")),
+      storeCode: toCodigoTienda(get("storeCode")),
+      storeName: toText(get("storeName")),
       sku: toCode(get("sku")),
-      descripcion,
-      marca,
+      description,
+      brand,
       division: toText(get("division")),
-      numProveedor: toCode(get("numProveedor")),
-      nombreProveedor: toText(get("nombreProveedor")),
-      tipoArticulo: toText(get("tipoArticulo")),
+      vendorCode: toCode(get("vendorCode")),
+      vendorName: toText(get("vendorName")),
+      itemType: toText(get("itemType")),
       abc: toText(get("abc")),
       sm: toText(get("sm")),
       cap: toText(get("cap")),
-      stockSegMin: toNumber(get("stockSegMin")),
-      cobertObjMin: toNumber(get("cobertObjMin")),
-      stockObjetivo: toNumber(get("stockObjetivo")),
-      puntoPedido: toNumber(get("puntoPedido")),
-      stockDinamico: toNumber(get("stockDinamico")),
-      stockMaximo: toNumber(get("stockMaximo")),
-      libreUtilizacion: toNumber(get("libreUtilizacion")),
-      transitoFarma: toNumber(get("transitoFarma")),
+      minSafetyStock: toNumber(get("minSafetyStock")),
+      minTargetCoverage: toNumber(get("minTargetCoverage")),
+      targetStock: toNumber(get("targetStock")),
+      reorderPoint: toNumber(get("reorderPoint")),
+      dynamicStock: toNumber(get("dynamicStock")),
+      maxStock: toNumber(get("maxStock")),
+      unrestrictedStock: toNumber(get("unrestrictedStock")),
+      pharmacyInTransit: toNumber(get("pharmacyInTransit")),
       sellingClass: toNumber(get("sellingClass")),
-      nivelInventario: toNumber(get("nivelInventario")),
+      inventoryLevel: toNumber(get("inventoryLevel")),
     };
 
     const check = farmaciaRowSchema.safeParse(doc);
     if (!check.success) {
-      rechazadas++;
+      rejected++;
       reg.agregar(`Fila rechazada: ${primerError(check.error)}`, r + 1);
       continue;
     }
@@ -623,7 +623,7 @@ function parseInvFarma(matriz: Celda[][], reg: Registrador): CuerpoHoja {
   }
 
   sinMarca.volcar(reg);
-  return { leidas, rechazadas, docs };
+  return { read, rejected, docs };
 }
 
 // ---------------------------------------------------------------------
@@ -632,18 +632,18 @@ export function parseWorkbook(data: Buffer | Uint8Array): ResultadoParseo {
   const wb = XLSX.read(data, { dense: true, cellDates: true });
   const hojas: HojaParseada[] = [];
 
-  for (const nombre of wb.SheetNames) {
-    const reg = new Registrador(nombre);
-    const tipo = tipoDeHoja(nombre);
+  for (const name of wb.SheetNames) {
+    const reg = new Registrador(name);
+    const tipo = tipoDeHoja(name);
 
     if (!tipo) {
       // Hoja no reconocida: no falla la carga, se registra y se ignora (§7.2).
       reg.agregar("Hoja no mapeada, ignorada");
-      hojas.push({ nombre, tipo: null, leidas: 0, rechazadas: 0, incidencias: reg.incidencias, docs: [] });
+      hojas.push({ name, tipo: null, read: 0, rejected: 0, issues: reg.issues, docs: [] });
       continue;
     }
 
-    const matriz = leerMatriz(wb.Sheets[nombre]);
+    const matriz = leerMatriz(wb.Sheets[name]);
     let cuerpo: CuerpoHoja;
     switch (tipo) {
       case "cedis":
@@ -660,9 +660,9 @@ export function parseWorkbook(data: Buffer | Uint8Array): ResultadoParseo {
     }
 
     reg.cerrar();
-    hojas.push({ nombre, tipo, ...cuerpo, incidencias: reg.incidencias });
+    hojas.push({ name, tipo, ...cuerpo, issues: reg.issues });
     // Se procesa una hoja a la vez, liberando la anterior (§7).
-    delete wb.Sheets[nombre];
+    delete wb.Sheets[name];
   }
 
   return { hojas };

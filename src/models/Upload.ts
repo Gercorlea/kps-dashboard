@@ -1,18 +1,18 @@
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
-export type UploadStatus = "pendiente" | "procesando" | "procesado" | "error";
+export type UploadStatus = "pending" | "processing" | "processed" | "error";
 
 export interface IIncidencia {
-  hoja: string;
-  fila?: number;
-  campo?: string;
-  mensaje: string;
+  sheet: string;
+  row?: number;
+  field?: string;
+  message: string;
 }
 
 export interface IResumenHoja {
-  leidas: number;
-  insertadas: number;
-  rechazadas: number;
+  read: number;
+  inserted: number;
+  rejected: number;
 }
 
 // Una por archivo subido (§6.2).
@@ -22,13 +22,13 @@ export interface IUpload {
   fileHash: string | null; // sha256; único → evita doble carga (se calcula al procesar)
   r2Key: string; // private/retail/<uploadId>/<filename>
   sizeBytes: number;
-  cuenta: string; // "san-pablo" (v1). Preparado para "walmart"
-  fechaCorte: Date; // derivada del nombre; editable antes de procesar
+  account: string; // "san-pablo" (v1). Preparado para "walmart"
+  cutoffDate: Date; // derivada del nombre; editable antes de procesar
   status: UploadStatus;
-  hojasDetectadas: string[];
-  resumen: Record<string, IResumenHoja>;
-  incidencias: IIncidencia[];
-  subidoPor: Types.ObjectId;
+  detectedSheets: string[];
+  summary: Record<string, IResumenHoja>;
+  issues: IIncidencia[];
+  uploadedBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
   processedAt: Date | null;
@@ -40,30 +40,30 @@ const UploadSchema = new Schema<IUpload>(
     fileHash: { type: String, default: null },
     r2Key: { type: String, required: true },
     sizeBytes: { type: Number, required: true },
-    cuenta: { type: String, required: true, default: "san-pablo" },
-    fechaCorte: { type: Date, required: true },
+    account: { type: String, required: true, default: "san-pablo" },
+    cutoffDate: { type: Date, required: true },
     status: {
       type: String,
-      enum: ["pendiente", "procesando", "procesado", "error"],
-      default: "pendiente",
+      enum: ["pending", "processing", "processed", "error"],
+      default: "pending",
     },
-    hojasDetectadas: { type: [String], default: [] },
-    resumen: { type: Schema.Types.Mixed, default: {} },
-    incidencias: {
+    detectedSheets: { type: [String], default: [] },
+    summary: { type: Schema.Types.Mixed, default: {} },
+    issues: {
       type: [
         new Schema<IIncidencia>(
           {
-            hoja: { type: String, required: true },
-            fila: { type: Number },
-            campo: { type: String },
-            mensaje: { type: String, required: true },
+            sheet: { type: String, required: true },
+            row: { type: Number },
+            field: { type: String },
+            message: { type: String, required: true },
           },
           { _id: false }
         ),
       ],
       default: [],
     },
-    subidoPor: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    uploadedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     processedAt: { type: Date, default: null },
   },
   { timestamps: true }
@@ -71,7 +71,7 @@ const UploadSchema = new Schema<IUpload>(
 
 // sparse: fileHash es null hasta que la carga se procesa
 UploadSchema.index({ fileHash: 1 }, { unique: true, sparse: true });
-UploadSchema.index({ cuenta: 1, fechaCorte: -1 });
+UploadSchema.index({ account: 1, cutoffDate: -1 });
 UploadSchema.index({ status: 1 });
 
 export const Upload: Model<IUpload> =

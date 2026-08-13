@@ -6,7 +6,7 @@ import { api, ClientApiError } from "@/components/lib/api-client";
 import { fmtFecha, fmtNum, fmtPct } from "@/components/lib/fmt";
 import { Paginacion } from "@/components/dashboard/Paginacion";
 
-type TipoCol = "texto" | "num" | "fecha" | "pct";
+type TipoCol = "texto" | "num" | "date" | "pct";
 
 interface Columna {
   key: string;
@@ -20,80 +20,80 @@ interface Columna {
 const COLUMNAS: Record<string, Columna[]> = {
   VENTAS: [
     { key: "sku", etiqueta: "SKU", tipo: "texto", sticky: 1, ordenable: true },
-    { key: "descripcion", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
-    { key: "fecha", etiqueta: "Fecha", tipo: "fecha", ordenable: true },
-    { key: "codigoTienda", etiqueta: "Tienda", tipo: "texto", ordenable: true },
-    { key: "nombreTienda", etiqueta: "Farmacia", tipo: "texto" },
-    { key: "marca", etiqueta: "Marca", tipo: "texto", ordenable: true },
-    { key: "unidades", etiqueta: "Unidades", tipo: "num", ordenable: true },
+    { key: "description", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
+    { key: "date", etiqueta: "Fecha", tipo: "date", ordenable: true },
+    { key: "storeCode", etiqueta: "Tienda", tipo: "texto", ordenable: true },
+    { key: "storeName", etiqueta: "Farmacia", tipo: "texto" },
+    { key: "brand", etiqueta: "Marca", tipo: "texto", ordenable: true },
+    { key: "units", etiqueta: "Unidades", tipo: "num", ordenable: true },
   ],
   PRONOSTICOS: [
     { key: "sku", etiqueta: "SKU", tipo: "texto", sticky: 1, ordenable: true },
-    { key: "descripcion", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
-    { key: "semanaInicio", etiqueta: "Semana", tipo: "fecha", ordenable: true },
-    { key: "codigoTienda", etiqueta: "Tienda", tipo: "texto", ordenable: true },
-    { key: "marca", etiqueta: "Marca", tipo: "texto", ordenable: true },
-    { key: "valor", etiqueta: "Pronóstico", tipo: "num", ordenable: true },
+    { key: "description", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
+    { key: "weekStart", etiqueta: "Semana", tipo: "date", ordenable: true },
+    { key: "storeCode", etiqueta: "Tienda", tipo: "texto", ordenable: true },
+    { key: "brand", etiqueta: "Marca", tipo: "texto", ordenable: true },
+    { key: "value", etiqueta: "Pronóstico", tipo: "num", ordenable: true },
   ],
   FC_Mean: [
     { key: "sku", etiqueta: "SKU", tipo: "texto", sticky: 1, ordenable: true },
-    { key: "descripcion", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
-    { key: "fecha", etiqueta: "Fecha", tipo: "fecha", ordenable: true },
-    { key: "codigoTienda", etiqueta: "Tienda", tipo: "texto", ordenable: true },
-    { key: "marca", etiqueta: "Marca", tipo: "texto", ordenable: true },
-    { key: "valor", etiqueta: "Forecast", tipo: "num", ordenable: true },
+    { key: "description", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
+    { key: "date", etiqueta: "Fecha", tipo: "date", ordenable: true },
+    { key: "storeCode", etiqueta: "Tienda", tipo: "texto", ordenable: true },
+    { key: "brand", etiqueta: "Marca", tipo: "texto", ordenable: true },
+    { key: "value", etiqueta: "Forecast", tipo: "num", ordenable: true },
   ],
   CEDIS: [
     { key: "sku", etiqueta: "SKU", tipo: "texto", sticky: 1, ordenable: true },
-    { key: "descripcion", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
-    { key: "marca", etiqueta: "Marca", tipo: "texto", ordenable: true },
-    { key: "disponibilidadRealCD", etiqueta: "Disp. real CD", tipo: "num", ordenable: true },
-    { key: "transitos", etiqueta: "Tránsitos", tipo: "num" },
-    { key: "sinCita", etiqueta: "Sin cita", tipo: "num" },
-    { key: "caracteristicaPlan", etiqueta: "Plan", tipo: "texto" },
-    { key: "minimo", etiqueta: "Mínimo", tipo: "num" },
-    { key: "cobertura", etiqueta: "Cobertura", tipo: "num" },
-    { key: "puntoPedido", etiqueta: "Punto pedido", tipo: "num" },
-    { key: "stockObjetivo", etiqueta: "Stock objetivo", tipo: "num" },
+    { key: "description", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
+    { key: "brand", etiqueta: "Marca", tipo: "texto", ordenable: true },
+    { key: "realAvailabilityDC", etiqueta: "Disp. real CD", tipo: "num", ordenable: true },
+    { key: "inTransit", etiqueta: "Tránsitos", tipo: "num" },
+    { key: "withoutAppointment", etiqueta: "Sin cita", tipo: "num" },
+    { key: "planCharacteristic", etiqueta: "Plan", tipo: "texto" },
+    { key: "minimum", etiqueta: "Mínimo", tipo: "num" },
+    { key: "coverage", etiqueta: "Cobertura", tipo: "num" },
+    { key: "reorderPoint", etiqueta: "Punto pedido", tipo: "num" },
+    { key: "targetStock", etiqueta: "Stock objetivo", tipo: "num" },
   ],
   "Fill Rate": [
-    { key: "documentoCompras", etiqueta: "OC", tipo: "texto", sticky: 1, ordenable: true },
-    { key: "descripcion", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
+    { key: "purchaseDoc", etiqueta: "OC", tipo: "texto", sticky: 1, ordenable: true },
+    { key: "description", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
     { key: "sku", etiqueta: "SKU", tipo: "texto", ordenable: true },
-    { key: "marca", etiqueta: "Marca", tipo: "texto" },
-    { key: "fechaPedido", etiqueta: "Pedido", tipo: "fecha" },
-    { key: "fechaEntrega", etiqueta: "Entrega", tipo: "fecha" },
-    { key: "cantidadReparto", etiqueta: "Pedidas", tipo: "num" },
-    { key: "cantidadEntregada", etiqueta: "Entregadas", tipo: "num" },
+    { key: "brand", etiqueta: "Marca", tipo: "texto" },
+    { key: "orderDate", etiqueta: "Pedido", tipo: "date" },
+    { key: "deliveryDate", etiqueta: "Entrega", tipo: "date" },
+    { key: "allocatedQty", etiqueta: "Pedidas", tipo: "num" },
+    { key: "deliveredQty", etiqueta: "Entregadas", tipo: "num" },
     { key: "fillRate", etiqueta: "Fill rate", tipo: "pct", ordenable: true },
-    { key: "estatusOC", etiqueta: "Estatus", tipo: "texto", ordenable: true },
-    { key: "negociador", etiqueta: "Negociador", tipo: "texto", ordenable: true },
+    { key: "poStatus", etiqueta: "Estatus", tipo: "texto", ordenable: true },
+    { key: "buyer", etiqueta: "Negociador", tipo: "texto", ordenable: true },
   ],
   "Inv Farma": [
     { key: "sku", etiqueta: "SKU", tipo: "texto", sticky: 1, ordenable: true },
-    { key: "descripcion", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
-    { key: "codigoTienda", etiqueta: "Tienda", tipo: "texto", ordenable: true },
-    { key: "nombreTienda", etiqueta: "Farmacia", tipo: "texto" },
-    { key: "marca", etiqueta: "Marca", tipo: "texto" },
-    { key: "libreUtilizacion", etiqueta: "Libre util.", tipo: "num", ordenable: true },
-    { key: "transitoFarma", etiqueta: "Tránsito", tipo: "num" },
-    { key: "stockObjetivo", etiqueta: "Stock obj.", tipo: "num" },
-    { key: "puntoPedido", etiqueta: "Punto pedido", tipo: "num" },
-    { key: "nivelInventario", etiqueta: "Nivel inv.", tipo: "num", ordenable: true },
+    { key: "description", etiqueta: "Descripción", tipo: "texto", sticky: 2 },
+    { key: "storeCode", etiqueta: "Tienda", tipo: "texto", ordenable: true },
+    { key: "storeName", etiqueta: "Farmacia", tipo: "texto" },
+    { key: "brand", etiqueta: "Marca", tipo: "texto" },
+    { key: "unrestrictedStock", etiqueta: "Libre util.", tipo: "num", ordenable: true },
+    { key: "pharmacyInTransit", etiqueta: "Tránsito", tipo: "num" },
+    { key: "targetStock", etiqueta: "Stock obj.", tipo: "num" },
+    { key: "reorderPoint", etiqueta: "Punto pedido", tipo: "num" },
+    { key: "inventoryLevel", etiqueta: "Nivel inv.", tipo: "num", ordenable: true },
   ],
 };
 
-function celda(valor: unknown, tipo: TipoCol): string {
-  if (valor === null || valor === undefined || valor === "") return "—";
+function celda(value: unknown, tipo: TipoCol): string {
+  if (value === null || value === undefined || value === "") return "—";
   switch (tipo) {
     case "num":
-      return fmtNum(valor as number);
+      return fmtNum(value as number);
     case "pct":
-      return fmtPct(valor as number);
-    case "fecha":
-      return fmtFecha(String(valor));
+      return fmtPct(value as number);
+    case "date":
+      return fmtFecha(String(value));
     default:
-      return String(valor);
+      return String(value);
   }
 }
 
@@ -102,13 +102,13 @@ export function SheetTable({ uploadId, hojas }: { uploadId: string; hojas: strin
     () => hojas.filter((h) => COLUMNAS[h] !== undefined),
     [hojas]
   );
-  const [hoja, setHoja] = useState(disponibles[0] ?? "VENTAS");
+  const [sheet, setHoja] = useState(disponibles[0] ?? "VENTAS");
   const [filas, setFilas] = useState<Record<string, unknown>[]>([]);
   const [pagina, setPagina] = useState(1);
   const [paginas, setPaginas] = useState(1);
   const [total, setTotal] = useState(0);
   const [buscar, setBuscar] = useState("");
-  const [marca, setMarca] = useState("");
+  const [brand, setMarca] = useState("");
   const [tienda, setTienda] = useState("");
   const [marcas, setMarcas] = useState<string[]>([]);
   const [tiendas, setTiendas] = useState<string[]>([]);
@@ -117,15 +117,15 @@ export function SheetTable({ uploadId, hojas }: { uploadId: string; hojas: strin
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const columnas = COLUMNAS[hoja] ?? [];
+  const columnas = COLUMNAS[sheet] ?? [];
 
   const cargar = useCallback(async () => {
     setCargando(true);
     setError(null);
     try {
-      const q = new URLSearchParams({ hoja, page: String(pagina), dir });
+      const q = new URLSearchParams({ sheet, page: String(pagina), dir });
       if (buscar) q.set("buscar", buscar);
-      if (marca) q.set("marca", marca);
+      if (brand) q.set("brand", brand);
       if (tienda) q.set("tienda", tienda);
       if (orden) q.set("orden", orden);
       const r = await api<{
@@ -145,7 +145,7 @@ export function SheetTable({ uploadId, hojas }: { uploadId: string; hojas: strin
     } finally {
       setCargando(false);
     }
-  }, [uploadId, hoja, pagina, buscar, marca, tienda, orden, dir]);
+  }, [uploadId, sheet, pagina, buscar, brand, tienda, orden, dir]);
 
   useEffect(() => {
     // fetch-on-mount: el flag de carga se activa al iniciar la petición
@@ -182,8 +182,8 @@ export function SheetTable({ uploadId, hojas }: { uploadId: string; hojas: strin
             key={h}
             type="button"
             role="tab"
-            aria-selected={h === hoja}
-            className={`cr-segment__item${h === hoja ? " cr-segment__item--active" : ""}`}
+            aria-selected={h === sheet}
+            className={`cr-segment__item${h === sheet ? " cr-segment__item--active" : ""}`}
             onClick={() => cambiarHoja(h)}
           >
             {h}
@@ -204,7 +204,7 @@ export function SheetTable({ uploadId, hojas }: { uploadId: string; hojas: strin
         {marcas.length > 0 ? (
           <select
             className="cr-input w-auto"
-            value={marca}
+            value={brand}
             onChange={(e) => {
               setMarca(e.target.value);
               setPagina(1);
@@ -297,8 +297,8 @@ export function SheetTable({ uploadId, hojas }: { uploadId: string; hojas: strin
                         key={c.key}
                         className={[
                           c.tipo === "num" || c.tipo === "pct" ? "num" : "",
-                          c.tipo === "fecha" ? "cr-mono" : "",
-                          c.key === "sku" || c.key === "codigoTienda" || c.key === "documentoCompras"
+                          c.tipo === "date" ? "cr-mono" : "",
+                          c.key === "sku" || c.key === "storeCode" || c.key === "purchaseDoc"
                             ? "cr-mono"
                             : "",
                           c.sticky === 1 ? "cr-sticky" : c.sticky === 2 ? "cr-sticky-2" : "",

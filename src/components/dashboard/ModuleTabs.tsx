@@ -10,7 +10,7 @@ export function ModuleTabs({ usuario }: { usuario: RbacUser }) {
   const pathname = usePathname();
   const tabs = [
     { href: "/retail", etiqueta: "Retail", visible: canAccess(usuario, "retail") },
-    { href: "/cronos-ia", etiqueta: "Cronos IA", visible: canAccess(usuario, "cronos-ia") },
+    { href: "/cronos-ia", etiqueta: "KPS AI", visible: canAccess(usuario, "cronos-ia") },
   ].filter((t) => t.visible);
 
   if (tabs.length === 0) return null;

@@ -12,12 +12,12 @@ import { Paginacion } from "@/components/dashboard/Paginacion";
 interface Carga {
   id: string;
   filename: string;
-  cuenta: string;
-  fechaCorte: string;
+  account: string;
+  cutoffDate: string;
   status: string;
   filas: number;
-  incidencias: number;
-  subidoPor: string;
+  issues: number;
+  uploadedBy: string;
   createdAt: string;
 }
 
@@ -32,7 +32,7 @@ export function CargasTable({ esSuperadmin }: { esSuperadmin: boolean }) {
   const router = useRouter();
   const [cargas, setCargas] = useState<Carga[]>([]);
   const [buscar, setBuscar] = useState("");
-  const [cuenta, setCuenta] = useState("san-pablo");
+  const [account, setCuenta] = useState("san-pablo");
   const [pagina, setPagina] = useState(1);
   const [paginas, setPaginas] = useState(1);
   const [total, setTotal] = useState(0);
@@ -43,7 +43,7 @@ export function CargasTable({ esSuperadmin }: { esSuperadmin: boolean }) {
     setCargando(true);
     setError(null);
     try {
-      const q = new URLSearchParams({ page: String(pagina), cuenta });
+      const q = new URLSearchParams({ page: String(pagina), account });
       if (buscar) q.set("buscar", buscar);
       const r = await api<{ cargas: Carga[]; total: number; paginas: number }>(
         `/api/retail/uploads?${q.toString()}`
@@ -56,7 +56,7 @@ export function CargasTable({ esSuperadmin }: { esSuperadmin: boolean }) {
     } finally {
       setCargando(false);
     }
-  }, [pagina, cuenta, buscar]);
+  }, [pagina, account, buscar]);
 
   useEffect(() => {
     // fetch-on-mount: el flag de carga se activa al iniciar la petición
@@ -101,7 +101,7 @@ export function CargasTable({ esSuperadmin }: { esSuperadmin: boolean }) {
         />
         <select
           className="cr-input w-auto"
-          value={cuenta}
+          value={account}
           onChange={(e) => setCuenta(e.target.value)}
           aria-label="Cuenta"
         >
@@ -158,13 +158,13 @@ export function CargasTable({ esSuperadmin }: { esSuperadmin: boolean }) {
                         </Link>
                       </span>
                     </td>
-                    <td className="cr-mono">{c.fechaCorte}</td>
+                    <td className="cr-mono">{c.cutoffDate}</td>
                     <td>
                       <Badge tono={TONO[c.status] ?? "neutro"}>{c.status}</Badge>
                     </td>
                     <td className="num">{fmtNum(c.filas)}</td>
-                    <td className="num">{c.incidencias > 0 ? fmtNum(c.incidencias) : "—"}</td>
-                    <td>{c.subidoPor}</td>
+                    <td className="num">{c.issues > 0 ? fmtNum(c.issues) : "—"}</td>
+                    <td>{c.uploadedBy}</td>
                     <td className="cr-mono">{fmtFechaHora(c.createdAt)}</td>
                     <td>
                       <span className="flex gap-1">

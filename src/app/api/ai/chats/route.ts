@@ -16,7 +16,7 @@ export async function GET() {
     return ok({
       chats: chats.map((c) => ({
         id: String(c._id),
-        titulo: c.titulo,
+        title: c.title,
         updatedAt: new Date(c.updatedAt).toISOString(),
       })),
     });
@@ -32,9 +32,9 @@ export async function POST(request: NextRequest) {
     await connectDB();
     const chat = await Chat.create({
       userId: session.id,
-      titulo: body.titulo?.trim() || "Nueva conversación",
+      title: body.title?.trim() || "Nueva conversación",
     });
-    return ok({ id: String(chat._id), titulo: chat.titulo });
+    return ok({ id: String(chat._id), title: chat.title });
   } catch (e) {
     return handleApiError(e);
   }

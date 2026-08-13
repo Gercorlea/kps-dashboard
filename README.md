@@ -3,14 +3,14 @@
 Dashboard **enterprise** para el histórico comercial de retail: ingesta de los
 Excel semanales de la comercializadora a **MongoDB** (formato largo), tablas
 densas por hoja, **Scorecard generado** de la cuenta San Pablo, serie
-histórica multi-corte y **Cronos IA**, un chat independiente vía Vercel AI
+histórica multi-corte y **KPS AI**, un chat independiente vía Vercel AI
 Gateway. Sin sitio público y sin pagos. (El repo también contiene la
 integración SAP Service Layer del equipo en `/api/sap`.)
 
 | Pestaña | Ruta | Qué hace |
 |---|---|---|
 | **Retail** | `/retail` | subir/procesar los Excel, histórico y scorecard |
-| **Cronos IA** | `/cronos-ia` | chat con LLM (módulo independiente, sin datos de Retail) |
+| **KPS AI** | `/cronos-ia` | chat con LLM (módulo independiente, sin datos de Retail) |
 | Admin | `/admin` | usuarios, permisos por módulo y estadísticas |
 
 ## Documentación
@@ -112,7 +112,7 @@ admin).
 **Verificar:** en `/recuperar` pide un enlace para un usuario real y confirma
 que llega y restablece.
 
-### 4. Vercel AI Gateway (Cronos IA)
+### 4. Vercel AI Gateway (KPS AI)
 
 **Qué es:** la puerta única a modelos para el chat. La app **no** instala SDKs
 de proveedores: `lib/ai.ts` llama `anthropic/claude-sonnet-4.6` con

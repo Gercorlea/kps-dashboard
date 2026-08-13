@@ -35,18 +35,18 @@ export default async function DetalleCargaPage({
   const carga = await Upload.findById(uploadId).lean();
   if (!carga) notFound();
 
-  const resumen = (carga.resumen ?? {}) as Record<string, IResumenHoja>;
-  const totalInsertadas = Object.values(resumen).reduce((t, r) => t + (r?.insertadas ?? 0), 0);
-  const totalLeidas = Object.values(resumen).reduce((t, r) => t + (r?.leidas ?? 0), 0);
-  const totalRechazadas = Object.values(resumen).reduce((t, r) => t + (r?.rechazadas ?? 0), 0);
-  const incidencias = carga.incidencias ?? [];
-  const marcasSinClasificar = incidencias.filter((i) => i.campo === "marca");
+  const summary = (carga.summary ?? {}) as Record<string, IResumenHoja>;
+  const totalInsertadas = Object.values(summary).reduce((t, r) => t + (r?.inserted ?? 0), 0);
+  const totalLeidas = Object.values(summary).reduce((t, r) => t + (r?.read ?? 0), 0);
+  const totalRechazadas = Object.values(summary).reduce((t, r) => t + (r?.rejected ?? 0), 0);
+  const issues = carga.issues ?? [];
+  const marcasSinClasificar = issues.filter((i) => i.field === "brand");
 
   return (
     <>
       <PageHeader
-        titulo={carga.filename}
-        descripcion={`Corte ${fechaISO(new Date(carga.fechaCorte))} · cuenta San Pablo`}
+        title={carga.filename}
+        description={`Corte ${fechaISO(new Date(carga.cutoffDate))} · account San Pablo`}
         acciones={
           <>
             <Badge tono={TONO_STATUS[carga.status] ?? "neutro"}>{carga.status}</Badge>
@@ -61,13 +61,13 @@ export default async function DetalleCargaPage({
           <Kpi label="Filas leídas" value={fmtNum(totalLeidas)} />
           <Kpi label="Documentos insertados" value={fmtNum(totalInsertadas)} />
           <Kpi
-            label="Filas rechazadas"
+            label="Filas rejected"
             value={fmtNum(totalRechazadas)}
             alerta={totalRechazadas > 0}
           />
           <Kpi
             label="Incidencias"
-            value={fmtNum(incidencias.length)}
+            value={fmtNum(issues.length)}
             alerta={marcasSinClasificar.length > 0}
             detalle={
               marcasSinClasificar.length > 0 ? (
@@ -77,28 +77,28 @@ export default async function DetalleCargaPage({
           />
         </div>
 
-        {incidencias.length > 0 ? (
-          <Panel titulo="Incidencias de la carga">
+        {issues.length > 0 ? (
+          <Panel title="Incidencias de la carga">
             <ul className="cr-small flex list-inside list-disc flex-col gap-1">
-              {incidencias.slice(0, 30).map((i, idx) => (
+              {issues.slice(0, 30).map((i, idx) => (
                 <li key={idx}>
-                  <span className="cr-mono">[{i.hoja}
-                  {i.fila ? ` · fila ${i.fila}` : ""}]</span> {i.mensaje}
+                  <span className="cr-mono">[{i.sheet}
+                  {i.row ? ` · row ${i.row}` : ""}]</span> {i.message}
                 </li>
               ))}
-              {incidencias.length > 30 ? (
-                <li>…y {incidencias.length - 30} más.</li>
+              {issues.length > 30 ? (
+                <li>…y {issues.length - 30} más.</li>
               ) : null}
             </ul>
           </Panel>
         ) : null}
 
-        {carga.status === "procesado" ? (
-          <SheetTable uploadId={uploadId} hojas={carga.hojasDetectadas ?? []} />
+        {carga.status === "processed" ? (
+          <SheetTable uploadId={uploadId} hojas={carga.detectedSheets ?? []} />
         ) : (
           <Panel>
             <p className="cr-body py-6 text-center">
-              La carga aún no está procesada. Las tablas por hoja aparecerán al terminar.
+              La carga aún no está procesada. Las tablas por sheet aparecerán al terminar.
             </p>
           </Panel>
         )}

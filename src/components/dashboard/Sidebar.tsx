@@ -19,7 +19,7 @@ import { canAccess, type ModuleId } from "@/lib/rbac";
 
 export interface UsuarioUI {
   id: string;
-  nombre: string;
+  name: string;
   role: "superadmin" | "user";
   modules: string[];
 }
@@ -44,7 +44,7 @@ const ITEMS: { seccion: string; items: Item[] }[] = [
     items: [
       { href: "/retail", etiqueta: "Retail", icono: <Table2 strokeWidth={1.75} />, modulo: "retail" },
       { href: "/retail/historico", etiqueta: "Histórico", icono: <History strokeWidth={1.75} />, modulo: "retail" },
-      { href: "/cronos-ia", etiqueta: "Cronos IA", icono: <Sparkles strokeWidth={1.75} />, modulo: "cronos-ia", ai: true },
+      { href: "/cronos-ia", etiqueta: "KPS AI", icono: <Sparkles strokeWidth={1.75} />, modulo: "cronos-ia", ai: true },
     ],
   },
   {
@@ -117,7 +117,7 @@ export function Sidebar({ usuario }: { usuario: UsuarioUI }) {
         ))}
       </nav>
       <div className="border-t p-3" style={{ borderColor: "var(--cr-line-soft)" }}>
-        <div className="cr-small px-2 pb-2 truncate">{usuario.nombre}</div>
+        <div className="cr-small px-2 pb-2 truncate">{usuario.name}</div>
         <button type="button" className="cr-navlink w-full" onClick={cerrarSesion}>
           <LogOut strokeWidth={1.75} />
           Cerrar sesión

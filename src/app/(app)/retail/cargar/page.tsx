@@ -13,8 +13,8 @@ export default async function CargarPage() {
   return (
     <>
       <PageHeader
-        titulo="Nueva carga"
-        descripcion="Sube el Excel semanal de la comercializadora, confirma la fecha de corte y procesa"
+        title="Nueva carga"
+        description="Sube el Excel semanal de la comercializadora, confirma la fecha de corte y procesa"
       />
       <div className="cr-page-content">
         <Uploader />

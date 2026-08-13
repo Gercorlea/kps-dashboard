@@ -7,6 +7,6 @@ Los 5 assets de marca (`public/Arcanum*.png`) son archivos existentes de la
 marca **Arcanum**: **no se generan con IA**, se dan por hechos y no se
 sustituyen (ver `DESIGN.md`).
 
-El único uso de IA en el producto es el chat de **Cronos IA** (texto,
+El único uso de IA en el producto es el chat de **KPS AI** (texto,
 streaming), configurado en `src/lib/ai.ts` vía Vercel AI Gateway; su system
 prompt vive en ese archivo y se versiona con el código.

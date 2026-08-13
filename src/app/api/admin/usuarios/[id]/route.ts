@@ -31,7 +31,7 @@ export async function PATCH(
       throw new ApiError(422, "VALIDACION", "No se puede desactivar a un superadmin");
     }
 
-    if (body.nombre !== undefined) user.nombre = body.nombre;
+    if (body.name !== undefined) user.name = body.name;
     if (body.modules !== undefined && user.role !== "superadmin") user.modules = body.modules;
     if (body.active !== undefined) user.active = body.active;
     await user.save();
@@ -58,7 +58,7 @@ export async function POST(
 
     if (body.accion === "revocar-sesiones") {
       await revocarSesionesDeUsuario(user._id);
-      return ok({ mensaje: "Sesiones revocadas" });
+      return ok({ message: "Sesiones revocadas" });
     }
 
     // reset-password
@@ -68,7 +68,7 @@ export async function POST(
     await user.save();
     const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
     await sendPasswordResetEmail(user.email, `${base}/restablecer/${token}`);
-    return ok({ mensaje: `Correo de restablecimiento enviado a ${user.email}` });
+    return ok({ message: `Correo de restablecimiento enviado a ${user.email}` });
   } catch (e) {
     return handleApiError(e);
   }

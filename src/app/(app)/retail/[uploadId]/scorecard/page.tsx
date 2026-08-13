@@ -50,7 +50,7 @@ function TablaBloque({ bloque }: { bloque: BloqueScorecard }) {
                   <td>
                     {f.fillRate !== null ? (
                       <Meter
-                        valor={f.fillRate}
+                        value={f.fillRate}
                         tono={f.fillRate >= 0.95 ? "ok" : f.fillRate >= 0.8 ? "warn" : "danger"}
                       />
                     ) : null}
@@ -118,37 +118,37 @@ export default async function ScorecardPage({
   const carga = await Upload.findById(uploadId).lean();
   if (!carga) notFound();
 
-  const scorecard = await generarScorecard(carga.cuenta, fechaISO(new Date(carga.fechaCorte)));
+  const scorecard = await generarScorecard(carga.account, fechaISO(new Date(carga.cutoffDate)));
 
   return (
     <>
       <PageHeader
-        titulo={`Scorecard — ${scorecard.cuentaNombre}`}
-        descripcion={`Generado desde el histórico persistido, hasta el corte ${scorecard.ultimoCorte ?? "—"}`}
+        title={`Scorecard — ${scorecard.cuentaNombre}`}
+        description={`Generado desde el histórico persistido, hasta el corte ${scorecard.ultimoCorte ?? "—"}`}
       />
       <div className="cr-page-content flex max-w-5xl flex-col gap-6">
-        <Panel titulo="Cobertura de datos">
+        <Panel title="Cobertura de datos">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <div className="cr-field">
               <span className="cr-label">Rango cargado</span>
               <span className="cr-mono">
-                {scorecard.cobertura.desde ?? "—"} → {scorecard.cobertura.hasta ?? "—"}
+                {scorecard.coverage.desde ?? "—"} → {scorecard.coverage.hasta ?? "—"}
               </span>
             </div>
             <div className="cr-field">
               <span className="cr-label">Cortes</span>
-              <span className="cr-mono">{fmtNum(scorecard.cobertura.cortes.length)}</span>
+              <span className="cr-mono">{fmtNum(scorecard.coverage.cortes.length)}</span>
             </div>
             <div className="cr-field">
               <span className="cr-label">Meses completos</span>
               <span className="cr-body">
-                {scorecard.cobertura.mesesCompletos.join(", ") || "—"}
+                {scorecard.coverage.mesesCompletos.join(", ") || "—"}
               </span>
             </div>
             <div className="cr-field">
               <span className="cr-label">Meses parciales</span>
               <span className="cr-body">
-                {scorecard.cobertura.mesesParciales.join(", ") || "—"}
+                {scorecard.coverage.mesesParciales.join(", ") || "—"}
               </span>
             </div>
           </div>
@@ -157,7 +157,7 @@ export default async function ScorecardPage({
         {scorecard.bloques.length === 0 ? (
           <Panel>
             <p className="cr-body py-8 text-center">
-              Aún no hay cargas procesadas para esta cuenta: el scorecard se genera del
+              Aún no hay cargas procesadas para esta account: el scorecard se genera del
               histórico en MongoDB.
             </p>
           </Panel>
@@ -165,9 +165,9 @@ export default async function ScorecardPage({
           scorecard.bloques.map((b) => (
             <Panel
               key={b.id}
-              titulo={
+              title={
                 <span className="flex items-center gap-2">
-                  {b.titulo}
+                  {b.title}
                   {b.sinHistorico ? <Badge tono="warn">Sin histórico comparable</Badge> : null}
                 </span>
               }

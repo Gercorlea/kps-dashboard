@@ -16,7 +16,7 @@ este documento.**
    `#FAFAF9` / `#F4F4F1`; canvas exterior `#D9D9D5`.
 3. **Tinta `#15171C` como acción principal**: botones primarios, tabs activos,
    barras. Nada de azul corporativo.
-4. **Morado `#5B3DF5` SOLO para Cronos IA** (link del sidebar, botones AI,
+4. **Morado `#5B3DF5` SOLO para KPS AI** (link del sidebar, botones AI,
    badges AI, mensajes del assistant). Retail, Admin y Dashboard no lo usan.
 5. **Datos primero**: tablas anchas, números en mono con `tabular-nums`
    alineados a la derecha, headers de tabla y labels en **mono uppercase
@@ -35,7 +35,7 @@ este documento.**
 ## Componentes
 
 Clases `.cr-*` en `design-system.css`: `cr-btn` (primary/secondary/ai/ghost/sm),
-`cr-input`, `cr-segment` (las pestañas Retail | Cronos IA), `cr-panel`/`cr-card`,
+`cr-input`, `cr-segment` (las pestañas Retail | KPS AI), `cr-panel`/`cr-card`,
 `cr-kpi` (línea superior de 2px; roja si alerta), `cr-badge` (ok/warn/danger/ai),
 `cr-table` (+ `.num`, columnas sticky de SKU/descripción en desktop),
 `cr-meter`, shell (`cr-sidebar`, `cr-navlink`, `cr-page-head`,
@@ -76,7 +76,7 @@ Lucide React, stroke 1.5–1.75. Solo navegación, acciones y estados. Tamaños:
 | Atención | `#B9791C` | en proceso, marcas sin clasificar, MOH alto |
 | Error | `#CF4733` | carga fallida, filas rechazadas, MOH > umbral |
 | Primario | `#15171C` | tabs, botones, barras |
-| IA | `#5B3DF5` | exclusivo Cronos IA |
+| IA | `#5B3DF5` | exclusivo KPS AI |
 
 ## Responsive
 
@@ -88,6 +88,6 @@ Lucide React, stroke 1.5–1.75. Solo navegación, acciones y estados. Tamaños:
 ## Anti-patrones (si aparece alguno, está mal)
 
 `border-radius` 8/12/16px en cards o botones · gradientes/glass/neumorphism ·
-azul `#3B82F6` primario · morado fuera de Cronos IA · `shadow-xl` ·
+azul `#3B82F6` primario · morado fuera de KPS AI · `shadow-xl` ·
 Inter/Roboto o datos sin mono · dark mode por defecto · espaciado de landing ·
 headers de tabla en sans normal · emojis o iconos genéricos como marca.

@@ -31,11 +31,12 @@ export async function GET(
       .limit(200)
       .lean();
     return ok({
-      chat: { id: String(chat._id), titulo: chat.titulo },
+      chat: { id: String(chat._id), title: chat.title },
       mensajes: mensajes.map((m) => ({
         id: String(m._id),
-        rol: m.rol,
-        contenido: m.contenido,
+        role: m.role,
+        content: m.content,
+        tools: m.tools,
         createdAt: new Date(m.createdAt).toISOString(),
       })),
     });

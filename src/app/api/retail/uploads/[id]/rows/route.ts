@@ -24,31 +24,31 @@ const MODELO_POR_HOJA: Record<Hoja, Model<any>> = {
 
 // Ordenamiento permitido por hoja (se ignora cualquier otro campo).
 const ORDEN_PERMITIDO = new Set([
-  "fecha",
-  "semanaInicio",
+  "date",
+  "weekStart",
   "sku",
-  "codigoTienda",
-  "nombreTienda",
-  "marca",
-  "unidades",
-  "valor",
-  "descripcion",
+  "storeCode",
+  "storeName",
+  "brand",
+  "units",
+  "value",
+  "description",
   "fillRate",
-  "negociador",
-  "estatusOC",
-  "documentoCompras",
-  "libreUtilizacion",
-  "nivelInventario",
-  "disponibilidadRealCD",
+  "buyer",
+  "poStatus",
+  "purchaseDoc",
+  "unrestrictedStock",
+  "inventoryLevel",
+  "realAvailabilityDC",
 ]);
 
 const ORDEN_DEFECTO: Record<Hoja, string> = {
   CEDIS: "sku",
-  VENTAS: "fecha",
-  PRONOSTICOS: "semanaInicio",
-  FC_Mean: "fecha",
-  "Fill Rate": "fechaPedido",
-  "Inv Farma": "codigoTienda",
+  VENTAS: "date",
+  PRONOSTICOS: "weekStart",
+  FC_Mean: "date",
+  "Fill Rate": "orderDate",
+  "Inv Farma": "storeCode",
 };
 
 function escapeRegex(s: string): string {
@@ -68,32 +68,32 @@ export async function GET(
     const q = parseQuery(request.url, rowsQuerySchema);
 
     await connectDB();
-    const modelo = MODELO_POR_HOJA[q.hoja];
+    const model = MODELO_POR_HOJA[q.sheet];
     const filtro: Record<string, unknown> = { uploadId: id };
-    if (q.tienda) filtro.codigoTienda = q.tienda;
-    if (q.marca) filtro.marca = q.marca;
+    if (q.tienda) filtro.storeCode = q.tienda;
+    if (q.brand) filtro.brand = q.brand;
     if (q.sku) filtro.sku = q.sku;
     if (q.buscar) {
       const rx = { $regex: escapeRegex(q.buscar), $options: "i" };
-      filtro.$or = [{ descripcion: rx }, { sku: rx }, { nombreTienda: rx }, { nombreProveedor: rx }];
+      filtro.$or = [{ description: rx }, { sku: rx }, { storeName: rx }, { vendorName: rx }];
     }
 
     const orden =
-      q.orden && ORDEN_PERMITIDO.has(q.orden) ? q.orden : ORDEN_DEFECTO[q.hoja];
-    const total = await modelo.countDocuments(filtro);
-    const filas = await modelo
+      q.orden && ORDEN_PERMITIDO.has(q.orden) ? q.orden : ORDEN_DEFECTO[q.sheet];
+    const total = await model.countDocuments(filtro);
+    const filas = await model
       .find(filtro)
       .sort({ [orden]: q.dir === "asc" ? 1 : -1, _id: 1 })
       .skip((q.page - 1) * q.limit)
       .limit(q.limit)
-      .select({ uploadId: 0, cuenta: 0 })
+      .select({ uploadId: 0, account: 0 })
       .lean();
 
     // Facetas para filtros (marcas y tiendas presentes en la carga)
-    const marcas = (await modelo.distinct("marca", { uploadId: id })) as string[];
+    const marcas = (await model.distinct("brand", { uploadId: id })) as string[];
     let tiendas: string[] = [];
-    if (q.hoja !== "CEDIS" && q.hoja !== "Fill Rate") {
-      tiendas = (await modelo.distinct("codigoTienda", { uploadId: id })) as string[];
+    if (q.sheet !== "CEDIS" && q.sheet !== "Fill Rate") {
+      tiendas = (await model.distinct("storeCode", { uploadId: id })) as string[];
     }
 
     return ok({

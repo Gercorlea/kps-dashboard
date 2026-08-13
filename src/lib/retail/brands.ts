@@ -17,30 +17,30 @@ export const norm = (s: string) =>
     .trim();
 
 // 2. Catálogo ORDENADO: patrones más largos/específicos primero
-export const MARCAS: Array<{ marca: string; patrones: string[] }> = [
-  { marca: "AL NATURAL",       patrones: ["AL NATURAL"] },
-  { marca: "BOTANICAL DOCTOR", patrones: ["BOTANICAL DOCTOR", "BOTANICAL"] },
-  { marca: "MULTIBLUE",        patrones: ["MULTIBLUE"] },
-  { marca: "MULTILYTE",        patrones: ["MULTILYTE"] },
-  { marca: "MULTISPORT",       patrones: ["MULTISPORT"] },
-  { marca: "BLOOM",            patrones: ["BLOOM"] },
-  { marca: "GOLI",             patrones: ["GOLI"] },     // GOLÍ cae aquí tras normalizar
-  { marca: "VALNAIT",          patrones: ["VALNAIT"] },  // cubre "VALNAIT-DES"
+export const MARCAS: Array<{ brand: string; patrones: string[] }> = [
+  { brand: "AL NATURAL",       patrones: ["AL NATURAL"] },
+  { brand: "BOTANICAL DOCTOR", patrones: ["BOTANICAL DOCTOR", "BOTANICAL"] },
+  { brand: "MULTIBLUE",        patrones: ["MULTIBLUE"] },
+  { brand: "MULTILYTE",        patrones: ["MULTILYTE"] },
+  { brand: "MULTISPORT",       patrones: ["MULTISPORT"] },
+  { brand: "BLOOM",            patrones: ["BLOOM"] },
+  { brand: "GOLI",             patrones: ["GOLI"] },     // GOLÍ cae aquí tras normalizar
+  { brand: "VALNAIT",          patrones: ["VALNAIT"] },  // cubre "VALNAIT-DES"
 ];
 
 // 3. Match por prefijo contra la descripción normalizada, en orden.
 // 4. Sin match → "SIN CLASIFICAR"; el llamador registra la incidencia para
 //    que las marcas nuevas sean visibles en la UI, no un cajón escondido.
-export function derivarMarca(descripcion: string): {
-  marca: string;
+export function derivarMarca(description: string): {
+  brand: string;
   clasificada: boolean;
 } {
-  const d = norm(descripcion ?? "");
-  if (!d) return { marca: MARCA_SIN_CLASIFICAR, clasificada: false };
-  for (const { marca, patrones } of MARCAS) {
+  const d = norm(description ?? "");
+  if (!d) return { brand: MARCA_SIN_CLASIFICAR, clasificada: false };
+  for (const { brand, patrones } of MARCAS) {
     for (const patron of patrones) {
-      if (d.startsWith(patron)) return { marca, clasificada: true };
+      if (d.startsWith(patron)) return { brand, clasificada: true };
     }
   }
-  return { marca: MARCA_SIN_CLASIFICAR, clasificada: false };
+  return { brand: MARCA_SIN_CLASIFICAR, clasificada: false };
 }

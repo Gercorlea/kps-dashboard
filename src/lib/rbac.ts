@@ -2,9 +2,9 @@
 // ruta y la pantalla de admin consumen esta única fuente de verdad.
 
 export const MODULES = [
-  { id: "retail", nombre: "Retail" },
-  { id: "cronos-ia", nombre: "Cronos IA" },
-  { id: "admin", nombre: "Administración" },
+  { id: "retail", name: "Retail" },
+  { id: "cronos-ia", name: "KPS AI" },
+  { id: "admin", name: "Administración" },
 ] as const;
 
 export type ModuleId = (typeof MODULES)[number]["id"];

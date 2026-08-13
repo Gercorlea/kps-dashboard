@@ -13,8 +13,8 @@ export default async function AdminEstadisticasPage() {
   return (
     <>
       <PageHeader
-        titulo="Estadísticas del sistema"
-        descripcion="Usuarios, cargas, volúmenes por colección y actividad de Cronos IA"
+        title="Estadísticas del sistema"
+        description="Usuarios, cargas, volúmenes por colección y actividad de KPS AI"
       />
       <div className="cr-page-content">
         <StatsAdmin />

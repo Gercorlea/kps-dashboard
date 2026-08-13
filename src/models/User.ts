@@ -4,7 +4,7 @@ export interface IUser {
   _id: Types.ObjectId;
   email: string;
   passwordHash: string;
-  nombre: string;
+  name: string;
   role: "superadmin" | "user";
   modules: string[]; // ["retail", "cronos-ia", "admin"]
   active: boolean;
@@ -18,7 +18,7 @@ const UserSchema = new Schema<IUser>(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
-    nombre: { type: String, required: true, trim: true },
+    name: { type: String, required: true, trim: true },
     role: { type: String, enum: ["superadmin", "user"], default: "user" },
     modules: { type: [String], default: [] },
     active: { type: Boolean, default: true },

@@ -5,44 +5,44 @@ import { Schema, model, models, type Model, type Types } from "mongoose";
 export interface IVentaDiaria {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
-  cuenta: string;
-  fechaCorte: Date;
-  fecha: Date;
-  codigoTienda: string; // "0141", nunca número
-  nombreTienda: string;
+  account: string;
+  cutoffDate: Date;
+  date: Date;
+  storeCode: string; // "0141", nunca número
+  storeName: string;
   sku: string;
-  idCompuesto: string; // codigoTienda + sku
-  descripcion: string;
-  marca: string; // derivada (lib/retail/brands.ts)
+  compositeId: string; // storeCode + sku
+  description: string;
+  brand: string; // derivada (lib/retail/brands.ts)
   division: string;
-  numProveedor: string;
-  proveedor: string;
-  unidades: number;
+  vendorCode: string;
+  vendorName: string;
+  units: number;
 }
 
 const VentaDiariaSchema = new Schema<IVentaDiaria>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
-    cuenta: { type: String, required: true },
-    fechaCorte: { type: Date, required: true },
-    fecha: { type: Date, required: true },
-    codigoTienda: { type: String, required: true },
-    nombreTienda: { type: String, default: "" },
+    account: { type: String, required: true },
+    cutoffDate: { type: Date, required: true },
+    date: { type: Date, required: true },
+    storeCode: { type: String, required: true },
+    storeName: { type: String, default: "" },
     sku: { type: String, required: true },
-    idCompuesto: { type: String, default: "" },
-    descripcion: { type: String, default: "" },
-    marca: { type: String, default: "SIN CLASIFICAR" },
+    compositeId: { type: String, default: "" },
+    description: { type: String, default: "" },
+    brand: { type: String, default: "SIN CLASIFICAR" },
     division: { type: String, default: "" },
-    numProveedor: { type: String, default: "" },
-    proveedor: { type: String, default: "" },
-    unidades: { type: Number, required: true },
+    vendorCode: { type: String, default: "" },
+    vendorName: { type: String, default: "" },
+    units: { type: Number, required: true },
   },
   { versionKey: false }
 );
 
-VentaDiariaSchema.index({ cuenta: 1, fecha: -1, sku: 1 });
+VentaDiariaSchema.index({ account: 1, date: -1, sku: 1 });
 VentaDiariaSchema.index({ uploadId: 1 });
-VentaDiariaSchema.index({ cuenta: 1, marca: 1, fecha: -1 });
+VentaDiariaSchema.index({ account: 1, brand: 1, date: -1 });
 
 export const VentaDiaria: Model<IVentaDiaria> =
   (models.VentaDiaria as Model<IVentaDiaria>) ??

@@ -1,10 +1,10 @@
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
-// Conversaciones de Cronos IA, scopeadas por usuario (§9.2).
+// Conversaciones de KPS AI, scopeadas por usuario (§9.2).
 export interface IChat {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
-  titulo: string;
+  title: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -12,7 +12,7 @@ export interface IChat {
 const ChatSchema = new Schema<IChat>(
   {
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    titulo: { type: String, required: true, trim: true },
+    title: { type: String, required: true, trim: true },
   },
   { timestamps: true }
 );

@@ -18,8 +18,8 @@ export default async function RetailPage() {
   return (
     <>
       <PageHeader
-        titulo="Retail"
-        descripcion="Cargas semanales de la comercializadora e histórico en MongoDB"
+        title="Retail"
+        description="Cargas semanales de la comercializadora e histórico en MongoDB"
         acciones={
           <Link href="/retail/cargar" className="cr-btn cr-btn--primary">
             <Upload strokeWidth={1.75} />

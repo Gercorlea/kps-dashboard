@@ -15,34 +15,34 @@ type Paso =
   | { tipo: "seleccion" }
   | { tipo: "subiendo"; progreso: number }
   | { tipo: "confirmar" }
-  | { tipo: "procesando" }
+  | { tipo: "processing" }
   | { tipo: "listo" }
   | { tipo: "duplicado"; uploadIdExistente: string };
 
 interface ResumenHoja {
-  leidas: number;
-  insertadas: number;
-  rechazadas: number;
+  read: number;
+  inserted: number;
+  rejected: number;
 }
 
 interface Incidencia {
-  hoja: string;
-  fila?: number;
-  campo?: string;
-  mensaje: string;
+  sheet: string;
+  row?: number;
+  field?: string;
+  message: string;
 }
 
 export function Uploader() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [archivo, setArchivo] = useState<File | null>(null);
+  const [fileName, setArchivo] = useState<File | null>(null);
   const [paso, setPaso] = useState<Paso>({ tipo: "seleccion" });
   const [error, setError] = useState<string | null>(null);
   const [uploadId, setUploadId] = useState<string | null>(null);
-  const [fechaCorte, setFechaCorte] = useState("");
+  const [cutoffDate, setFechaCorte] = useState("");
   const [fechaDerivada, setFechaDerivada] = useState(false);
   const [hojas, setHojas] = useState<string[]>([]);
-  const [resumen, setResumen] = useState<Record<string, ResumenHoja>>({});
-  const [incidencias, setIncidencias] = useState<Incidencia[]>([]);
+  const [summary, setResumen] = useState<Record<string, ResumenHoja>>({});
+  const [issues, setIncidencias] = useState<Incidencia[]>([]);
   const [statusFinal, setStatusFinal] = useState<string>("");
   const [arrastrando, setArrastrando] = useState(false);
 
@@ -98,7 +98,7 @@ export function Uploader() {
           filename: f.name,
           contentType: XLSX_MIME,
           sizeBytes: f.size,
-          cuenta: "san-pablo",
+          account: "san-pablo",
         }),
       });
       setUploadId(creado.uploadId);
@@ -131,17 +131,17 @@ export function Uploader() {
   }
 
   async function procesar() {
-    if (!uploadId || !fechaCorte) return;
+    if (!uploadId || !cutoffDate) return;
     setError(null);
-    setPaso({ tipo: "procesando" });
+    setPaso({ tipo: "processing" });
 
     // Polling del avance por hoja mientras el POST procesa (§7 paso 4).
     const intervalo = window.setInterval(async () => {
       try {
-        const r = await api<{ carga: { resumen: Record<string, ResumenHoja> } }>(
+        const r = await api<{ carga: { summary: Record<string, ResumenHoja> } }>(
           `/api/retail/uploads/${uploadId}`
         );
-        setResumen(r.carga.resumen ?? {});
+        setResumen(r.carga.summary ?? {});
       } catch {
         /* el polling no interrumpe el procesamiento */
       }
@@ -150,14 +150,14 @@ export function Uploader() {
     try {
       const r = await api<{
         status: string;
-        resumen: Record<string, ResumenHoja>;
-        incidencias: Incidencia[];
+        summary: Record<string, ResumenHoja>;
+        issues: Incidencia[];
       }>(`/api/retail/uploads/${uploadId}/process`, {
         method: "POST",
-        body: JSON.stringify({ fechaCorte }),
+        body: JSON.stringify({ cutoffDate }),
       });
-      setResumen(r.resumen ?? {});
-      setIncidencias(r.incidencias ?? []);
+      setResumen(r.summary ?? {});
+      setIncidencias(r.issues ?? []);
       setStatusFinal(r.status);
       setPaso({ tipo: "listo" });
     } catch (e) {
@@ -173,7 +173,7 @@ export function Uploader() {
     }
   }
 
-  const marcasSinClasificar = incidencias.filter((i) => i.campo === "marca");
+  const marcasSinClasificar = issues.filter((i) => i.field === "brand");
 
   return (
     <div className="flex max-w-3xl flex-col gap-4">
@@ -202,7 +202,7 @@ export function Uploader() {
           >
             <UploadCloud size={28} strokeWidth={1.5} style={{ color: "var(--cr-ink-2)" }} />
             <span className="cr-h3">Arrastra el Excel semanal o haz clic para elegirlo</span>
-            <span className="cr-small">Solo .xlsx · máximo 25 MB · cuenta San Pablo</span>
+            <span className="cr-small">Solo .xlsx · máximo 25 MB · account San Pablo</span>
           </button>
           <input
             ref={inputRef}
@@ -218,22 +218,22 @@ export function Uploader() {
         </Panel>
       ) : null}
 
-      {paso.tipo === "subiendo" && archivo ? (
-        <Panel titulo="Subiendo a almacenamiento seguro">
+      {paso.tipo === "subiendo" && fileName ? (
+        <Panel title="Subiendo a almacenamiento seguro">
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <FileSpreadsheet size={16} strokeWidth={1.75} />
-              <span className="cr-body">{archivo.name}</span>
-              <span className="cr-small cr-mono ml-auto">{fmtBytes(archivo.size)}</span>
+              <span className="cr-body">{fileName.name}</span>
+              <span className="cr-small cr-mono ml-auto">{fmtBytes(fileName.size)}</span>
             </div>
-            <Meter valor={paso.progreso} tono="ink" />
+            <Meter value={paso.progreso} tono="ink" />
             <span className="cr-small cr-mono">{Math.round(paso.progreso * 100)}%</span>
           </div>
         </Panel>
       ) : null}
 
-      {paso.tipo === "confirmar" && archivo ? (
-        <Panel titulo="Confirmar antes de procesar">
+      {paso.tipo === "confirmar" && fileName ? (
+        <Panel title="Confirmar antes de procesar">
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="cr-field">
@@ -241,7 +241,7 @@ export function Uploader() {
                 <input
                   type="date"
                   className="cr-input"
-                  value={fechaCorte}
+                  value={cutoffDate}
                   onChange={(e) => setFechaCorte(e.target.value)}
                   required
                 />
@@ -271,7 +271,7 @@ export function Uploader() {
                 type="button"
                 className="cr-btn cr-btn--primary"
                 onClick={procesar}
-                disabled={!fechaCorte}
+                disabled={!cutoffDate}
               >
                 Procesar
               </button>
@@ -283,15 +283,15 @@ export function Uploader() {
         </Panel>
       ) : null}
 
-      {paso.tipo === "procesando" || paso.tipo === "listo" ? (
+      {paso.tipo === "processing" || paso.tipo === "listo" ? (
         <Panel
-          titulo={
-            paso.tipo === "procesando" ? (
+          title={
+            paso.tipo === "processing" ? (
               <span className="flex items-center gap-2">
                 <Loader2 className="cr-spin" size={15} strokeWidth={1.75} />
-                Procesando hoja por hoja…
+                Procesando sheet por sheet…
               </span>
-            ) : statusFinal === "procesado" ? (
+            ) : statusFinal === "processed" ? (
               <span className="flex items-center gap-2">
                 <CheckCircle2 size={15} strokeWidth={1.75} style={{ color: "var(--cr-ok)" }} />
                 Carga procesada
@@ -316,21 +316,21 @@ export function Uploader() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(resumen).length === 0 ? (
+                {Object.entries(summary).length === 0 ? (
                   <tr>
                     <td colSpan={4} className="cr-body py-6 text-center">
-                      Descargando y parseando el archivo…
+                      Descargando y parseando el fileName…
                     </td>
                   </tr>
                 ) : (
-                  Object.entries(resumen).map(([hoja, r]) => (
-                    <tr key={hoja}>
-                      <td>{hoja}</td>
-                      <td className="num">{fmtNum(r.leidas)}</td>
-                      <td className="num">{fmtNum(r.insertadas)}</td>
+                  Object.entries(summary).map(([sheet, r]) => (
+                    <tr key={sheet}>
+                      <td>{sheet}</td>
+                      <td className="num">{fmtNum(r.read)}</td>
+                      <td className="num">{fmtNum(r.inserted)}</td>
                       <td className="num">
-                        {r.rechazadas > 0 ? (
-                          <span style={{ color: "var(--cr-danger)" }}>{fmtNum(r.rechazadas)}</span>
+                        {r.rejected > 0 ? (
+                          <span style={{ color: "var(--cr-danger)" }}>{fmtNum(r.rejected)}</span>
                         ) : (
                           "0"
                         )}
@@ -350,24 +350,24 @@ export function Uploader() {
                   </Badge>
                   <ul className="cr-small list-inside list-disc">
                     {marcasSinClasificar.slice(0, 8).map((i, idx) => (
-                      <li key={idx}>{i.mensaje}</li>
+                      <li key={idx}>{i.message}</li>
                     ))}
                   </ul>
                 </div>
               ) : null}
-              {incidencias.filter((i) => i.campo !== "marca").length > 0 ? (
+              {issues.filter((i) => i.field !== "brand").length > 0 ? (
                 <details>
                   <summary className="cr-small cursor-pointer">
-                    {incidencias.filter((i) => i.campo !== "marca").length} incidencias registradas
+                    {issues.filter((i) => i.field !== "brand").length} issues registradas
                   </summary>
                   <ul className="cr-small mt-2 list-inside list-disc">
-                    {incidencias
-                      .filter((i) => i.campo !== "marca")
+                    {issues
+                      .filter((i) => i.field !== "brand")
                       .slice(0, 20)
                       .map((i, idx) => (
                         <li key={idx}>
-                          [{i.hoja}
-                          {i.fila ? ` · fila ${i.fila}` : ""}] {i.mensaje}
+                          [{i.sheet}
+                          {i.row ? ` · row ${i.row}` : ""}] {i.message}
                         </li>
                       ))}
                   </ul>
@@ -380,7 +380,7 @@ export function Uploader() {
                   </Link>
                 ) : null}
                 <button type="button" className="cr-btn cr-btn--secondary" onClick={reiniciar}>
-                  Subir otro archivo
+                  Subir otro fileName
                 </button>
               </div>
             </div>
@@ -389,10 +389,10 @@ export function Uploader() {
       ) : null}
 
       {paso.tipo === "duplicado" ? (
-        <Panel titulo="Archivo duplicado">
+        <Panel title="Archivo duplicado">
           <div className="flex flex-col gap-3">
             <p className="cr-body">
-              Este archivo ya fue cargado antes (mismo contenido). No se duplicaron filas.
+              Este fileName ya fue cargado antes (mismo content). No se duplicaron filas.
             </p>
             <div className="flex gap-2">
               {paso.uploadIdExistente ? (
@@ -404,7 +404,7 @@ export function Uploader() {
                 </Link>
               ) : null}
               <button type="button" className="cr-btn cr-btn--secondary" onClick={reiniciar}>
-                Subir otro archivo
+                Subir otro fileName
               </button>
             </div>
           </div>

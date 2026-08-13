@@ -7,8 +7,8 @@ process.env.JWT_REFRESH_SECRET = "otro-secreto-de-prueba";
 let cookieValue: string | null = null;
 vi.mock("next/headers", () => ({
   cookies: async () => ({
-    get: (nombre: string) =>
-      nombre === "cr_access" && cookieValue ? { value: cookieValue } : undefined,
+    get: (name: string) =>
+      name === "cr_access" && cookieValue ? { value: cookieValue } : undefined,
   }),
 }));
 

@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     // Cambio de contraseña → se revocan todas las sesiones (§5.1)
     await revocarSesionesDeUsuario(user._id);
 
-    return ok({ mensaje: "Contraseña actualizada. Ya puedes iniciar sesión." });
+    return ok({ message: "Contraseña actualizada. Ya puedes iniciar sesión." });
   } catch (e) {
     return handleApiError(e);
   }

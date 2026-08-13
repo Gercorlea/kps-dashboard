@@ -83,7 +83,7 @@ export interface FilaFillRate {
 
 export interface BloqueScorecard {
   id: string;
-  titulo: string;
+  title: string;
   narrativa: string;
   sinHistorico: boolean;
   filas: FilaScorecard[];
@@ -99,11 +99,11 @@ export interface CoberturaDatos {
 }
 
 export interface Scorecard {
-  cuenta: string;
+  account: string;
   cuentaNombre: string;
   hasta: string | null;
   ultimoCorte: string | null;
-  cobertura: CoberturaDatos;
+  coverage: CoberturaDatos;
   bloques: BloqueScorecard[];
 }
 
@@ -119,28 +119,28 @@ function utc(anio: number, mes0: number, dia: number): Date {
 }
 
 async function unidadesPor(
-  cuenta: string,
+  account: string,
   periodo: Periodo,
   campos: Record<string, string>
-): Promise<Array<Record<string, unknown> & { unidades: number }>> {
+): Promise<Array<Record<string, unknown> & { units: number }>> {
   const grupo: Record<string, unknown> = {};
-  for (const [alias, campo] of Object.entries(campos)) grupo[alias] = `$${campo}`;
+  for (const [alias, field] of Object.entries(campos)) grupo[alias] = `$${field}`;
   const res = await VentaDiaria.aggregate([
-    { $match: { cuenta, fecha: { $gte: periodo.inicio, $lte: periodo.fin } } },
-    { $group: { _id: grupo, unidades: { $sum: "$unidades" } } },
+    { $match: { account, date: { $gte: periodo.inicio, $lte: periodo.fin } } },
+    { $group: { _id: grupo, units: { $sum: "$units" } } },
   ]);
-  return res.map((r) => ({ ...(r._id as Record<string, unknown>), unidades: r.unidades as number }));
+  return res.map((r) => ({ ...(r._id as Record<string, unknown>), units: r.units as number }));
 }
 
-async function inventarioTotalEnCorte(cuenta: string, corte: Date): Promise<number | null> {
+async function inventarioTotalEnCorte(account: string, corte: Date): Promise<number | null> {
   const [farma] = await StockFarmacia.aggregate([
-    { $match: { cuenta, fechaCorte: corte } },
+    { $match: { account, cutoffDate: corte } },
     {
       $group: {
         _id: null,
         total: {
           $sum: {
-            $add: [{ $ifNull: ["$libreUtilizacion", 0] }, { $ifNull: ["$transitoFarma", 0] }],
+            $add: [{ $ifNull: ["$unrestrictedStock", 0] }, { $ifNull: ["$pharmacyInTransit", 0] }],
           },
         },
         n: { $sum: 1 },
@@ -148,38 +148,38 @@ async function inventarioTotalEnCorte(cuenta: string, corte: Date): Promise<numb
     },
   ]);
   const [cedis] = await StockCedis.aggregate([
-    { $match: { cuenta, fechaCorte: corte } },
-    { $group: { _id: null, total: { $sum: { $ifNull: ["$disponibilidadRealCD", 0] } }, n: { $sum: 1 } } },
+    { $match: { account, cutoffDate: corte } },
+    { $group: { _id: null, total: { $sum: { $ifNull: ["$realAvailabilityDC", 0] } }, n: { $sum: 1 } } },
   ]);
   if (!farma && !cedis) return null;
   return (farma?.total ?? 0) + (cedis?.total ?? 0);
 }
 
 async function inventarioPorCampo(
-  cuenta: string,
+  account: string,
   corte: Date,
-  campo: "marca" | "sku" | "codigoTienda"
+  field: "brand" | "sku" | "storeCode"
 ): Promise<Map<string, number>> {
   const mapa = new Map<string, number>();
   const farma = await StockFarmacia.aggregate([
-    { $match: { cuenta, fechaCorte: corte } },
+    { $match: { account, cutoffDate: corte } },
     {
       $group: {
-        _id: `$${campo}`,
+        _id: `$${field}`,
         total: {
           $sum: {
-            $add: [{ $ifNull: ["$libreUtilizacion", 0] }, { $ifNull: ["$transitoFarma", 0] }],
+            $add: [{ $ifNull: ["$unrestrictedStock", 0] }, { $ifNull: ["$pharmacyInTransit", 0] }],
           },
         },
       },
     },
   ]);
   for (const r of farma) mapa.set(String(r._id), r.total as number);
-  if (campo !== "codigoTienda") {
+  if (field !== "storeCode") {
     // El CEDIS no tiene tienda: solo aplica a marca y SKU.
     const cedis = await StockCedis.aggregate([
-      { $match: { cuenta, fechaCorte: corte } },
-      { $group: { _id: `$${campo}`, total: { $sum: { $ifNull: ["$disponibilidadRealCD", 0] } } } },
+      { $match: { account, cutoffDate: corte } },
+      { $group: { _id: `$${field}`, total: { $sum: { $ifNull: ["$realAvailabilityDC", 0] } } } },
     ]);
     for (const r of cedis) {
       mapa.set(String(r._id), (mapa.get(String(r._id)) ?? 0) + (r.total as number));
@@ -190,28 +190,28 @@ async function inventarioPorCampo(
 
 // --- generación ---------------------------------------------------------
 
-export async function generarScorecard(cuenta: string, hastaStr?: string): Promise<Scorecard> {
+export async function generarScorecard(account: string, hastaStr?: string): Promise<Scorecard> {
   await connectDB();
-  const cuentaNombre = CUENTA_NOMBRES[cuenta] ?? cuenta;
+  const cuentaNombre = CUENTA_NOMBRES[account] ?? account;
 
   const cortesDocs = await Upload.find({
-    cuenta,
-    status: "procesado",
-    ...(hastaStr ? { fechaCorte: { $lte: new Date(`${hastaStr}T00:00:00.000Z`) } } : {}),
+    account,
+    status: "processed",
+    ...(hastaStr ? { cutoffDate: { $lte: new Date(`${hastaStr}T00:00:00.000Z`) } } : {}),
   })
-    .select({ fechaCorte: 1 })
+    .select({ cutoffDate: 1 })
     .lean();
-  const cortes = [...new Set(cortesDocs.map((d) => new Date(d.fechaCorte).getTime()))]
+  const cortes = [...new Set(cortesDocs.map((d) => new Date(d.cutoffDate).getTime()))]
     .sort((a, b) => a - b)
     .map((t) => new Date(t));
 
   if (cortes.length === 0) {
     return {
-      cuenta,
+      account,
       cuentaNombre,
       hasta: hastaStr ?? null,
       ultimoCorte: null,
-      cobertura: { desde: null, hasta: null, cortes: [], mesesCompletos: [], mesesParciales: [] },
+      coverage: { desde: null, hasta: null, cortes: [], mesesCompletos: [], mesesParciales: [] },
       bloques: [],
     };
   }
@@ -229,24 +229,24 @@ export async function generarScorecard(cuenta: string, hastaStr?: string): Promi
 
   // Rango real de datos de venta (para cobertura y completitud de meses).
   const [rango] = await VentaDiaria.aggregate([
-    { $match: { cuenta } },
-    { $group: { _id: null, min: { $min: "$fecha" }, max: { $max: "$fecha" } } },
+    { $match: { account } },
+    { $group: { _id: null, min: { $min: "$date" }, max: { $max: "$date" } } },
   ]);
   const minFecha: Date | null = rango ? new Date(rango.min) : null;
   const maxFecha: Date | null = rango ? new Date(rango.max) : null;
 
   // Unidades por mes (año actual + anterior en una sola pasada).
   const porMes = await VentaDiaria.aggregate([
-    { $match: { cuenta, fecha: { $gte: periodoAnterior.inicio, $lte: hasta } } },
+    { $match: { account, date: { $gte: periodoAnterior.inicio, $lte: hasta } } },
     {
       $group: {
-        _id: { anio: { $year: "$fecha" }, mes: { $month: "$fecha" } },
-        unidades: { $sum: "$unidades" },
+        _id: { anio: { $year: "$date" }, mes: { $month: "$date" } },
+        units: { $sum: "$units" },
       },
     },
   ]);
   const unidadesMes = new Map<string, number>();
-  for (const r of porMes) unidadesMes.set(`${r._id.anio}-${r._id.mes}`, r.unidades);
+  for (const r of porMes) unidadesMes.set(`${r._id.anio}-${r._id.mes}`, r.units);
 
   // Cobertura: meses completos vs parciales del año actual.
   const mesesCompletos: string[] = [];
@@ -267,7 +267,7 @@ export async function generarScorecard(cuenta: string, hastaStr?: string): Promi
   const invPorCorte = new Map<number, number | null>();
   async function invEnCorte(corte: Date): Promise<number | null> {
     const t = corte.getTime();
-    if (!invPorCorte.has(t)) invPorCorte.set(t, await inventarioTotalEnCorte(cuenta, corte));
+    if (!invPorCorte.has(t)) invPorCorte.set(t, await inventarioTotalEnCorte(account, corte));
     return invPorCorte.get(t) ?? null;
   }
   const inventarioActual = await invEnCorte(ultimoCorte);
@@ -318,26 +318,26 @@ export async function generarScorecard(cuenta: string, hastaStr?: string): Promi
       : `Al cierre del periodo ${cuentaNombre} acumula ${fmtUnidades(totalActual)} unidades vendidas en ${anioActual}, sin histórico comparable del año anterior. Actualmente se cuentan con ${fmtMoh(mohTotal)} meses de inventario.`;
 
   // --- Bloque 2: Marca / Unidades --------------------------------------
-  const marcasActual = await unidadesPor(cuenta, periodoActual, { marca: "marca" });
-  const marcasAnterior = await unidadesPor(cuenta, periodoAnterior, { marca: "marca" });
+  const marcasActual = await unidadesPor(account, periodoActual, { brand: "brand" });
+  const marcasAnterior = await unidadesPor(account, periodoAnterior, { brand: "brand" });
   const anteriorPorMarca = new Map(
-    marcasAnterior.map((r) => [String(r.marca), r.unidades])
+    marcasAnterior.map((r) => [String(r.brand), r.units])
   );
-  const invPorMarca = await inventarioPorCampo(cuenta, ultimoCorte, "marca");
+  const invPorMarca = await inventarioPorCampo(account, ultimoCorte, "brand");
 
   const filasMarca: FilaScorecard[] = marcasActual
-    .sort((a, b) => b.unidades - a.unidades)
+    .sort((a, b) => b.units - a.units)
     .map((r) => {
-      const marca = String(r.marca);
-      const uAnterior = anteriorPorMarca.get(marca) ?? null;
-      const inv = invPorMarca.get(marca) ?? null;
-      const uMes = mesesConDatosActual > 0 ? r.unidades / mesesConDatosActual : null;
+      const brand = String(r.brand);
+      const uAnterior = anteriorPorMarca.get(brand) ?? null;
+      const inv = invPorMarca.get(brand) ?? null;
+      const uMes = mesesConDatosActual > 0 ? r.units / mesesConDatosActual : null;
       return {
-        etiqueta: marca,
+        etiqueta: brand,
         unidadesAnterior: uAnterior,
-        unidadesActual: r.unidades,
+        unidadesActual: r.units,
         inventario: inv,
-        incVsAA: incVsAA(r.unidades, uAnterior),
+        incVsAA: incVsAA(r.units, uAnterior),
         moh: moh(inv, uMes),
       };
     });
@@ -356,39 +356,39 @@ export async function generarScorecard(cuenta: string, hastaStr?: string): Promi
     : "Sin ventas registradas en el periodo.";
 
   // --- Bloque 3: Top productos por marca -------------------------------
-  const skusActual = await unidadesPor(cuenta, periodoActual, {
-    marca: "marca",
+  const skusActual = await unidadesPor(account, periodoActual, {
+    brand: "brand",
     sku: "sku",
-    descripcion: "descripcion",
+    description: "description",
   });
-  const skusAnterior = await unidadesPor(cuenta, periodoAnterior, { sku: "sku" });
-  const anteriorPorSku = new Map(skusAnterior.map((r) => [String(r.sku), r.unidades]));
-  const invPorSku = await inventarioPorCampo(cuenta, ultimoCorte, "sku");
+  const skusAnterior = await unidadesPor(account, periodoAnterior, { sku: "sku" });
+  const anteriorPorSku = new Map(skusAnterior.map((r) => [String(r.sku), r.units]));
+  const invPorSku = await inventarioPorCampo(account, ultimoCorte, "sku");
 
   const porMarca = new Map<string, typeof skusActual>();
   for (const r of skusActual) {
-    const lista = porMarca.get(String(r.marca)) ?? [];
+    const lista = porMarca.get(String(r.brand)) ?? [];
     lista.push(r);
-    porMarca.set(String(r.marca), lista);
+    porMarca.set(String(r.brand), lista);
   }
   const filasTop: FilaScorecard[] = [];
-  for (const fila of filasMarca.filter((f) => !f.esSubtotal)) {
-    const lista = (porMarca.get(fila.etiqueta) ?? [])
-      .sort((a, b) => b.unidades - a.unidades)
+  for (const row of filasMarca.filter((f) => !f.esSubtotal)) {
+    const lista = (porMarca.get(row.etiqueta) ?? [])
+      .sort((a, b) => b.units - a.units)
       .slice(0, TOP_SKUS_POR_MARCA);
     if (lista.length === 0) continue;
-    filasTop.push({ ...fila, esSubtotal: true });
+    filasTop.push({ ...row, esSubtotal: true });
     for (const r of lista) {
       const sku = String(r.sku);
       const uAnterior = anteriorPorSku.get(sku) ?? null;
       const inv = invPorSku.get(sku) ?? null;
-      const uMes = mesesConDatosActual > 0 ? r.unidades / mesesConDatosActual : null;
+      const uMes = mesesConDatosActual > 0 ? r.units / mesesConDatosActual : null;
       filasTop.push({
-        etiqueta: `${r.descripcion || sku}`,
+        etiqueta: `${r.description || sku}`,
         unidadesAnterior: uAnterior,
-        unidadesActual: r.unidades,
+        unidadesActual: r.units,
         inventario: inv,
-        incVsAA: incVsAA(r.unidades, uAnterior),
+        incVsAA: incVsAA(r.units, uAnterior),
         moh: moh(inv, uMes),
       });
     }
@@ -398,32 +398,32 @@ export async function generarScorecard(cuenta: string, hastaStr?: string): Promi
   // --- Bloque 4: Tiendas (top y bottom) --------------------------------
   // Sustituye al bloque "Formato" del scorecard de Walmart: el archivo de
   // San Pablo no trae columna de formato de tienda (§8.2).
-  const tiendasActual = await unidadesPor(cuenta, periodoActual, {
-    codigoTienda: "codigoTienda",
-    nombreTienda: "nombreTienda",
+  const tiendasActual = await unidadesPor(account, periodoActual, {
+    storeCode: "storeCode",
+    storeName: "storeName",
   });
-  const tiendasAnterior = await unidadesPor(cuenta, periodoAnterior, {
-    codigoTienda: "codigoTienda",
+  const tiendasAnterior = await unidadesPor(account, periodoAnterior, {
+    storeCode: "storeCode",
   });
   const anteriorPorTienda = new Map(
-    tiendasAnterior.map((r) => [String(r.codigoTienda), r.unidades])
+    tiendasAnterior.map((r) => [String(r.storeCode), r.units])
   );
-  const invPorTienda = await inventarioPorCampo(cuenta, ultimoCorte, "codigoTienda");
-  const ordenadas = tiendasActual.sort((a, b) => b.unidades - a.unidades);
+  const invPorTienda = await inventarioPorCampo(account, ultimoCorte, "storeCode");
+  const ordenadas = tiendasActual.sort((a, b) => b.units - a.units);
   const top = ordenadas.slice(0, TOP_TIENDAS);
   const bottom = ordenadas.slice(-TOP_TIENDAS).reverse();
 
   const filaTienda = (r: (typeof ordenadas)[number]): FilaScorecard => {
-    const codigo = String(r.codigoTienda);
+    const codigo = String(r.storeCode);
     const uAnterior = anteriorPorTienda.get(codigo) ?? null;
     const inv = invPorTienda.get(codigo) ?? null;
-    const uMes = mesesConDatosActual > 0 ? r.unidades / mesesConDatosActual : null;
+    const uMes = mesesConDatosActual > 0 ? r.units / mesesConDatosActual : null;
     return {
-      etiqueta: `${codigo} — ${String(r.nombreTienda ?? "")}`,
+      etiqueta: `${codigo} — ${String(r.storeName ?? "")}`,
       unidadesAnterior: uAnterior,
-      unidadesActual: r.unidades,
+      unidadesActual: r.units,
       inventario: inv,
-      incVsAA: incVsAA(r.unidades, uAnterior),
+      incVsAA: incVsAA(r.units, uAnterior),
       moh: moh(inv, uMes),
     };
   };
@@ -457,14 +457,14 @@ export async function generarScorecard(cuenta: string, hastaStr?: string): Promi
   // --- Bloque 5: Fill rate ---------------------------------------------
   // Promedio ponderado por cantidad, cortado por negociador y por estatus
   // de OC, al último corte (§8.2).
-  async function fillRatePor(campo: string): Promise<FilaFillRate[]> {
+  async function fillRatePor(field: string): Promise<FilaFillRate[]> {
     const res = await LineaOC.aggregate([
-      { $match: { cuenta, fechaCorte: ultimoCorte } },
+      { $match: { account, cutoffDate: ultimoCorte } },
       {
         $group: {
-          _id: `$${campo}`,
-          pedidas: { $sum: { $ifNull: ["$cantidadReparto", 0] } },
-          entregadas: { $sum: { $ifNull: ["$cantidadEntregada", 0] } },
+          _id: `$${field}`,
+          pedidas: { $sum: { $ifNull: ["$allocatedQty", 0] } },
+          entregadas: { $sum: { $ifNull: ["$deliveredQty", 0] } },
         },
       },
       { $sort: { pedidas: -1 } },
@@ -476,8 +476,8 @@ export async function generarScorecard(cuenta: string, hastaStr?: string): Promi
       fillRate: r.pedidas > 0 ? r.entregadas / r.pedidas : null,
     }));
   }
-  const porNegociador = await fillRatePor("negociador");
-  const porEstatus = await fillRatePor("estatusOC");
+  const porNegociador = await fillRatePor("buyer");
+  const porEstatus = await fillRatePor("poStatus");
   const totalPedidas = porNegociador.reduce((t, r) => t + r.pedidas, 0);
   const totalEntregadas = porNegociador.reduce((t, r) => t + r.entregadas, 0);
   const fillRateGlobal = totalPedidas > 0 ? totalEntregadas / totalPedidas : null;
@@ -502,11 +502,11 @@ export async function generarScorecard(cuenta: string, hastaStr?: string): Promi
   const sinHistorico = !hayAnterior;
 
   return {
-    cuenta,
+    account,
     cuentaNombre,
     hasta: fechaISO(hasta),
     ultimoCorte: fechaISO(ultimoCorte),
-    cobertura: {
+    coverage: {
       desde: minFecha ? fechaISO(minFecha) : null,
       hasta: maxFecha ? fechaISO(maxFecha) : null,
       cortes: cortes.map(fechaISO),
@@ -514,11 +514,11 @@ export async function generarScorecard(cuenta: string, hastaStr?: string): Promi
       mesesParciales,
     },
     bloques: [
-      { id: "mes", titulo: "Mes / Unidades", narrativa: narrativaMes, sinHistorico, filas: filasMes },
-      { id: "marca", titulo: "Marca / Unidades", narrativa: narrativaMarca, sinHistorico, filas: filasMarca },
-      { id: "top-productos", titulo: "Top productos / Unidades", narrativa: narrativaTop, sinHistorico, filas: filasTop },
-      { id: "tiendas", titulo: "Tienda / Unidades", narrativa: narrativaTienda, sinHistorico, filas: filasTienda },
-      { id: "fill-rate", titulo: "Fill rate", narrativa: narrativaFillRate, sinHistorico: false, filas: [], filasFillRate },
+      { id: "mes", title: "Mes / Unidades", narrativa: narrativaMes, sinHistorico, filas: filasMes },
+      { id: "brand", title: "Marca / Unidades", narrativa: narrativaMarca, sinHistorico, filas: filasMarca },
+      { id: "top-productos", title: "Top productos / Unidades", narrativa: narrativaTop, sinHistorico, filas: filasTop },
+      { id: "tiendas", title: "Tienda / Unidades", narrativa: narrativaTienda, sinHistorico, filas: filasTienda },
+      { id: "fill-rate", title: "Fill rate", narrativa: narrativaFillRate, sinHistorico: false, filas: [], filasFillRate },
     ],
   };
 }

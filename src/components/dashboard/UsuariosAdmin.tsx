@@ -10,7 +10,7 @@ import { MODULES } from "@/lib/rbac";
 interface UsuarioFila {
   id: string;
   email: string;
-  nombre: string;
+  name: string;
   role: string;
   modules: string[];
   active: boolean;
@@ -20,7 +20,7 @@ interface UsuarioFila {
 interface Formulario {
   id: string | null; // null = crear
   email: string;
-  nombre: string;
+  name: string;
   password: string;
   modules: string[];
   active: boolean;
@@ -29,7 +29,7 @@ interface Formulario {
 const FORM_VACIO: Formulario = {
   id: null,
   email: "",
-  nombre: "",
+  name: "",
   password: "",
   modules: [],
   active: true,
@@ -68,7 +68,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
           method: "POST",
           body: JSON.stringify({
             email: form.email,
-            nombre: form.nombre,
+            name: form.name,
             password: form.password,
             modules: form.modules,
             active: form.active,
@@ -78,7 +78,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
         await api(`/api/admin/usuarios/${form.id}`, {
           method: "PATCH",
           body: JSON.stringify({
-            nombre: form.nombre,
+            name: form.name,
             modules: form.modules,
             active: form.active,
           }),
@@ -110,11 +110,11 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
     setError(null);
     setAviso(null);
     try {
-      const r = await api<{ mensaje: string }>(`/api/admin/usuarios/${u.id}`, {
+      const r = await api<{ message: string }>(`/api/admin/usuarios/${u.id}`, {
         method: "POST",
         body: JSON.stringify({ accion }),
       });
-      setAviso(r.mensaje);
+      setAviso(r.message);
     } catch (e) {
       setError(e instanceof ClientApiError ? e.message : "No se pudo ejecutar la acción");
     }
@@ -163,7 +163,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
             <tbody>
               {usuarios.map((u) => (
                 <tr key={u.id}>
-                  <td>{u.nombre}</td>
+                  <td>{u.name}</td>
                   <td className="cr-mono">{u.email}</td>
                   <td>
                     {u.role === "superadmin" ? <Badge tono="danger">superadmin</Badge> : <Badge>user</Badge>}
@@ -192,7 +192,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                             setForm({
                               id: u.id,
                               email: u.email,
-                              nombre: u.nombre,
+                              name: u.name,
                               password: "",
                               modules: u.modules,
                               active: u.active,
@@ -245,8 +245,8 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                 <span className="cr-label">Nombre</span>
                 <input
                   className="cr-input"
-                  value={form.nombre}
-                  onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
                   required
                 />
               </label>
@@ -291,7 +291,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                           })
                         }
                       />
-                      {m.nombre}
+                      {m.name}
                     </label>
                   ))}
                 </div>

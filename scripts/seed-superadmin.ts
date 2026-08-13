@@ -33,7 +33,7 @@ async function main() {
 
   await User.create({
     email,
-    nombre: "Superadmin",
+    name: "Superadmin",
     passwordHash: await bcrypt.hash(password, 12),
     role: "superadmin",
     modules: [...MODULE_IDS],

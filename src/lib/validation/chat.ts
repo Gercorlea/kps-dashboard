@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MODELO_IDS } from "@/lib/ai-modelos";
 
 export const objectIdSchema = z.string().regex(/^[0-9a-f]{24}$/i, "Id inválido");
 
@@ -18,6 +19,7 @@ const uiMessageSchema = z.looseObject({
 export const chatBodySchema = z
   .object({
     chatId: objectIdSchema.optional(),
+    model: z.enum(MODELO_IDS).optional(),
     messages: z.array(uiMessageSchema).min(1).max(60),
   })
   .refine(
@@ -31,5 +33,5 @@ export const chatBodySchema = z
   );
 
 export const createChatSchema = z.object({
-  titulo: z.string().min(1).max(120).optional(),
+  title: z.string().min(1).max(120).optional(),
 });

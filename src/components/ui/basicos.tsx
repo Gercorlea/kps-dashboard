@@ -35,21 +35,21 @@ export function Kpi({
 }
 
 export function Panel({
-  titulo,
+  title,
   acciones,
   children,
   sinPadding = false,
 }: {
-  titulo?: ReactNode;
+  title?: ReactNode;
   acciones?: ReactNode;
   children: ReactNode;
   sinPadding?: boolean;
 }) {
   return (
     <section className="cr-panel">
-      {titulo !== undefined ? (
+      {title !== undefined ? (
         <header className="cr-panel__head">
-          <h3 className="cr-h3">{titulo}</h3>
+          <h3 className="cr-h3">{title}</h3>
           {acciones}
         </header>
       ) : null}
@@ -59,13 +59,13 @@ export function Panel({
 }
 
 export function Meter({
-  valor,
+  value,
   tono = "ok",
 }: {
-  valor: number; // 0..1
+  value: number; // 0..1
   tono?: "ok" | "warn" | "danger" | "ink";
 }) {
-  const pct = Math.max(0, Math.min(1, valor)) * 100;
+  const pct = Math.max(0, Math.min(1, value)) * 100;
   const mod = tono === "ok" ? "" : ` cr-meter__fill--${tono}`;
   return (
     <div className="cr-meter" role="progressbar" aria-valuenow={Math.round(pct)}>
@@ -75,18 +75,18 @@ export function Meter({
 }
 
 export function EstadoVacio({
-  titulo,
+  title,
   detalle,
   children,
 }: {
-  titulo: string;
+  title: string;
   detalle?: string;
   children?: ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
       {children}
-      <p className="cr-h3">{titulo}</p>
+      <p className="cr-h3">{title}</p>
       {detalle ? <p className="cr-body max-w-sm">{detalle}</p> : null}
     </div>
   );

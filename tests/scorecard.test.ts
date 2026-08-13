@@ -15,7 +15,7 @@ describe("incVsAA (§8.1: divisor cero → —, nunca ∞)", () => {
 });
 
 describe("moh (§8.1)", () => {
-  it("unidades 0 o ausentes devuelve null", () => {
+  it("units 0 o ausentes devuelve null", () => {
     expect(moh(500, 0)).toBeNull();
     expect(moh(500, null)).toBeNull();
     expect(moh(null, 100)).toBeNull();

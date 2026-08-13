@@ -18,7 +18,7 @@ export async function GET() {
       usuarios: usuarios.map((u) => ({
         id: String(u._id),
         email: u.email,
-        nombre: u.nombre,
+        name: u.name,
         role: u.role,
         modules: u.modules.map(String),
         active: u.active,
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
 
     const user = await User.create({
       email: body.email.toLowerCase(),
-      nombre: body.nombre,
+      name: body.name,
       passwordHash: await hashPassword(body.password),
       role: "user",
       modules: body.modules,

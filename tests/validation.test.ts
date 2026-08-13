@@ -10,7 +10,7 @@ describe("createUploadSchema (§5.7)", () => {
     filename: "KPS_12_05_2026.xlsx",
     contentType: XLSX_MIME,
     sizeBytes: 5_000_000,
-    cuenta: "san-pablo" as const,
+    account: "san-pablo" as const,
   };
 
   it("acepta un .xlsx válido", () => {
@@ -35,14 +35,14 @@ describe("createUploadSchema (§5.7)", () => {
   });
 
   it("solo acepta cuentas conocidas (v1: san-pablo)", () => {
-    expect(createUploadSchema.safeParse({ ...base, cuenta: "walmart" }).success).toBe(false);
+    expect(createUploadSchema.safeParse({ ...base, account: "walmart" }).success).toBe(false);
   });
 });
 
 describe("processUploadSchema (§7.4)", () => {
-  it("exige fecha ISO", () => {
-    expect(processUploadSchema.safeParse({ fechaCorte: "2026-05-12" }).success).toBe(true);
-    expect(processUploadSchema.safeParse({ fechaCorte: "12/05/2026" }).success).toBe(false);
+  it("exige date ISO", () => {
+    expect(processUploadSchema.safeParse({ cutoffDate: "2026-05-12" }).success).toBe(true);
+    expect(processUploadSchema.safeParse({ cutoffDate: "12/05/2026" }).success).toBe(false);
     expect(processUploadSchema.safeParse({}).success).toBe(false);
   });
 });

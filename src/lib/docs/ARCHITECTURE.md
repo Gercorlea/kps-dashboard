@@ -1,7 +1,7 @@
 # Arquitectura — Cronos Retail
 
 Dashboard-only (sin sitio público) de **Arcanum** con dos módulos visibles como
-pestañas — **Retail** (`/retail`) y **Cronos IA** (`/cronos-ia`) — más
+pestañas — **Retail** (`/retail`) y **KPS AI** (`/cronos-ia`) — más
 administración (`/admin`). Las pestañas son **navegación real**: rutas
 distintas, cada una con su guard de módulo; no son estado local de un
 componente.
@@ -108,7 +108,7 @@ v1 cubre **solo San Pablo**; `cuenta` queda en el modelo y el selector listo
 para más cuentas (Walmart no tiene fuente de datos todavía). El bloque de
 tiendas sustituye al de "Formato" (San Pablo no trae formato de tienda).
 
-## Cronos IA
+## KPS AI
 
 Módulo independiente: **no recibe datos de Retail**. `lib/ai.ts` es el único
 punto de acceso a modelos, vía **Vercel AI Gateway**

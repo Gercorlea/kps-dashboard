@@ -4,42 +4,42 @@ import { Schema, model, models, type Model, type Types } from "mongoose";
 export interface IPronosticoSemanal {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
-  cuenta: string;
-  fechaCorte: Date;
-  semanaInicio: Date;
-  codigoTienda: string;
-  nombreTienda: string;
+  account: string;
+  cutoffDate: Date;
+  weekStart: Date;
+  storeCode: string;
+  storeName: string;
   sku: string;
-  idCompuesto: string;
-  descripcion: string;
-  marca: string;
+  compositeId: string;
+  description: string;
+  brand: string;
   division: string;
-  numProveedor: string;
-  proveedor: string;
-  valor: number;
+  vendorCode: string;
+  vendorName: string;
+  value: number;
 }
 
 const PronosticoSemanalSchema = new Schema<IPronosticoSemanal>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
-    cuenta: { type: String, required: true },
-    fechaCorte: { type: Date, required: true },
-    semanaInicio: { type: Date, required: true },
-    codigoTienda: { type: String, required: true },
-    nombreTienda: { type: String, default: "" },
+    account: { type: String, required: true },
+    cutoffDate: { type: Date, required: true },
+    weekStart: { type: Date, required: true },
+    storeCode: { type: String, required: true },
+    storeName: { type: String, default: "" },
     sku: { type: String, required: true },
-    idCompuesto: { type: String, default: "" },
-    descripcion: { type: String, default: "" },
-    marca: { type: String, default: "SIN CLASIFICAR" },
+    compositeId: { type: String, default: "" },
+    description: { type: String, default: "" },
+    brand: { type: String, default: "SIN CLASIFICAR" },
     division: { type: String, default: "" },
-    numProveedor: { type: String, default: "" },
-    proveedor: { type: String, default: "" },
-    valor: { type: Number, required: true },
+    vendorCode: { type: String, default: "" },
+    vendorName: { type: String, default: "" },
+    value: { type: Number, required: true },
   },
   { versionKey: false }
 );
 
-PronosticoSemanalSchema.index({ cuenta: 1, semanaInicio: -1, sku: 1 });
+PronosticoSemanalSchema.index({ account: 1, weekStart: -1, sku: 1 });
 PronosticoSemanalSchema.index({ uploadId: 1 });
 
 export const PronosticoSemanal: Model<IPronosticoSemanal> =

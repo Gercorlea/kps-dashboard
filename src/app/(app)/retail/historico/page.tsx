@@ -13,8 +13,8 @@ export default async function HistoricoPage() {
   return (
     <>
       <PageHeader
-        titulo="Serie histórica"
-        descripcion="Venta semanal, inventario, MOH y fill rate a través de los cortes"
+        title="Serie histórica"
+        description="Venta semanal, inventario, MOH y fill rate a través de los cortes"
       />
       <div className="cr-page-content">
         <HistoricoCharts />
