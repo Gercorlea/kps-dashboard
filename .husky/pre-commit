@@ -5,4 +5,4 @@ if git diff --cached --name-only | grep -qE '(^|/)\.env(\..*)?$|\.pem$'; then
   exit 1
 fi
 
-pnpm exec lint-staged
+npx lint-staged

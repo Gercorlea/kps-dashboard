@@ -4,7 +4,7 @@ import { sapCheckConnection, SapError } from '@/lib/sap/service-layer'
 export async function GET() {
   try {
     await sapCheckConnection()
-    return Response.json({ ok: true, mensaje: 'Conectado a SAP' })
+    return Response.json({ ok: true, message: 'Conectado a SAP' })
   } catch (error) {
     const status = error instanceof SapError ? error.status : 500
     const message = error instanceof Error ? error.message : 'Error desconocido'
