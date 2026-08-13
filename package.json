@@ -29,6 +29,7 @@
     "@aws-sdk/client-s3": "^3.1109.0",
     "@aws-sdk/s3-request-presigner": "^3.1109.0",
     "@react-pdf/renderer": "^4.6.0",
+    "@vercel/analytics": "^2.0.1",
     "ai": "^7.0.64",
     "bcryptjs": "^3.0.3",
     "framer-motion": "^13.1.0",
