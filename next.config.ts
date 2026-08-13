@@ -3,10 +3,13 @@ import type { NextConfig } from "next";
 const isProd = process.env.NODE_ENV === "production";
 
 // CSP razonable (§5.8). En dev Next necesita 'unsafe-eval' para HMR.
+// 'wasm-unsafe-eval' habilita SOLO WebAssembly, no eval de JavaScript: lo
+// necesita @react-pdf/renderer, que compila un módulo WASM para el trazado de
+// texto al generar el PDF de un reporte en el navegador.
 // connect-src incluye R2 porque las subidas van directo con presigned PUT.
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isProd ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",

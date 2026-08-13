@@ -55,7 +55,7 @@ const s = StyleSheet.create({
     marginBottom: 6,
   },
   portadaSubtitulo: { fontSize: 10, color: C.tinta2, marginBottom: 16, lineHeight: 1.45 },
-  metricas: { flexDirection: "row", paddingVertical: 12 },
+  metrics: { flexDirection: "row", paddingVertical: 12 },
   reglaPortada: { height: 1, backgroundColor: C.linea },
   metrica: { flex: 1, paddingRight: 12 },
   metricaValor: { fontSize: 15, fontFamily: "Helvetica-Bold", color: C.tinta },
@@ -123,23 +123,23 @@ const s = StyleSheet.create({
 });
 
 function Portada({ bloque }: { bloque: Extract<Bloque, { tipo: "portada" }> }) {
-  const { title, subtitulo, metricas } = bloque.spec;
+  const { title, subtitle, metrics } = bloque.spec;
   return (
     <View style={s.portada}>
       <Text style={s.portadaMarca}>CRONOS RETAIL · KPS AI</Text>
       <Text style={s.portadaTitulo}>{title}</Text>
-      {subtitulo ? <Text style={s.portadaSubtitulo}>{subtitulo}</Text> : null}
-      {metricas?.length ? (
+      {subtitle ? <Text style={s.portadaSubtitulo}>{subtitle}</Text> : null}
+      {metrics?.length ? (
         <>
           <View style={s.reglaPortada} />
-          <View style={s.metricas}>
-          {metricas.map((m, i) => (
+          <View style={s.metrics}>
+          {metrics.map((m, i) => (
             <View key={i} style={s.metrica}>
               <Text>
                 <Text style={s.metricaValor}>{m.value}</Text>
-                {m.unidad ? <Text style={s.metricaUnidad}> {m.unidad}</Text> : null}
+                {m.unit ? <Text style={s.metricaUnidad}> {m.unit}</Text> : null}
               </Text>
-              <Text style={s.metricaEtiqueta}>{m.etiqueta}</Text>
+              <Text style={s.metricaEtiqueta}>{m.label}</Text>
             </View>
             ))}
           </View>
@@ -303,8 +303,8 @@ function altoBloque(b: Bloque): number {
   switch (b.tipo) {
     case "portada":
       return 60 + lineas(b.spec.title, ANCHO_UTIL) * 26 +
-        (b.spec.subtitulo ? lineas(b.spec.subtitulo, ANCHO_UTIL) * 15 + 16 : 0) +
-        (b.spec.metricas?.length ? 60 : 0);
+        (b.spec.subtitle ? lineas(b.spec.subtitle, ANCHO_UTIL) * 15 + 16 : 0) +
+        (b.spec.metrics?.length ? 60 : 0);
     case "title":
       return (b.nivel === 1 ? 23 : b.nivel === 2 ? 19 : 16);
     case "parrafo":

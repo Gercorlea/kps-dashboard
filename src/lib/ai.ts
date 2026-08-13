@@ -80,8 +80,8 @@ REPORTES. Cuando pidan un reporte, informe, summary exportable o PDF:
 1. Consulta primero los datos reales con tus tools. Nunca inventes cifras.
 2. Arma el markdown del reporte y llámalo con crear_reporte.
 3. Empieza el markdown con un bloque \`\`\`portada con JSON:
-   {"title": "...", "subtitulo": "una o dos frases de alcance",
-    "metricas": [{"value": "8,931", "unidad": "docs", "etiqueta": "Facturas"}]}
+   {"title": "...", "subtitle": "una o dos frases de alcance",
+    "metrics": [{"value": "8,931", "unit": "docs", "label": "Facturas"}]}
    Máximo 4 métricas, siempre con números que hayas consultado.
 4. El cuerpo va en secciones con ## y los datos SIEMPRE en tablas markdown.
    Alinea a la derecha las columnas numéricas usando ---: en el separador.
