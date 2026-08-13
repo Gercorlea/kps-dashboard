@@ -19,6 +19,24 @@
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
+:root {
+  /* Paleta categórica para gráficas (§4.5).
+     El design system resuelve las series con tinta/ok/danger, que alcanza
+     para una serie sola pero no para distinguir categorías entre sí. Estos
+     seis tonos cubren ese caso: están validados contra la superficie real
+     (#ffffff) y pasan los pisos de luminosidad, croma, separación bajo
+     daltonismo (ΔE 9.1 adyacente) y visión normal (ΔE 19.6).
+     El ORDEN de los slots es el mecanismo de seguridad, no decoración: no
+     reordenar ni generar un séptimo tono — lo que sobra se pliega en "Otros",
+     que usa el slot 6 (un gris falla el piso de croma). */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+}
+
 /* La app es light-first: sin dark mode por defecto. */
 html {
   color-scheme: light;
