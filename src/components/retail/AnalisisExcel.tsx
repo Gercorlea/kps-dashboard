@@ -5,19 +5,25 @@
 // su propia directiva "use client" — entran al bundle de cliente por ser
 // importados desde aquí.
 
+import { Database } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { AnalisisHistorico } from "@/components/retail/AnalisisHistorico";
 import { AnalisisKpis } from "@/components/retail/AnalisisKpis";
 import { AnalisisTable } from "@/components/retail/AnalisisTable";
 import { AnalisisUploader } from "@/components/retail/AnalisisUploader";
-import { EstadoVacio, Panel } from "@/components/ui/basicos";
+import { api, ClientApiError } from "@/components/lib/api-client";
+import { useDiferido } from "@/components/lib/useDiferido";
+import { Badge, Meter, Panel } from "@/components/ui/basicos";
 import {
   agrupar,
   calcularKpis,
   granularidadAuto,
   serieTemporal,
 } from "@/lib/retail/analisis/agregar";
+import { filtrarFilas, paginar, totalPaginas } from "@/lib/retail/analisis/filtrar";
 import {
+  columnasBuscables,
   columnasDimension,
   columnasMetrica,
   elegirDimension,
@@ -31,7 +37,15 @@ import {
   LIMITE_AVISO_BYTES,
   leerLibro,
 } from "@/lib/retail/analisis/parsear";
+import {
+  filasParaHistorico,
+  seleccionDePlantilla,
+  type ColumnaResuelta,
+  type Plantilla,
+} from "@/lib/retail/analisis/plantillas";
+import { formatearEntero } from "@/lib/retail/analisis/formato";
 import { METRICA_CONTEO } from "@/lib/retail/analisis/tipos";
+import { MAX_FILAS_LOTE } from "@/lib/validation/retail";
 import type {
   Agregacion,
   Dataset,
@@ -48,11 +62,17 @@ const AnalisisCharts = dynamic(() => import("@/components/retail/AnalisisCharts"
   loading: () => <EsqueletoGraficas />,
 });
 
-const FILAS_VISIBLES = 100;
+const FILAS_POR_PAGINA = 100;
 const TOP_BARRA = 8;
 const TOP_COMPOSICION = 5;
 
 type Estado = "inactivo" | "leyendo" | "listo" | "error";
+
+interface ResultadoGuardado {
+  insertadas: number;
+  actualizadas: number;
+  descartadas: number;
+}
 
 export function AnalisisExcel() {
   const [estado, setEstado] = useState<Estado>("inactivo");
@@ -73,18 +93,108 @@ export function AnalisisExcel() {
   const [agregacion, setAgregacion] = useState<Agregacion>("suma");
   const [granManual, setGranManual] = useState<Granularidad | null>(null);
 
+  // Buscador y paginado de la tabla. Aquí las filas ya están en memoria, así
+  // que filtrar y paginar es un slice; el histórico hace lo mismo contra Mongo.
+  const [busqueda, setBusqueda] = useState("");
+  const busquedaDiferida = useDiferido(busqueda);
+  const [pagina, setPagina] = useState(1);
+
+  // Buscar reinicia el paginado: el resultado se encoge y la página en la que
+  // estabas puede dejar de existir.
+  const alBuscar = useCallback((valor: string) => {
+    setBusqueda(valor);
+    setPagina(1);
+  }, []);
+
+  // Plantilla reconocida (si la hay) y estado de la escritura al histórico.
+  const [plantilla, setPlantilla] = useState<Plantilla | null>(null);
+  const [columnasResueltas, setColumnasResueltas] = useState<ColumnaResuelta[] | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  const [progreso, setProgreso] = useState(0);
+  const [guardado, setGuardado] = useState<ResultadoGuardado | null>(null);
+
   const aplicarDataset = useCallback((ds: Dataset) => {
-    setDataset(ds);
+    setGuardado(null);
     setHojaActual(ds.hoja);
+    setGranManual(null);
+    setMensajeError(null);
+    setEstado("listo");
+    // Otro archivo (u otra hoja) es otro conjunto de filas: conservar la
+    // búsqueda o la página anterior mostraría una tabla vacía sin explicación.
+    setBusqueda("");
+    setPagina(1);
+
+    // Si el layout coincide con una plantilla conocida los roles vienen
+    // declarados y no hay que adivinar cuál de seis columnas numéricas es la
+    // métrica. Si no coincide, se cae a la inferencia genérica.
+    const porPlantilla = seleccionDePlantilla(ds);
+    if (porPlantilla) {
+      const conRoles = { ...ds, columnas: porPlantilla.columnas };
+      setDataset(conRoles);
+      setPlantilla(porPlantilla.plantilla);
+      setColumnasResueltas(porPlantilla.columnas);
+      setIdxDimension(porPlantilla.idxDimension);
+      setIdxMetrica(porPlantilla.idxMetrica);
+      setIdxFecha(porPlantilla.idxFecha);
+      setAgregacion(porPlantilla.idxMetrica === METRICA_CONTEO ? "conteo" : "suma");
+      return;
+    }
+
+    setDataset(ds);
+    setPlantilla(null);
+    setColumnasResueltas(null);
     setIdxDimension(elegirDimension(ds.columnas));
     const met = elegirMetrica(ds.columnas);
     setIdxMetrica(met);
     setIdxFecha(elegirFecha(ds.columnas));
     setAgregacion(met === METRICA_CONTEO ? "conteo" : "suma");
-    setGranManual(null);
-    setMensajeError(null);
-    setEstado("listo");
   }, []);
+
+  // Manda el dataset al histórico por lotes: 15 mil filas en un solo POST son
+  // varios MB sin señal de avance, y el upsert por lote deja el progreso
+  // visible. Es idempotente, así que reintentar no duplica.
+  const guardarEnHistorico = useCallback(async () => {
+    if (!dataset || !plantilla || !columnasResueltas) return;
+    setGuardando(true);
+    setProgreso(0);
+    setGuardado(null);
+    setMensajeError(null);
+
+    try {
+      const { filas, descartadas } = filasParaHistorico(dataset, columnasResueltas);
+      let insertadas = 0;
+      let actualizadas = 0;
+
+      for (let i = 0; i < filas.length; i += MAX_FILAS_LOTE) {
+        const lote = filas.slice(i, i + MAX_FILAS_LOTE);
+        const r = await api<{ insertadas: number; actualizadas: number }>(
+          "/api/retail/analisis",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              plantilla: plantilla.id,
+              account: plantilla.account,
+              sourceFile: nombreArchivo ?? dataset.hoja,
+              filas: lote,
+            }),
+          }
+        );
+        insertadas += r.insertadas;
+        actualizadas += r.actualizadas;
+        setProgreso(Math.min(1, (i + lote.length) / filas.length));
+      }
+
+      setGuardado({ insertadas, actualizadas, descartadas });
+    } catch (error) {
+      setMensajeError(
+        error instanceof ClientApiError
+          ? `No se pudo guardar en el histórico: ${error.message}`
+          : "No se pudo guardar en el histórico."
+      );
+    } finally {
+      setGuardando(false);
+    }
+  }, [dataset, plantilla, columnasResueltas, nombreArchivo]);
 
   const alArchivo = useCallback(
     async (file: File) => {
@@ -157,9 +267,33 @@ export function AnalisisExcel() {
   const agregacionEfectiva: Agregacion = colMetrica ? agregacion : "conteo";
   const nombreMetrica = colMetrica?.nombre ?? "Cantidad de filas";
 
-  const filasVisibles = useMemo(
-    () => dataset?.filas.slice(0, FILAS_VISIBLES) ?? [],
+  // La tabla muestra las mismas columnas que ofrecen los filtros: fuera las
+  // vacías y las constantes. Con la plantilla de Walmart eso quita cuatro
+  // columnas — entre ellas "Vendor Name", la más ancha del reporte — y es lo
+  // que hace que las 14 restantes entren en pantalla sin scroll horizontal.
+  const columnasTabla = useMemo(
+    () => dataset?.columnas.filter((c) => c.tipo !== "vacia" && !c.esConstante) ?? [],
     [dataset]
+  );
+
+  const columnasBuscadas = useMemo(() => columnasBuscables(columnasTabla), [columnasTabla]);
+
+  // El buscador afecta SÓLO a la tabla: los KPIs y las gráficas siguen
+  // hablando del reporte completo. Filtrarlos también dejaría un "Total POS
+  // Sales" que cambia mientras se escribe, sin que la pantalla diga por qué.
+  const filasFiltradas = useMemo(
+    () => (dataset ? filtrarFilas(dataset.filas, columnasBuscadas, busquedaDiferida) : []),
+    [dataset, columnasBuscadas, busquedaDiferida]
+  );
+
+  const paginas = totalPaginas(filasFiltradas.length, FILAS_POR_PAGINA);
+  // Red de seguridad por si el dataset cambia bajo una página alta; el reset
+  // real ocurre en alBuscar, antes de que la búsqueda encoja el resultado.
+  const paginaActual = Math.min(Math.max(1, pagina), paginas);
+
+  const filasVisibles = useMemo(
+    () => paginar(filasFiltradas, paginaActual, FILAS_POR_PAGINA),
+    [filasFiltradas, paginaActual]
   );
 
   const granEfectiva = useMemo<Granularidad>(() => {
@@ -230,14 +364,10 @@ export function AnalisisExcel() {
         </p>
       ) : null}
 
-      {estado === "inactivo" && !mensajeError ? (
-        <Panel>
-          <EstadoVacio
-            title="Sin archivo cargado"
-            detalle="Sube un .xlsx para ver los datos en crudo y su análisis. Se detectan solas las columnas de fecha, numéricas y de categoría; nada se guarda al recargar."
-          />
-        </Panel>
-      ) : null}
+      {/* Sin archivo en memoria la pestaña no se queda en blanco: muestra la
+          tabla del último reporte guardado, paginada contra Mongo. Al cargar un
+          .xlsx la reemplaza el análisis completo de ESE archivo. */}
+      {!dataset && estado !== "leyendo" && !mensajeError ? <AnalisisHistorico /> : null}
 
       {/* Una sola fila de filtros arriba de todo: cada gráfica, la tabla y los
           KPIs se recalculan contra la misma selección, así que los números
@@ -309,6 +439,67 @@ export function AnalisisExcel() {
         </div>
       ) : null}
 
+      {/* La plantilla reconocida es lo que habilita guardar: sin ella no hay
+          mapeo fiable de encabezados a campos del histórico. */}
+      {dataset && plantilla ? (
+        <Panel title="Histórico de reportes">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Badge tono="ok">Plantilla reconocida</Badge>
+                <span className="cr-body">{plantilla.nombre}</span>
+              </div>
+              <span className="cr-small">
+                Se guardan {columnasResueltas?.filter((c) => c.rol !== "ignorada").length} columnas;
+                se omiten{" "}
+                {columnasResueltas
+                  ?.filter((c) => c.rol === "ignorada")
+                  .map((c) => c.nombre)
+                  .join(", ")}{" "}
+                por ser constantes o vacías. Volver a guardar el mismo reporte actualiza en vez
+                de duplicar.
+              </span>
+            </div>
+            <button
+              type="button"
+              className="cr-btn cr-btn--primary"
+              disabled={guardando}
+              aria-busy={guardando}
+              onClick={() => void guardarEnHistorico()}
+            >
+              {guardando ? (
+                <>
+                  <span className="cr-spin" aria-hidden="true" />
+                  Guardando…
+                </>
+              ) : (
+                <>
+                  <Database strokeWidth={1.75} />
+                  Guardar en histórico
+                </>
+              )}
+            </button>
+          </div>
+
+          {guardando ? (
+            <div className="mt-3">
+              <Meter value={progreso} tono="ink" />
+            </div>
+          ) : null}
+
+          {guardado ? (
+            <p className="cr-small mt-3" style={{ color: "var(--cr-ok)" }} role="status">
+              Listo: {formatearEntero(guardado.insertadas)} filas nuevas y{" "}
+              {formatearEntero(guardado.actualizadas)} actualizadas
+              {guardado.descartadas > 0
+                ? ` · ${formatearEntero(guardado.descartadas)} descartadas por no tener fecha o código de artículo`
+                : ""}
+              .
+            </p>
+          ) : null}
+        </Panel>
+      ) : null}
+
       {dataset && kpis ? (
         <>
           <AnalisisKpis
@@ -318,11 +509,29 @@ export function AnalisisExcel() {
           />
 
           <AnalisisTable
-            columnas={dataset.columnas}
+            columnas={columnasTabla}
             filasVisibles={filasVisibles}
             totalFilas={dataset.totalFilas}
-            hoja={dataset.hoja}
-            filaEncabezado={dataset.filaEncabezado}
+            totalFiltradas={filasFiltradas.length}
+            totalColumnas={dataset.columnas.length}
+            detalles={[
+              `hoja «${dataset.hoja}»`,
+              // Se expone la detección de encabezado para que un acierto
+              // dudoso sea visible en pantalla en vez de silencioso.
+              dataset.filaEncabezado >= 0
+                ? `encabezado en la fila ${dataset.filaEncabezado + 1}`
+                : "sin encabezado detectado",
+            ]}
+            busqueda={busqueda}
+            // En memoria el filtro corre con el valor diferido, así que ése es
+            // el que describe las filas en pantalla.
+            busquedaAplicada={busquedaDiferida}
+            onBusqueda={alBuscar}
+            columnasBuscadas={columnasBuscadas.map((c) => c.nombre)}
+            pagina={paginaActual}
+            paginas={paginas}
+            porPagina={FILAS_POR_PAGINA}
+            onPagina={setPagina}
           />
 
           <AnalisisCharts

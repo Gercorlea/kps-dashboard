@@ -20,12 +20,17 @@ const UMBRAL_TIPO = 0.8;
 // Proporción necesaria para decidir que un separador solitario es de miles.
 const UMBRAL_SEPARADOR = 0.9;
 
-const MAX_FILAS_ENCABEZADO = 20;
+// El reporte mensual de Walmart Retail Link trae 26 filas de preámbulo
+// (título, Report Options, Selections Include, la leyenda de Item Flags…), así
+// que 20 no alcanzaba y el encabezado real quedaba sin detectar.
+const MAX_FILAS_ENCABEZADO = 60;
 const MUESTRA_CABECERA = 200;
 const MUESTRA_TOTAL = 2000;
 const MUESTRA_PASO = 1000;
 
 const RE_ISO = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/;
+// Año primero con cualquier separador: Walmart exporta "2024/07/06".
+const RE_YMD = /^(\d{4})[/.](\d{1,2})[/.](\d{1,2})$/;
 const RE_DMY = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/;
 // Tras quitar moneda y espacios, un valor numérico sólo tiene dígitos y separadores.
 const RE_SOLO_NUMERO = /^\d[\d.,]*$/;
@@ -124,6 +129,10 @@ function limpiarNumero(texto: string): string | null {
   if (t.startsWith("(") && t.endsWith(")")) t = t.slice(1, -1).trim();
   t = t.replace(/[$€£¥\s ]/g, "");
   if (t.startsWith("-") || t.startsWith("+")) t = t.slice(1);
+  // Un cero a la izquierda delata un CÓDIGO, no una cantidad: el UPC
+  // "0750229353070" y el proveedor "063617" perderían el cero al pasar por
+  // Number() y se mostrarían con separadores de miles. Se dejan como texto.
+  if (/^0\d/.test(t)) return null;
   return RE_SOLO_NUMERO.test(t) ? t : null;
 }
 
@@ -202,7 +211,7 @@ export function parsearFechaTexto(
   const t = texto.trim();
   if (t === "") return null;
 
-  const iso = RE_ISO.exec(t);
+  const iso = RE_ISO.exec(t) ?? RE_YMD.exec(t);
   if (iso) return construirFecha(Number(iso[1]), Number(iso[2]), Number(iso[3]));
 
   const dmy = RE_DMY.exec(t);
@@ -348,14 +357,24 @@ export function construirColumnas(
 
     const cardinalidad = distintos.size;
 
+    // Un ID se delata de dos formas: por su nombre, o porque casi cada fila
+    // trae un valor distinto. La segunda por sí sola no basta — "Item Nbr"
+    // tiene 38 valores repartidos en 15 mil filas, así que la razón
+    // cardinalidad/filas es diminuta y aun así es un identificador.
+    const esIdentificador =
+      tipo === "numero" &&
+      todosEnteros &&
+      noVacias > 0 &&
+      (RE_CODIGO.test(nombres[c]) || cardinalidad / noVacias > 0.9);
+
     columnas.push({
       indice: c,
       nombre: nombres[c],
       tipo,
       noVacias,
       cardinalidad,
-      esIdentificador:
-        tipo === "numero" && todosEnteros && noVacias > 0 && cardinalidad / noVacias > 0.9,
+      esIdentificador,
+      esConstante: noVacias > 0 && cardinalidad <= 1,
       magnitud: tipo === "numero" ? magnitud : 0,
       formatoNumerico,
       ordenFecha: tipo === "fecha" ? ordenFecha : null,
@@ -386,37 +405,62 @@ export function valorFecha(v: CeldaCruda, col: MetaColumna): Date | null {
 
 // --------------------------------------------------------------- defaults
 
-const RE_METRICA = /importe|total|venta|monto|valor|neto|bruto|precio|subtotal|ingreso|unidades|units/i;
+// Los reportes llegan con encabezados en español o en inglés (Walmart Retail
+// Link exporta en inglés), así que los patrones cubren ambos.
+//
+// Dos niveles, y el orden importa: en un reporte de ventas la métrica que
+// interesa por omisión es el DINERO, no la cantidad. Con un solo patrón
+// "POS Qty" (columna 9) ganaría a "POS Sales" (columna 10) por ir antes.
+const RE_METRICA_DINERO =
+  /importe|venta|sales|monto|revenue|total|amount|ingreso|neto|bruto|subtotal/i;
+const RE_METRICA_CANTIDAD =
+  /qty|quantity|cantidad|unidades|units|precio|price|margin|margen|basket|canasta/i;
+
+// Nombres que delatan un identificador y no una magnitud. Los límites de
+// palabra evitan que "Numero de unidades" caiga aquí por el "num".
+const RE_CODIGO = /\b(nbr|num|no|id|code|codigo|c[oó]digo|upc|ean|sku|folio|clave|barcode)\b/i;
+
 const RE_DIMENSION =
-  /cliente|producto|art[ií]culo|vendedor|categor[ií]a|sucursal|zona|regi[oó]n|canal|familia|marca|tienda|almac[eé]n|sku|brand|store/i;
+  /cliente|producto|art[ií]culo|vendedor|categor[ií]a|sucursal|zona|regi[oó]n|canal|familia|marca|tienda|almac[eé]n|brand|store|desc/i;
 
 /** Cardinalidad máxima para que una columna produzca una barra legible. */
 export const MAX_CARDINALIDAD_DIMENSION = 50;
 
-/** Columnas ofrecidas como dimensión: categorías, más numéricas de baja cardinalidad. */
+/**
+ * Columnas ofrecidas como dimensión: categorías, más numéricas y fechas de baja
+ * cardinalidad. Las constantes quedan fuera — agrupar por una columna con un
+ * solo valor produce una barra única que no dice nada.
+ */
 export function columnasDimension(columnas: MetaColumna[]): MetaColumna[] {
   return columnas.filter(
     (c) =>
-      c.tipo === "categoria" ||
-      ((c.tipo === "numero" || c.tipo === "fecha") &&
-        c.cardinalidad > 1 &&
-        c.cardinalidad <= MAX_CARDINALIDAD_DIMENSION)
+      !c.esConstante &&
+      (c.tipo === "categoria" ||
+        ((c.tipo === "numero" || c.tipo === "fecha") &&
+          c.cardinalidad > 1 &&
+          c.cardinalidad <= MAX_CARDINALIDAD_DIMENSION))
   );
 }
 
+/**
+ * Columnas ofrecidas como métrica. Fuera los identificadores (sumar folios no
+ * significa nada) y las constantes (una columna de puros ceros como
+ * "Net Net Unit Margin%" no grafica nada).
+ */
 export function columnasMetrica(columnas: MetaColumna[]): MetaColumna[] {
-  return columnas.filter((c) => c.tipo === "numero");
+  return columnas.filter((c) => c.tipo === "numero" && !c.esIdentificador && !c.esConstante);
 }
 
 export function elegirMetrica(columnas: MetaColumna[]): number {
-  const numericas = columnasMetrica(columnas);
-  const porNombre = numericas.find((c) => RE_METRICA.test(c.nombre));
-  if (porNombre) return porNombre.indice;
-
-  // Excluir identificadores: si no, una columna de folios de 15k filas gana
-  // por pura magnitud.
-  const candidatas = numericas.filter((c) => !c.esIdentificador);
+  const candidatas = columnasMetrica(columnas);
   if (candidatas.length === 0) return -1; // METRICA_CONTEO
+
+  const dinero = candidatas.find((c) => RE_METRICA_DINERO.test(c.nombre));
+  if (dinero) return dinero.indice;
+
+  const cantidad = candidatas.find((c) => RE_METRICA_CANTIDAD.test(c.nombre));
+  if (cantidad) return cantidad.indice;
+
   return candidatas.reduce((a, b) => (b.magnitud > a.magnitud ? b : a)).indice;
 }
 
@@ -440,4 +484,23 @@ export function elegirDimension(columnas: MetaColumna[]): number {
 
 export function elegirFecha(columnas: MetaColumna[]): number {
   return columnas.find((c) => c.tipo === "fecha")?.indice ?? -1;
+}
+
+/**
+ * Columnas donde busca el buscador de producto: las de texto (descripción,
+ * marca) y los códigos (UPC, Item Nbr).
+ *
+ * Fuera las métricas y las fechas: para esas el usuario tiene los filtros y el
+ * rango, y dejarlas dentro haría que buscar "10" trajera cualquier fila cuyo
+ * importe contenga un 10. Las columnas que se buscan se listan en la UI, para
+ * que no haya que adivinar por qué una fila calzó.
+ */
+export function columnasBuscables(columnas: MetaColumna[]): MetaColumna[] {
+  return columnas.filter(
+    (c) =>
+      !c.esConstante &&
+      c.tipo !== "vacia" &&
+      c.tipo !== "fecha" &&
+      (c.tipo === "categoria" || c.esIdentificador)
+  );
 }

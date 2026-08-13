@@ -21,7 +21,10 @@ export interface MetaColumna {
   tipo: TipoColumna;
   noVacias: number;
   cardinalidad: number; // distintos observados en la muestra
-  esIdentificador: boolean; // cardinalidad/noVacias > 0.9 y todos enteros: folios, IDs
+  esIdentificador: boolean; // folios, UPC, SKU: no son magnitudes que sumar
+  // Un solo valor distinto en toda la columna ("Vendor Name", "Vendor Nbr"):
+  // no sirve ni para agrupar ni para medir, así que se excluye de los filtros.
+  esConstante: boolean;
   magnitud: number; // suma de |v| sobre la muestra; 0 si no es numérica
   formatoNumerico: FormatoNumerico;
   // Para columnas de fecha escritas como texto: orden de los componentes.

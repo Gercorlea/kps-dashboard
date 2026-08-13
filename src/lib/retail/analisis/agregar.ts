@@ -147,13 +147,21 @@ function rangoDeFechas(
   return min && max ? { desde: min, hasta: max } : null;
 }
 
-/** Granularidad sugerida a partir del rango de fechas presente en los datos. */
+/**
+ * Granularidad sugerida a partir del rango de fechas presente en los datos.
+ *
+ * El corte a mes es generoso a propósito: el reporte de Walmart abarca 734
+ * días y con un umbral de dos años caía en "año", o sea una línea de tres
+ * puntos para dos años de venta diaria. Mensual se sigue leyendo bien hasta
+ * unos 60 puntos, así que sólo por encima de cinco años conviene agrupar por
+ * año.
+ */
 export function granularidadAuto(filas: FilaCruda[], colFecha: MetaColumna): Granularidad {
   const rango = rangoDeFechas(filas, colFecha);
   if (!rango) return "mes";
   const dias = (rango.hasta.getTime() - rango.desde.getTime()) / 86_400_000;
   if (dias < 60) return "dia";
-  if (dias < 730) return "mes";
+  if (dias < 1825) return "mes";
   return "anio";
 }
 

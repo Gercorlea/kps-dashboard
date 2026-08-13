@@ -6,6 +6,8 @@
 // todo el módulo retail las lea igual y ordenen como texto.
 
 import { fmtNum, fmtPct } from "@/components/lib/fmt";
+import { valorFecha } from "./inferir-tipos";
+import type { CeldaCruda, MetaColumna } from "./tipos";
 
 const LOCALE = "es-MX";
 
@@ -54,11 +56,20 @@ export function formatearPorcentaje(fraccion: number): string {
   return Number.isFinite(fraccion) ? fmtPct(fraccion) : "—";
 }
 
-/** Valor de celda cruda → texto para la tabla. */
-export function formatearCelda(v: unknown): string {
+/**
+ * Valor de celda cruda → texto para la tabla.
+ *
+ * `esCodigo` apaga los separadores de miles: un "Item Nbr" 101252325 es un
+ * identificador, y mostrarlo como "101,252,325" lo hace ilegible y sugiere que
+ * es una cantidad.
+ */
+export function formatearCelda(v: unknown, esCodigo = false): string {
   if (v === null || v === undefined) return "";
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? "" : formatearFecha(v);
-  if (typeof v === "number") return formatearNumero(v);
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return "—";
+    return esCodigo ? String(v) : formatearNumero(v);
+  }
   if (typeof v === "boolean") return v ? "Sí" : "No";
   return String(v);
 }
@@ -69,4 +80,27 @@ export function formatearCelda(v: unknown): string {
  */
 export function formatearClaveTemporal(clave: string): string {
   return clave;
+}
+
+/**
+ * Celda ya normalizada según el tipo que se infirió para su columna.
+ *
+ * A diferencia de formatearCelda, que devuelve el texto tal cual viene del
+ * archivo, aquí una fecha se muestra siempre en ISO aunque el Excel la traiga
+ * como "2024/07/06", y un número escrito como "$ 1,234.00" se muestra con el
+ * formato de la app. La tabla y las gráficas quedan diciendo lo mismo.
+ */
+export function formatearCeldaNormalizada(v: CeldaCruda, col: MetaColumna): string {
+  if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return "";
+
+  if (col.tipo === "fecha") {
+    const d = valorFecha(v, col);
+    if (d) return formatearFecha(d);
+  }
+
+  // Los códigos se muestran tal cual: el UPC conserva su cero a la izquierda y
+  // un "Item Nbr" no lleva separadores de miles.
+  if (col.esIdentificador) return formatearCelda(v, true);
+
+  return formatearCelda(v);
 }

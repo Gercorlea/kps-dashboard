@@ -169,3 +169,57 @@ export const lineaOcRowSchema = z.object({
   purchaseDocRef: z.string(),
   cpfr: z.string(),
 });
+
+// --- Analizador ad-hoc (§7 bis) ---------------------------------------
+
+// Filas que el analizador manda al histórico. El cliente ya reconoció la
+// plantilla y mapeó los encabezados a campos, así que aquí se valida la forma
+// final, no el Excel.
+export const reporteVentaRowSchema = z.object({
+  // ISO local YYYY-MM-DD; el servidor la ancla a medianoche UTC.
+  date: fechaISO,
+  wmMonth: z.string().max(20),
+  brand: z.string().max(200),
+  itemDesc: z.string().max(300),
+  itemNbr: z.number().int().finite(),
+  primeItemNbr: z.number().int().finite(),
+  // Texto, no número: el UPC trae cero a la izquierda.
+  upc: z.string().max(40),
+  productCode: z.string().max(40),
+  posQty: z.number().finite(),
+  posSales: z.number().finite(),
+  avgPrice: z.number().finite(),
+  avgSalesPerStore: z.number().finite(),
+  itemQtySold: z.number().finite(),
+  basketOccurrences: z.number().finite(),
+});
+
+export type ReporteVentaRow = z.infer<typeof reporteVentaRowSchema>;
+
+// Se envía por lotes: 15 mil filas en un solo POST son varios MB y no dan
+// señal de avance. El cliente trocea y el servidor hace upsert de cada lote.
+export const MAX_FILAS_LOTE = 2000;
+
+export const guardarAnalisisSchema = z.object({
+  plantilla: z.string().min(1).max(60),
+  account: z.string().min(1).max(60),
+  sourceFile: z.string().min(1).max(300),
+  filas: z.array(reporteVentaRowSchema).min(1).max(MAX_FILAS_LOTE),
+});
+
+export const historicoAnalisisQuerySchema = z.object({
+  account: z.string().min(1).max(60).optional(),
+});
+
+// La tabla del histórico pagina en el servidor: nunca se bajan 15 mil filas al
+// navegador sólo para entrar a la pestaña. `limit` tope 100 es el tamaño de
+// página que pide la UI; `sourceFile` ausente significa "el último cargado".
+export const FILAS_POR_PAGINA = 100;
+
+export const filasAnalisisQuerySchema = z.object({
+  account: z.string().min(1).max(60).optional(),
+  sourceFile: z.string().min(1).max(300).optional(),
+  buscar: z.string().max(120).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(FILAS_POR_PAGINA).default(FILAS_POR_PAGINA),
+});

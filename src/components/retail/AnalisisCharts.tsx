@@ -91,7 +91,7 @@ const ETIQUETA_AGREGACION: Record<Agregacion, string> = {
   conteo: "Cantidad",
 };
 
-function acortar(texto: string, max = 24): string {
+function acortar(texto: string, max = 18): string {
   return texto.length > max ? `${texto.slice(0, max - 1)}…` : texto;
 }
 
@@ -186,24 +186,26 @@ function AnalisisChartsBase({
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <Panel title={`Top ${nTop} por ${nombreDimension}`}>
         <p className="cr-small mb-2">
           {ETIQUETA_AGREGACION[agregacion]} de {nombreMetrica}
         </p>
-        <div style={{ height: 360 }}>
+        {/* Alto según el número de barras: con 4 categorías un alto fijo de
+            240px dejaba media tarjeta vacía. */}
+        <div style={{ height: Math.max(150, datosBarra.length * 26 + 46) }}>
           <ResponsiveContainer debounce={50}>
             <BarChart
               data={datosBarra}
               layout="vertical"
-              margin={{ top: 4, right: 64, bottom: 8, left: 8 }}
+              margin={{ top: 4, right: 52, bottom: 8, left: 4 }}
             >
               <CartesianGrid stroke={GRID} horizontal={false} />
               <XAxis type="number" tickFormatter={formatearCompacto} {...ejes} />
               <YAxis
                 type="category"
                 dataKey="clave"
-                width={170}
+                width={130}
                 tickFormatter={(v: string) => acortar(v)}
                 {...ejes}
               />
@@ -241,12 +243,12 @@ function AnalisisChartsBase({
           <p className="cr-small mb-2">
             {ETIQUETA_AGREGACION[agregacion]}; los periodos sin datos se muestran en cero
           </p>
-          <div style={{ height: 260 }}>
+          <div style={{ height: 200 }}>
             <ResponsiveContainer debounce={50}>
               <LineChart data={datosSerie} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
                 <CartesianGrid stroke={GRID} vertical={false} />
                 <XAxis dataKey="clave" minTickGap={24} {...ejes} />
-                <YAxis width={56} tickFormatter={formatearCompacto} {...ejes} />
+                <YAxis width={48} tickFormatter={formatearCompacto} {...ejes} />
                 <Tooltip
                   contentStyle={ESTILO_TOOLTIP}
                   labelFormatter={(v: unknown) => comoTexto(v)}

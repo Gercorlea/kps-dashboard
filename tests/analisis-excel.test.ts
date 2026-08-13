@@ -428,8 +428,14 @@ describe("agregación", () => {
     });
     expect(granularidadAuto(corto.filas, col(corto, "Fecha"))).toBe("dia");
 
+    // Dos años de datos diarios se leen por mes (24 puntos), no por año (3).
+    const dosAnios = await cargar({
+      Hoja1: [["Fecha"], [new Date(2024, 4, 25)], [new Date(2026, 4, 29)]],
+    });
+    expect(granularidadAuto(dosAnios.filas, col(dosAnios, "Fecha"))).toBe("mes");
+
     const largo = await cargar({
-      Hoja1: [["Fecha"], [new Date(2019, 0, 1)], [new Date(2024, 0, 1)]],
+      Hoja1: [["Fecha"], [new Date(2014, 0, 1)], [new Date(2024, 0, 1)]],
     });
     expect(granularidadAuto(largo.filas, col(largo, "Fecha"))).toBe("anio");
   });
