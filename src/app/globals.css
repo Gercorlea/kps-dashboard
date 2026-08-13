@@ -1,59 +1,6 @@
 @import "tailwindcss";
 @import "./design-system.css";
 
-<<<<<<< HEAD
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-
-  /* Paleta de visualización de datos.
-     Los 6 tonos están validados contra las superficies reales de este proyecto
-     (#ffffff en claro, #0a0a0a en oscuro): pasan los pisos de luminosidad,
-     croma, separación bajo daltonismo (ΔE 9.1 adyacente) y visión normal
-     (ΔE 19.6) en ambos modos. El orden de los slots ES el mecanismo de
-     seguridad, no decoración: no reordenar ni generar un séptimo tono.
-     "Otros" usa el slot 6; un gris falla el piso de croma y queda a ΔE 1.1 de
-     magenta en deuteranopía oscura. */
-  --viz-surface: #ffffff;
-  --viz-grid: #e1e0d9;
-  --viz-axis: #c3c2b7;
-  --viz-muted: #898781;
-  --viz-1: #2a78d6;
-  --viz-2: #eb6834;
-  --viz-3: #1baf7a;
-  --viz-4: #eda100;
-  --viz-5: #e87ba4;
-  --viz-6: #008300;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-
-    /* Los mismos seis tonos, escalonados para la superficie oscura: no es un
-       volteo automático del modo claro. El proyecto no tiene toggle de tema,
-       sólo prefers-color-scheme, así que basta este bloque. Si algún día se
-       agrega un toggle, duplicar estos valores bajo :root[data-theme="dark"]. */
-    --viz-surface: #0a0a0a;
-    --viz-grid: #2c2c2a;
-    --viz-axis: #383835;
-    --viz-muted: #898781;
-    --viz-1: #3987e5;
-    --viz-2: #d95926;
-    --viz-3: #199e70;
-    --viz-4: #c98500;
-    --viz-5: #d55181;
-    --viz-6: #008300;
-  }
-=======
 @theme {
   --color-cr-bg: #ffffff;
   --color-cr-surface-2: #fafaf9;
@@ -72,10 +19,27 @@
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
+:root {
+  /* Paleta categórica para gráficas (§4.5).
+     El design system resuelve las series con tinta/ok/danger, que alcanza
+     para una serie sola pero no para distinguir categorías entre sí. Estos
+     seis tonos cubren ese caso: están validados contra la superficie real
+     (#ffffff) y pasan los pisos de luminosidad, croma, separación bajo
+     daltonismo (ΔE 9.1 adyacente) y visión normal (ΔE 19.6).
+     El ORDEN de los slots es el mecanismo de seguridad, no decoración: no
+     reordenar ni generar un séptimo tono — lo que sobra se pliega en "Otros",
+     que usa el slot 6 (un gris falla el piso de croma). */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+}
+
 /* La app es light-first: sin dark mode por defecto. */
 html {
   color-scheme: light;
->>>>>>> main
 }
 
 body {
