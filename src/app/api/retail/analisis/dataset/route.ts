@@ -95,8 +95,13 @@ export async function GET(request: NextRequest) {
       .select({ sourceFile: 1, template: 1, account: 1, importedAt: 1 })
       .lean();
 
+    // Retailers que TIENEN reportes guardados. Se mandan para que el selector
+    // de la vista ofrezca sólo esos: listar los cuatro llevaría a elegir uno
+    // vacío y toparse con un "sin datos" que no explica nada.
+    const cuentas = (await SalesReport.distinct("account")) as string[];
+
     if (!ultimo) {
-      return ok({ archivo: null, campos: CAMPOS, filas: [], truncado: false });
+      return ok({ archivo: null, cuentas, campos: CAMPOS, filas: [], truncado: false });
     }
 
     const filtro = { account: ultimo.account, sourceFile: ultimo.sourceFile };
@@ -118,6 +123,7 @@ export async function GET(request: NextRequest) {
         importedAt: ultimo.importedAt?.toISOString() ?? null,
         total,
       },
+      cuentas,
       campos: CAMPOS,
       filas: docs.map((d) => {
         const doc = d as unknown as Record<string, unknown>;

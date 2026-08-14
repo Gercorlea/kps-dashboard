@@ -47,6 +47,7 @@ import {
 } from "@/lib/retail/analisis/plantillas";
 import { formatearEntero } from "@/lib/retail/analisis/formato";
 import { METRICA_CONTEO } from "@/lib/retail/analisis/tipos";
+import { nombreRetailer, RETAILERS } from "@/lib/retail/retailers";
 import { MAX_FILAS_LOTE } from "@/lib/validation/retail";
 import type {
   Agregacion,
@@ -85,6 +86,8 @@ interface Procedencia {
   origen: Origen;
   /** Nombre del .xlsx del que salieron las filas. */
   archivo: string;
+  /** Retailer con el que se guardó; null mientras no se haya guardado. */
+  retailer: string | null;
   importadoEl: string | null;
   truncado: boolean;
 }
@@ -93,6 +96,8 @@ interface ResultadoGuardado {
   insertadas: number;
   actualizadas: number;
   descartadas: number;
+  /** Se recuerda con el resultado: el selector puede cambiar después. */
+  retailer: string;
 }
 
 /** Lo que devuelven tanto `seleccionDePlantilla` como `datasetDesdeHistorico`. */
@@ -110,6 +115,7 @@ interface RespuestaHistorico {
     importedAt: string | null;
     total: number;
   } | null;
+  cuentas: string[];
   campos: string[];
   filas: CeldaCruda[][];
   truncado: boolean;
@@ -157,6 +163,17 @@ export function AnalisisExcel() {
     setBusqueda(valor);
     setPagina(1);
   }, []);
+
+  // Retailer al que pertenece el archivo que se va a guardar. Arranca vacío a
+  // propósito: es una decisión de quien sube el reporte, no algo que se pueda
+  // deducir de la plantilla, y guardarlo en la cuenta equivocada ensucia el
+  // histórico de otro retailer. Sin elegirlo, el botón de guardar no se activa.
+  const [retailerGuardar, setRetailerGuardar] = useState("");
+
+  // Qué retailer se está viendo en el histórico. Vacío = el último reporte
+  // guardado, sea de quien sea.
+  const [retailerVista, setRetailerVista] = useState("");
+  const [cuentasConDatos, setCuentasConDatos] = useState<string[]>([]);
 
   // Plantilla reconocida (si la hay) y estado de la escritura al histórico.
   const [plantilla, setPlantilla] = useState<Plantilla | null>(null);
@@ -210,7 +227,9 @@ export function AnalisisExcel() {
   // "modo histórico", hay las mismas filas viniendo de otro lado.
   const cargarHistorico = useCallback(async () => {
     try {
-      const r = await api<RespuestaHistorico>("/api/retail/analisis/dataset");
+      const q = retailerVista ? `?account=${encodeURIComponent(retailerVista)}` : "";
+      const r = await api<RespuestaHistorico>(`/api/retail/analisis/dataset${q}`);
+      setCuentasConDatos(r.cuentas);
       const plantilla = r.archivo ? plantillaPorId(r.archivo.template) : null;
       if (!r.archivo || !plantilla || r.filas.length === 0) {
         setEstado("inactivo");
@@ -225,6 +244,7 @@ export function AnalisisExcel() {
       setProcedencia({
         origen: "historico",
         archivo: r.archivo.sourceFile,
+        retailer: r.archivo.account,
         importadoEl: fechaHora(r.archivo.importedAt),
         truncado: r.truncado,
       });
@@ -235,7 +255,9 @@ export function AnalisisExcel() {
       // error que bloquee la vista.
       setEstado("inactivo");
     }
-  }, [aplicarDataset]);
+    // retailerVista es dependencia real: cambiar de retailer recarga el último
+    // reporte de ESE retailer.
+  }, [aplicarDataset, retailerVista]);
 
   useEffect(() => {
     // fetch-on-mount: el estado inicial ya es "cargando"
@@ -247,7 +269,9 @@ export function AnalisisExcel() {
   // varios MB sin señal de avance, y el upsert por lote deja el progreso
   // visible. Es idempotente, así que reintentar no duplica.
   const guardarEnHistorico = useCallback(async () => {
-    if (!dataset || !plantilla || !columnasResueltas) return;
+    // El retailer es obligatorio; el botón ya viene deshabilitado sin él, esto
+    // es el cinturón por si se dispara desde otro lado.
+    if (!dataset || !plantilla || !columnasResueltas || !retailerGuardar) return;
     setGuardando(true);
     setProgreso(0);
     setGuardado(null);
@@ -266,7 +290,7 @@ export function AnalisisExcel() {
             method: "POST",
             body: JSON.stringify({
               template: plantilla.id,
-              account: plantilla.account,
+              account: retailerGuardar,
               sourceFile: nombreArchivo ?? dataset.hoja,
               filas: lote,
             }),
@@ -277,7 +301,7 @@ export function AnalisisExcel() {
         setProgreso(Math.min(1, (i + lote.length) / filas.length));
       }
 
-      setGuardado({ insertadas, actualizadas, descartadas });
+      setGuardado({ insertadas, actualizadas, descartadas, retailer: retailerGuardar });
     } catch (error) {
       setMensajeError(
         error instanceof ClientApiError
@@ -287,7 +311,7 @@ export function AnalisisExcel() {
     } finally {
       setGuardando(false);
     }
-  }, [dataset, plantilla, columnasResueltas, nombreArchivo]);
+  }, [dataset, plantilla, columnasResueltas, nombreArchivo, retailerGuardar]);
 
   const alArchivo = useCallback(
     async (file: File) => {
@@ -297,9 +321,13 @@ export function AnalisisExcel() {
       setProcedencia({
         origen: "archivo",
         archivo: file.name,
+        retailer: null,
         importadoEl: null,
         truncado: false,
       });
+      // Otro archivo puede ser de otro retailer: se vuelve a preguntar en vez
+      // de arrastrar la elección del anterior.
+      setRetailerGuardar("");
       setAviso(
         file.size > LIMITE_AVISO_BYTES
           ? `El archivo pesa ${Math.round(file.size / 1024 / 1024)} MB; el análisis puede tardar unos segundos.`
@@ -455,6 +483,7 @@ export function AnalisisExcel() {
     if (!dataset) return [];
     if (procedencia?.origen === "historico") {
       return [
+        ...(procedencia.retailer ? [nombreRetailer(procedencia.retailer)] : []),
         `archivo «${procedencia.archivo}»`,
         ...(procedencia.importadoEl ? [`importado el ${procedencia.importadoEl}`] : []),
         ...(procedencia.truncado
@@ -507,6 +536,24 @@ export function AnalisisExcel() {
           siempre concuerdan entre sí. */}
       {dataset || nombresHojas.length > 1 ? (
         <div className="flex flex-wrap items-end gap-3">
+          {/* Sólo al ver el histórico: elige de QUÉ retailer se mira el último
+              reporte. Con un archivo cargado no aplica — se está viendo ese
+              archivo, y el retailer se elige al guardarlo. */}
+          {procedencia?.origen === "historico" && cuentasConDatos.length > 1 ? (
+            <Selector
+              etiqueta="Retailer"
+              valor={retailerVista}
+              onCambio={setRetailerVista}
+            >
+              <option value="">Último guardado</option>
+              {cuentasConDatos.map((id) => (
+                <option key={id} value={id}>
+                  {nombreRetailer(id)}
+                </option>
+              ))}
+            </Selector>
+          ) : null}
+
           {nombresHojas.length > 1 ? (
             <Selector etiqueta="Hoja" valor={hojaActual} onCambio={alCambiarHoja}>
               {nombresHojas.map((n) => (
@@ -594,25 +641,46 @@ export function AnalisisExcel() {
                 de duplicar.
               </span>
             </div>
-            <button
-              type="button"
-              className="cr-btn cr-btn--primary"
-              disabled={guardando}
-              aria-busy={guardando}
-              onClick={() => void guardarEnHistorico()}
-            >
-              {guardando ? (
-                <>
-                  <span className="cr-spin" aria-hidden="true" />
-                  Guardando…
-                </>
-              ) : (
-                <>
-                  <Database strokeWidth={1.75} />
-                  Guardar en histórico
-                </>
-              )}
-            </button>
+            <div className="flex flex-wrap items-end gap-3">
+              {/* Obligatorio y sin valor por omisión: es lo que separa los
+                  reportes por retailer, y un default silencioso terminaría
+                  metiendo el reporte de uno en el histórico de otro. */}
+              <Selector
+                etiqueta="Retailer del reporte"
+                valor={retailerGuardar}
+                onCambio={setRetailerGuardar}
+              >
+                <option value="">Selecciona…</option>
+                {RETAILERS.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.nombre}
+                  </option>
+                ))}
+              </Selector>
+
+              <button
+                type="button"
+                className="cr-btn cr-btn--primary"
+                disabled={guardando || !retailerGuardar}
+                aria-busy={guardando}
+                title={
+                  retailerGuardar ? undefined : "Elige primero el retailer del reporte"
+                }
+                onClick={() => void guardarEnHistorico()}
+              >
+                {guardando ? (
+                  <>
+                    <span className="cr-spin" aria-hidden="true" />
+                    Guardando…
+                  </>
+                ) : (
+                  <>
+                    <Database strokeWidth={1.75} />
+                    Guardar en histórico
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {guardando ? (
@@ -623,7 +691,8 @@ export function AnalisisExcel() {
 
           {guardado ? (
             <p className="cr-small mt-3" style={{ color: "var(--cr-ok)" }} role="status">
-              Listo: {formatearEntero(guardado.insertadas)} filas nuevas y{" "}
+              Listo en {nombreRetailer(guardado.retailer)}:{" "}
+              {formatearEntero(guardado.insertadas)} filas nuevas y{" "}
               {formatearEntero(guardado.actualizadas)} actualizadas
               {guardado.descartadas > 0
                 ? ` · ${formatearEntero(guardado.descartadas)} descartadas por no tener fecha o código de artículo`

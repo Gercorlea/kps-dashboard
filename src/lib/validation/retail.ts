@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { XLSX_CONTENT_TYPE } from "@/lib/retail/archivos";
+import { RETAILER_IDS } from "@/lib/retail/retailers";
 
 // v1: solo San Pablo. El modelo queda preparado para múltiples cuentas,
 // pero no existe fuente de datos de Walmart todavía (§0).
@@ -202,13 +203,17 @@ export const MAX_FILAS_LOTE = 2000;
 
 export const guardarAnalisisSchema = z.object({
   template: z.string().min(1).max(60),
-  account: z.string().min(1).max(60),
+  // El retailer lo elige la persona antes de guardar, no lo deduce la
+  // plantilla: un mismo layout puede llegar de más de una cuenta, y ese dato es
+  // el que separa los reportes en el histórico. Enum y no string libre para que
+  // un id mal escrito no cree una cuenta fantasma imposible de encontrar.
+  account: z.enum(RETAILER_IDS, { error: "Selecciona un retailer válido" }),
   sourceFile: z.string().min(1).max(300),
   filas: z.array(reporteVentaRowSchema).min(1).max(MAX_FILAS_LOTE),
 });
 
 export const historicoAnalisisQuerySchema = z.object({
-  account: z.string().min(1).max(60).optional(),
+  account: z.enum(RETAILER_IDS).optional(),
 });
 
 // La tabla del histórico pagina en el servidor: nunca se bajan 15 mil filas al
@@ -223,12 +228,12 @@ export const FILAS_POR_PAGINA = 100;
 export const MAX_FILAS_DATASET = 50_000;
 
 export const datasetAnalisisQuerySchema = z.object({
-  account: z.string().min(1).max(60).optional(),
+  account: z.enum(RETAILER_IDS).optional(),
   sourceFile: z.string().min(1).max(300).optional(),
 });
 
 export const filasAnalisisQuerySchema = z.object({
-  account: z.string().min(1).max(60).optional(),
+  account: z.enum(RETAILER_IDS).optional(),
   sourceFile: z.string().min(1).max(300).optional(),
   buscar: z.string().max(120).optional(),
   page: z.coerce.number().int().min(1).default(1),
