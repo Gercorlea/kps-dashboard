@@ -28,6 +28,25 @@ async function llamar(url: string, init?: RequestInit): Promise<Response> {
   });
 }
 
+// El chat no pasa por api(): useChat hace su propio fetch. Sin esto, en
+// cuanto vencía el access token la petición moría en 401 y el mensaje ni
+// siquiera llegaba a guardarse — el usuario solo veía "no se pudo obtener
+// respuesta". Misma rotación que api(): refresca y reintenta una vez.
+export async function fetchConSesion(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const res = await fetch(input, init);
+  if (res.status !== 401) return res;
+
+  const refresh = await fetch("/api/auth/refresh", { method: "POST" });
+  if (!refresh.ok) {
+    window.location.href = "/login";
+    return res;
+  }
+  return fetch(input, init);
+}
+
 export async function api<T>(url: string, init?: RequestInit): Promise<T> {
   let res = await llamar(url, init);
 
