@@ -4,21 +4,21 @@ import { ApiError, handleApiError, ok, parseQuery } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { rowsQuerySchema, type Hoja } from "@/lib/validation/retail";
-import { ForecastDiario } from "@/models/ForecastDiario";
-import { LineaOC } from "@/models/LineaOC";
-import { PronosticoSemanal } from "@/models/PronosticoSemanal";
-import { StockCedis } from "@/models/StockCedis";
-import { StockFarmacia } from "@/models/StockFarmacia";
-import { VentaDiaria } from "@/models/VentaDiaria";
+import { DailyForecast } from "@/models/DailyForecast";
+import { PurchaseOrderLine } from "@/models/PurchaseOrderLine";
+import { WeeklyForecast } from "@/models/WeeklyForecast";
+import { DcStock } from "@/models/DcStock";
+import { PharmacyStock } from "@/models/PharmacyStock";
+import { DailySale } from "@/models/DailySale";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const MODELO_POR_HOJA: Record<Hoja, Model<any>> = {
-  CEDIS: StockCedis,
-  VENTAS: VentaDiaria,
-  PRONOSTICOS: PronosticoSemanal,
-  FC_Mean: ForecastDiario,
-  "Fill Rate": LineaOC,
-  "Inv Farma": StockFarmacia,
+  CEDIS: DcStock,
+  VENTAS: DailySale,
+  PRONOSTICOS: WeeklyForecast,
+  FC_Mean: DailyForecast,
+  "Fill Rate": PurchaseOrderLine,
+  "Inv Farma": PharmacyStock,
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

@@ -9,8 +9,8 @@ componente.
 ## Stack
 
 Next.js (App Router, Next 16) · TypeScript strict · Tailwind v4 + CSS del
-design system · MongoDB Atlas vía Mongoose (cache serverless) · Cloudflare R2
-(S3-compatible, presigned URLs) · Resend · JWT propio con `jose` · Vercel AI
+design system · MongoDB Atlas vía Mongoose (cache serverless)
+· Resend · JWT propio con `jose` · Vercel AI
 Gateway · SheetJS en el servidor · Vitest.
 
 ## Route groups
@@ -43,13 +43,13 @@ src/proxy.ts    intercepción global (convención proxy de Next 16)
 ## Flujo de ingesta de Excel
 
 1. `POST /api/retail/uploads` valida con Zod (extensión, MIME, ≤25 MB), crea el
-   `Upload` en `pendiente` y devuelve un **presigned PUT** a R2
+   `Upload` en `pending` y devuelve el id de carga y la fecha sugerida
    (`private/retail/<uploadId>/<archivo>`; los Excel son confidenciales).
-2. El navegador sube directo a R2 (barra de progreso).
+2. Se confirma la fecha de corte; el archivo se envía al procesar (barra de progreso).
 3. La UI muestra la **fecha de corte derivada del nombre** (editable, requerida)
    y las hojas detectadas; al confirmar, `POST /api/retail/uploads/[id]/process`
    (runtime nodejs, `maxDuration 300`).
-4. El servidor descarga de R2, calcula **sha256** (duplicado → `409` con el
+4. El servidor parsea el archivo en memoria, calcula **sha256** (duplicado → `409` con el
    `uploadId` existente), parsea hoja por hoja (`lib/retail/parse-workbook.ts`),
    **borra las filas previas del upload** (reproceso idempotente) e inserta con
    `bulkWrite` en lotes de 3,000. El avance por hoja se escribe en

@@ -1,7 +1,7 @@
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
 // Hoja "Fill Rate": una línea por posición de orden de compra (§6.2).
-export interface ILineaOC {
+export interface IPurchaseOrderLine {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
   account: string;
@@ -27,7 +27,7 @@ export interface ILineaOC {
   cpfr: string;
 }
 
-const LineaOCSchema = new Schema<ILineaOC>(
+const PurchaseOrderLineSchema = new Schema<IPurchaseOrderLine>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
     account: { type: String, required: true },
@@ -55,9 +55,9 @@ const LineaOCSchema = new Schema<ILineaOC>(
   { versionKey: false }
 );
 
-LineaOCSchema.index({ account: 1, cutoffDate: -1 });
-LineaOCSchema.index({ uploadId: 1 });
-LineaOCSchema.index({ account: 1, cutoffDate: -1, buyer: 1 });
+PurchaseOrderLineSchema.index({ account: 1, cutoffDate: -1 });
+PurchaseOrderLineSchema.index({ uploadId: 1 });
+PurchaseOrderLineSchema.index({ account: 1, cutoffDate: -1, buyer: 1 });
 
-export const LineaOC: Model<ILineaOC> =
-  (models.LineaOC as Model<ILineaOC>) ?? model<ILineaOC>("LineaOC", LineaOCSchema);
+export const PurchaseOrderLine: Model<IPurchaseOrderLine> =
+  (models.PurchaseOrderLine as Model<IPurchaseOrderLine>) ?? model<IPurchaseOrderLine>("PurchaseOrderLine", PurchaseOrderLineSchema);

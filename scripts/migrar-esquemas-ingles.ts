@@ -84,6 +84,8 @@ const RENOMBRES: Record<string, Record<string, string>> = {
   },
   users: { nombre: "name" },
   chats: { titulo: "title" },
+  // Con el nombre viejo: los campos se migran antes de renombrar la colección.
+  reporteventas: { plantilla: "template" },
   mensajes: {
     rol: "role",
     contenido: "content",
@@ -104,6 +106,18 @@ const EMBEBIDOS: Record<string, { campo: string; claves: Record<string, string> 
   mensajes: [{ campo: "tools", claves: { nombre: "name", resultado: "result" } }],
 };
 
+// Nombres de colección que Mongoose deriva de los modelos renombrados.
+const COLECCIONES: Record<string, string> = {
+  ventadiarias: "dailysales",
+  pronosticosemanals: "weeklyforecasts",
+  forecastdiarios: "dailyforecasts",
+  stockcedis: "dcstocks",
+  stockfarmacias: "pharmacystocks",
+  lineaocs: "purchaseorderlines",
+  mensajes: "messages",
+  reporteventas: "salesreports",
+};
+
 const ESTADOS: Record<string, string> = {
   pendiente: "pending",
   procesando: "processing",
@@ -118,7 +132,10 @@ async function main() {
   if (!db) throw new Error("Sin conexión a la base");
   console.log(`Base: ${db.databaseName}${SECO ? "  (simulación, no escribe)" : ""}\n`);
 
-  const existentes = new Set((await db.listCollections().toArray()).map((c) => c.name));
+  let existentes = new Set((await db.listCollections().toArray()).map((c) => c.name));
+
+  // Primero los campos (con los nombres viejos de colección), después el
+  // renombrado de la colección: al revés habría que duplicar el mapa.
 
   for (const [coleccion, mapa] of Object.entries(RENOMBRES)) {
     if (!existentes.has(coleccion)) {
@@ -183,6 +200,18 @@ async function main() {
       if (!SECO) await col.updateMany({ status: viejo }, { $set: { status: nuevo } });
     }
   }
+
+  for (const [viejo, nuevo] of Object.entries(COLECCIONES)) {
+    if (!existentes.has(viejo)) continue;
+    if (existentes.has(nuevo)) {
+      console.log(`⚠ ${viejo} → ${nuevo}: el destino ya existe, se omite`);
+      continue;
+    }
+    const n = await db.collection(viejo).countDocuments();
+    console.log(`→ colección ${viejo} → ${nuevo} (${n} docs)`);
+    if (!SECO) await db.collection(viejo).rename(nuevo);
+  }
+  existentes = new Set((await db.listCollections().toArray()).map((c) => c.name));
 
   console.log(SECO ? "\nSimulación terminada: no se escribió nada." : "\nMigración terminada.");
   await mongoose.disconnect();

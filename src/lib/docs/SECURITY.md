@@ -46,27 +46,21 @@ Upstash/Redis). Límites centralizados y aplicados en: login, refresh,
 recuperación, creación de cargas, procesamiento de Excel y chat de IA (los dos
 últimos cuestan dinero y CPU). Al exceder: `429` con `reintentarEnSeg`.
 
-## Cloudflare R2 — público vs confidencial
+## Archivos de carga — no se almacenan
 
-**Los Excel subidos son datos comerciales confidenciales del cliente** (ventas,
-inventarios y órdenes de compra de su red): clasifícalos siempre como
-confidenciales.
-
-- SDK S3 aislado en `src/lib/r2.ts`; el resto de la app llama funciones limpias.
-- Confidencial (`private/retail/<uploadId>/…`): el bucket **no** lo expone.
-  Subida con **presigned PUT** (5 min) y lectura con **presigned GET de vida
-  corta (120 s)** emitido por un endpoint autenticado que verifica RBAC.
-- Público (`public/…`): nada en v1; `publicUrl()` **lanza error** si la clave no
-  empieza con `public/` — imposible construir por accidente una URL pública de
-  un objeto confidencial.
-- CORS del bucket restringido a los orígenes de la app (JSON en el README).
+- El Excel **nunca se guarda**: viaja en el POST de procesado, se parsea en
+  memoria y se descarta. En la base quedan solo las filas.
+- Tope de 25 MB validado en el cliente y en el servidor (413 si se excede).
+- Al no existir copia del original, no hay URLs firmadas, ni objetos huérfanos,
+  ni credenciales de almacenamiento que rotar.
+- Reprocesar una carga exige volver a subir el archivo.
 
 ## Headers y CSP
 
 `next.config.ts` aplica a todas las rutas: `Strict-Transport-Security` (prod),
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`,
 `Permissions-Policy` y una **CSP** (`default-src 'self'`; `connect-src` incluye
-`*.r2.cloudflarestorage.com` para el presigned PUT; `frame-ancestors 'none'`).
+`frame-ancestors 'none'`).
 
 ## CSRF
 
@@ -77,7 +71,7 @@ relajara SameSite, añadir token double-submit en las mutaciones.
 
 ## Variables sensibles
 
-`MONGODB_URI`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, credenciales R2,
+`MONGODB_URI`, `JWT_SECRET`, `JWT_REFRESH_SECRET`,
 `RESEND_API_KEY`, `AI_GATEWAY_API_KEY`, credenciales SAP y seed del superadmin:
 solo en `.env.local` / variables de Vercel. Nunca en el cliente ni en el repo
 (el hook de pre-commit bloquea archivos .env). Los errores de API nunca filtran

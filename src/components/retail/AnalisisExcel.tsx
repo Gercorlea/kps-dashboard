@@ -172,7 +172,7 @@ export function AnalisisExcel() {
           {
             method: "POST",
             body: JSON.stringify({
-              plantilla: plantilla.id,
+              template: plantilla.id,
               account: plantilla.account,
               sourceFile: nombreArchivo ?? dataset.hoja,
               filas: lote,

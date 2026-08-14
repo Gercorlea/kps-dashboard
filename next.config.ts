@@ -6,14 +6,13 @@ const isProd = process.env.NODE_ENV === "production";
 // 'wasm-unsafe-eval' habilita SOLO WebAssembly, no eval de JavaScript: lo
 // necesita @react-pdf/renderer, que compila un módulo WASM para el trazado de
 // texto al generar el PDF de un reporte en el navegador.
-// connect-src incluye R2 porque las subidas van directo con presigned PUT.
 const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isProd ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.r2.cloudflarestorage.com",
+  "connect-src 'self'",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

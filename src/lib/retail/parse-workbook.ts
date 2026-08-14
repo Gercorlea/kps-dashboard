@@ -29,8 +29,8 @@ export interface IncidenciaParseo {
 
 export type TipoHoja =
   | "cedis"
-  | "ventas"
-  | "pronosticos"
+  | "sales"
+  | "weeklyForecast"
   | "fcMean"
   | "fillRate"
   | "invFarma";
@@ -53,8 +53,8 @@ const MAX_INCIDENCIAS_POR_HOJA = 100;
 
 const TIPO_POR_NOMBRE: Record<string, TipoHoja> = {
   CEDIS: "cedis",
-  VENTAS: "ventas",
-  PRONOSTICOS: "pronosticos",
+  VENTAS: "sales",
+  PRONOSTICOS: "weeklyForecast",
   FC_MEAN: "fcMean",
   "FC MEAN": "fcMean",
   "FILL RATE": "fillRate",
@@ -284,7 +284,7 @@ const baseLargaSchema = ventaRowSchema.omit({ date: true, units: true });
 
 function parseHojaLarga(
   matriz: Celda[][],
-  tipo: "ventas" | "pronosticos" | "fcMean",
+  tipo: "sales" | "weeklyForecast" | "fcMean",
   reg: Registrador
 ): CuerpoHoja {
   const encabezados = matriz[0] ?? [];
@@ -309,8 +309,8 @@ function parseHojaLarga(
     reg.agregar("No se detectaron columnas de fecha en la hoja");
   }
 
-  const campoFecha = tipo === "pronosticos" ? "weekStart" : "date";
-  const campoValor = tipo === "ventas" ? "units" : "value";
+  const campoFecha = tipo === "weeklyForecast" ? "weekStart" : "date";
+  const campoValor = tipo === "sales" ? "units" : "value";
   const sinMarca = new MarcasSinClasificar();
   const docs: Record<string, unknown>[] = [];
   let read = 0;

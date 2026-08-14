@@ -2,14 +2,13 @@ import crypto from "node:crypto";
 import type { Model, Types } from "mongoose";
 import { ApiError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { deleteObject, getObjectBuffer } from "@/lib/r2";
-import { ForecastDiario } from "@/models/ForecastDiario";
-import { LineaOC } from "@/models/LineaOC";
-import { PronosticoSemanal } from "@/models/PronosticoSemanal";
-import { StockCedis } from "@/models/StockCedis";
-import { StockFarmacia } from "@/models/StockFarmacia";
+import { DailyForecast } from "@/models/DailyForecast";
+import { PurchaseOrderLine } from "@/models/PurchaseOrderLine";
+import { WeeklyForecast } from "@/models/WeeklyForecast";
+import { DcStock } from "@/models/DcStock";
+import { PharmacyStock } from "@/models/PharmacyStock";
 import { Upload, type IIncidencia, type IUpload } from "@/models/Upload";
-import { VentaDiaria } from "@/models/VentaDiaria";
+import { DailySale } from "@/models/DailySale";
 import { parseWorkbook, type TipoHoja } from "./parse-workbook";
 
 // Persistencia de una carga (§6.3, §7). El parseo corre en el servidor y
@@ -20,12 +19,12 @@ const MAX_INCIDENCIAS_UPLOAD = 300;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const MODELOS: Record<TipoHoja, Model<any>> = {
-  ventas: VentaDiaria,
-  pronosticos: PronosticoSemanal,
-  fcMean: ForecastDiario,
-  cedis: StockCedis,
-  invFarma: StockFarmacia,
-  fillRate: LineaOC,
+  sales: DailySale,
+  weeklyForecast: WeeklyForecast,
+  fcMean: DailyForecast,
+  cedis: DcStock,
+  invFarma: PharmacyStock,
+  fillRate: PurchaseOrderLine,
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -40,7 +39,8 @@ function claveHoja(name: string): string {
   return name.replace(/\./g, "·");
 }
 
-export async function procesarUpload(uploadId: string): Promise<IUpload> {
+// El buffer llega desde el endpoint: el Excel no se almacena en ningún sitio.
+export async function procesarUpload(uploadId: string, buffer: Buffer): Promise<IUpload> {
   await connectDB();
   const upload = await Upload.findById(uploadId);
   if (!upload) throw new ApiError(404, "NO_ENCONTRADO", "Carga no encontrada");
@@ -54,7 +54,6 @@ export async function procesarUpload(uploadId: string): Promise<IUpload> {
   );
 
   try {
-    const buffer = await getObjectBuffer(upload.r2Key);
     const fileHash = crypto.createHash("sha256").update(buffer).digest("hex");
 
     // Idempotencia: el mismo archivo dos veces responde 409 con el
@@ -160,16 +159,12 @@ export async function procesarUpload(uploadId: string): Promise<IUpload> {
   }
 }
 
-// Borrar una carga (solo superadmin): filas en cascada + objeto en R2 (§6.3).
+// Borrar una carga (solo superadmin): filas en cascada (§6.3).
 export async function eliminarCarga(uploadId: string): Promise<void> {
   await connectDB();
   const upload = await Upload.findById(uploadId);
   if (!upload) throw new ApiError(404, "NO_ENCONTRADO", "Carga no encontrada");
   await borrarFilasDeUpload(upload._id);
-  try {
-    await deleteObject(upload.r2Key);
-  } catch (e) {
-    console.error("[ingest] no se pudo borrar el objeto en R2", e);
-  }
+  // No hay archivo que borrar: el Excel nunca se guardó.
   await Upload.deleteOne({ _id: upload._id });
 }

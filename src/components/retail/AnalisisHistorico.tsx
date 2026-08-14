@@ -23,7 +23,7 @@ const POR_PAGINA = 100;
 
 interface ArchivoHistorico {
   sourceFile: string;
-  plantilla: string;
+  template: string;
   account: string;
   importedAt: string | null;
   total: number;
@@ -95,7 +95,7 @@ export function AnalisisHistorico() {
   // guarda exactamente los campos que ella declara, así que la tabla del
   // archivo y la del histórico muestran lo mismo, en el mismo orden.
   const columnas = useMemo(() => {
-    const p = archivo ? plantillaPorId(archivo.plantilla) : null;
+    const p = archivo ? plantillaPorId(archivo.template) : null;
     return p ? columnasHistorico(p) : [];
   }, [archivo]);
 
@@ -138,7 +138,7 @@ export function AnalisisHistorico() {
       <Panel>
         <EstadoVacio
           title="Reporte no reconocido"
-          detalle={`El último reporte guardado («${archivo.sourceFile}») usa la plantilla «${archivo.plantilla}», que ya no está registrada. Sube el archivo para analizarlo.`}
+          detalle={`El último reporte guardado («${archivo.sourceFile}») usa la plantilla «${archivo.template}», que ya no está registrada. Sube el archivo para analizarlo.`}
         />
       </Panel>
     );

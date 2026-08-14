@@ -1,31 +1,30 @@
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
-// Hoja VENTAS en formato largo (unpivot §6.1): un documento por
-// tienda × SKU × fecha. Habilita el histórico y el comparativo año contra año.
-export interface IVentaDiaria {
+// Hoja PRONOSTICOS (unpivot): un documento por tienda × SKU × semana.
+export interface IWeeklyForecast {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
   account: string;
   cutoffDate: Date;
-  date: Date;
-  storeCode: string; // "0141", nunca número
+  weekStart: Date;
+  storeCode: string;
   storeName: string;
   sku: string;
-  compositeId: string; // storeCode + sku
+  compositeId: string;
   description: string;
-  brand: string; // derivada (lib/retail/brands.ts)
+  brand: string;
   division: string;
   vendorCode: string;
   vendorName: string;
-  units: number;
+  value: number;
 }
 
-const VentaDiariaSchema = new Schema<IVentaDiaria>(
+const WeeklyForecastSchema = new Schema<IWeeklyForecast>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
     account: { type: String, required: true },
     cutoffDate: { type: Date, required: true },
-    date: { type: Date, required: true },
+    weekStart: { type: Date, required: true },
     storeCode: { type: String, required: true },
     storeName: { type: String, default: "" },
     sku: { type: String, required: true },
@@ -35,15 +34,14 @@ const VentaDiariaSchema = new Schema<IVentaDiaria>(
     division: { type: String, default: "" },
     vendorCode: { type: String, default: "" },
     vendorName: { type: String, default: "" },
-    units: { type: Number, required: true },
+    value: { type: Number, required: true },
   },
   { versionKey: false }
 );
 
-VentaDiariaSchema.index({ account: 1, date: -1, sku: 1 });
-VentaDiariaSchema.index({ uploadId: 1 });
-VentaDiariaSchema.index({ account: 1, brand: 1, date: -1 });
+WeeklyForecastSchema.index({ account: 1, weekStart: -1, sku: 1 });
+WeeklyForecastSchema.index({ uploadId: 1 });
 
-export const VentaDiaria: Model<IVentaDiaria> =
-  (models.VentaDiaria as Model<IVentaDiaria>) ??
-  model<IVentaDiaria>("VentaDiaria", VentaDiariaSchema);
+export const WeeklyForecast: Model<IWeeklyForecast> =
+  (models.WeeklyForecast as Model<IWeeklyForecast>) ??
+  model<IWeeklyForecast>("WeeklyForecast", WeeklyForecastSchema);

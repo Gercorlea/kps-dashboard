@@ -1,6 +1,6 @@
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
-export interface IMensaje {
+export interface IMessage {
   _id: Types.ObjectId;
   chatId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -18,7 +18,7 @@ export interface IMensaje {
   createdAt: Date;
 }
 
-const MensajeSchema = new Schema<IMensaje>(
+const MessageSchema = new Schema<IMessage>(
   {
     chatId: { type: Schema.Types.ObjectId, ref: "Chat", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
@@ -45,7 +45,7 @@ const MensajeSchema = new Schema<IMensaje>(
   { timestamps: { createdAt: true, updatedAt: false } }
 );
 
-MensajeSchema.index({ chatId: 1, createdAt: 1 });
+MessageSchema.index({ chatId: 1, createdAt: 1 });
 
-export const Mensaje: Model<IMensaje> =
-  (models.Mensaje as Model<IMensaje>) ?? model<IMensaje>("Mensaje", MensajeSchema);
+export const Message: Model<IMessage> =
+  (models.Message as Model<IMessage>) ?? model<IMessage>("Message", MessageSchema);

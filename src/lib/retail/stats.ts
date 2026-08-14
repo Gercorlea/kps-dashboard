@@ -1,9 +1,9 @@
 import { connectDB } from "@/lib/db";
-import { LineaOC } from "@/models/LineaOC";
-import { StockCedis } from "@/models/StockCedis";
-import { StockFarmacia } from "@/models/StockFarmacia";
+import { PurchaseOrderLine } from "@/models/PurchaseOrderLine";
+import { DcStock } from "@/models/DcStock";
+import { PharmacyStock } from "@/models/PharmacyStock";
 import { Upload, type IResumenHoja } from "@/models/Upload";
-import { VentaDiaria } from "@/models/VentaDiaria";
+import { DailySale } from "@/models/DailySale";
 import { fechaISO } from "./normalize";
 
 // Estadísticas para el overview del dashboard y la serie histórica (§10).
@@ -43,7 +43,7 @@ async function ultimoCorteDe(account: string): Promise<Date | null> {
 }
 
 async function fillRateEnCorte(account: string, corte: Date): Promise<number | null> {
-  const [r] = await LineaOC.aggregate([
+  const [r] = await PurchaseOrderLine.aggregate([
     { $match: { account, cutoffDate: corte } },
     {
       $group: {
@@ -58,7 +58,7 @@ async function fillRateEnCorte(account: string, corte: Date): Promise<number | n
 }
 
 async function inventarioTotal(account: string, corte: Date): Promise<number> {
-  const [farma] = await StockFarmacia.aggregate([
+  const [farma] = await PharmacyStock.aggregate([
     { $match: { account, cutoffDate: corte } },
     {
       $group: {
@@ -71,7 +71,7 @@ async function inventarioTotal(account: string, corte: Date): Promise<number> {
       },
     },
   ]);
-  const [cedis] = await StockCedis.aggregate([
+  const [cedis] = await DcStock.aggregate([
     { $match: { account, cutoffDate: corte } },
     { $group: { _id: null, total: { $sum: { $ifNull: ["$realAvailabilityDC", 0] } } } },
   ]);
@@ -82,7 +82,7 @@ async function inventarioTotal(account: string, corte: Date): Promise<number> {
 // la venta de los últimos 30 días. Inventario sin venta también cuenta.
 async function contarSkusMohAlto(account: string, corte: Date): Promise<number> {
   const invPorSku = new Map<string, number>();
-  const farma = await StockFarmacia.aggregate([
+  const farma = await PharmacyStock.aggregate([
     { $match: { account, cutoffDate: corte } },
     {
       $group: {
@@ -96,7 +96,7 @@ async function contarSkusMohAlto(account: string, corte: Date): Promise<number> 
     },
   ]);
   for (const r of farma) invPorSku.set(String(r._id), r.total);
-  const cedis = await StockCedis.aggregate([
+  const cedis = await DcStock.aggregate([
     { $match: { account, cutoffDate: corte } },
     { $group: { _id: "$sku", total: { $sum: { $ifNull: ["$realAvailabilityDC", 0] } } } },
   ]);
@@ -105,7 +105,7 @@ async function contarSkusMohAlto(account: string, corte: Date): Promise<number> 
   }
 
   const desde = new Date(corte.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const ventas = await VentaDiaria.aggregate([
+  const ventas = await DailySale.aggregate([
     { $match: { account, date: { $gte: desde, $lte: corte } } },
     { $group: { _id: "$sku", units: { $sum: "$units" } } },
   ]);
@@ -130,7 +130,7 @@ export async function resumenDashboard(account = "san-pablo"): Promise<ResumenDa
   const ultimoCorte = await ultimoCorteDe(account);
   const cortes = await Upload.distinct("cutoffDate", { account, status: "processed" });
 
-  const [rango] = await VentaDiaria.aggregate([
+  const [rango] = await DailySale.aggregate([
     { $match: { account } },
     { $group: { _id: null, min: { $min: "$date" }, max: { $max: "$date" } } },
   ]);
@@ -196,7 +196,7 @@ export async function serieHistorica(
     ...(Object.keys(filtroFecha).length ? { date: filtroFecha } : {}),
   };
 
-  const semanas = await VentaDiaria.aggregate([
+  const semanas = await DailySale.aggregate([
     { $match: matchVentas },
     {
       $group: {
@@ -225,7 +225,7 @@ export async function serieHistorica(
   for (const corte of cortes) {
     const inventario = await inventarioTotal(account, corte);
     const desde30 = new Date(corte.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const [venta30] = await VentaDiaria.aggregate([
+    const [venta30] = await DailySale.aggregate([
       { $match: { account, date: { $gte: desde30, $lte: corte } } },
       { $group: { _id: null, units: { $sum: "$units" } } },
     ]);

@@ -7,7 +7,7 @@ export const objectIdSchema = z.string().regex(/^[0-9a-f]{24}$/i, "Id inválido"
 // antes de tocar el modelo (§9.2): longitud máxima de mensaje e historial.
 const uiPartSchema = z.looseObject({
   type: z.string(),
-  text: z.string().max(8000, "Mensaje demasiado largo").optional(),
+  text: z.string().max(8000, "Message demasiado largo").optional(),
 });
 
 const uiMessageSchema = z.looseObject({

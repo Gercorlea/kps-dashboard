@@ -4,7 +4,7 @@ import { ApiError, handleApiError, ok } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { Chat } from "@/models/Chat";
-import { Mensaje } from "@/models/Mensaje";
+import { Message } from "@/models/Message";
 
 // Ownership verificada sobre el documento en cada endpoint — un usuario
 // no puede leer los chats de otro (§9.2).
@@ -26,7 +26,7 @@ export async function GET(
     const session = await requireModule("cronos-ia");
     const { id } = await params;
     const chat = await cargarChatPropio(id, session.id);
-    const mensajes = await Mensaje.find({ chatId: chat._id })
+    const mensajes = await Message.find({ chatId: chat._id })
       .sort({ createdAt: 1 })
       .limit(200)
       .lean();
@@ -53,7 +53,7 @@ export async function DELETE(
     const session = await requireModule("cronos-ia");
     const { id } = await params;
     const chat = await cargarChatPropio(id, session.id);
-    await Mensaje.deleteMany({ chatId: chat._id });
+    await Message.deleteMany({ chatId: chat._id });
     await Chat.deleteOne({ _id: chat._id });
     return ok({ eliminado: true });
   } catch (e) {

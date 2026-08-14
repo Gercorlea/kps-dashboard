@@ -33,7 +33,7 @@ describe("Trampa 1: tablas dinámicas plantadas a la derecha", () => {
         [141, "AV. CHALMA", 70890001, "14170890001", "GOLI GOMITAS", 10913, "KPS", "SPN", 3, 5, null, "GOLI", 8],
       ],
     });
-    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "ventas")!;
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "sales")!;
     expect(sheet.read).toBe(1);
     expect(sheet.docs).toHaveLength(2); // solo las 2 fechas reales
     for (const doc of sheet.docs) {
@@ -50,7 +50,7 @@ describe("Trampa 2: fechas dd.mm.yyyy con día > 12", () => {
         [141, "AV. CHALMA", 70890001, "14170890001", "GOLI GOMITAS", 10913, "KPS", "SPN", 7],
       ],
     });
-    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "ventas")!;
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "sales")!;
     const doc = sheet.docs[0] as { date: Date; units: number };
     expect(doc.date.toISOString()).toBe("2026-05-13T00:00:00.000Z");
     expect(doc.units).toBe(7);
@@ -65,7 +65,7 @@ describe("Trampa 3: encabezados con espacios sobrantes", () => {
         [141, "AV. CHALMA", 70890001, "14170890001", "GOLI GOMITAS", 10913, "KPS", "SPN", 1],
       ],
     });
-    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "ventas")!;
+    const sheet = parseWorkbook(buf).hojas.find((h) => h.tipo === "sales")!;
     expect((sheet.docs[0] as { vendorCode: string }).vendorCode).toBe("10913");
     expect(sheet.issues.some((i) => i.field === "vendorCode")).toBe(false);
   });
@@ -125,7 +125,7 @@ describe("Trampa 5: códigos con ceros a la izquierda", () => {
       ],
     });
     const r = parseWorkbook(buf);
-    const venta = r.hojas.find((h) => h.tipo === "ventas")!.docs[0] as {
+    const venta = r.hojas.find((h) => h.tipo === "sales")!.docs[0] as {
       storeCode: string;
       sku: string;
     };
@@ -194,6 +194,6 @@ describe("hojas no reconocidas (§7.2)", () => {
     const desconocida = r.hojas.find((h) => h.name === "Notas del analista")!;
     expect(desconocida.tipo).toBeNull();
     expect(desconocida.issues[0].message).toMatch(/no mapeada/);
-    expect(r.hojas.find((h) => h.tipo === "ventas")!.docs).toHaveLength(1);
+    expect(r.hojas.find((h) => h.tipo === "sales")!.docs).toHaveLength(1);
   });
 });

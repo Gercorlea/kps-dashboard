@@ -3,35 +3,35 @@
 // operadores crudos de Mongo ($where, $function…), límites acotados.
 import type { Model } from "mongoose";
 import { connectDB } from "@/lib/db";
-import { ForecastDiario } from "@/models/ForecastDiario";
-import { LineaOC } from "@/models/LineaOC";
-import { PronosticoSemanal } from "@/models/PronosticoSemanal";
-import { StockCedis } from "@/models/StockCedis";
-import { StockFarmacia } from "@/models/StockFarmacia";
+import { DailyForecast } from "@/models/DailyForecast";
+import { PurchaseOrderLine } from "@/models/PurchaseOrderLine";
+import { WeeklyForecast } from "@/models/WeeklyForecast";
+import { DcStock } from "@/models/DcStock";
+import { PharmacyStock } from "@/models/PharmacyStock";
 import { Upload } from "@/models/Upload";
-import { VentaDiaria } from "@/models/VentaDiaria";
+import { DailySale } from "@/models/DailySale";
 
 export const COLECCIONES_RETAIL = [
-  "ventas",
-  "pronosticos",
-  "forecast",
-  "stockCedis",
-  "stockFarmacia",
-  "ordenesCompra",
-  "cargas",
+  "sales",
+  "weeklyForecast",
+  "dailyForecast",
+  "dcStock",
+  "pharmacyStock",
+  "purchaseOrders",
+  "uploads",
 ] as const;
 
 export type ColeccionRetail = (typeof COLECCIONES_RETAIL)[number];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const MODELOS: Record<ColeccionRetail, Model<any>> = {
-  ventas: VentaDiaria,
-  pronosticos: PronosticoSemanal,
-  forecast: ForecastDiario,
-  stockCedis: StockCedis,
-  stockFarmacia: StockFarmacia,
-  ordenesCompra: LineaOC,
-  cargas: Upload,
+  sales: DailySale,
+  weeklyForecast: WeeklyForecast,
+  dailyForecast: DailyForecast,
+  dcStock: DcStock,
+  pharmacyStock: PharmacyStock,
+  purchaseOrders: PurchaseOrderLine,
+  uploads: Upload,
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

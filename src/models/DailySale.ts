@@ -1,26 +1,26 @@
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
-// Hoja FC_Mean (unpivot). Excluye "Total" y "Total red": los totales se
-// recalculan al consultar, nunca se cachean del Excel (§7.2).
-export interface IForecastDiario {
+// Hoja VENTAS en formato largo (unpivot §6.1): un documento por
+// tienda × SKU × fecha. Habilita el histórico y el comparativo año contra año.
+export interface IDailySale {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
   account: string;
   cutoffDate: Date;
   date: Date;
-  storeCode: string;
+  storeCode: string; // "0141", nunca número
   storeName: string;
   sku: string;
-  compositeId: string;
+  compositeId: string; // storeCode + sku
   description: string;
-  brand: string;
+  brand: string; // derivada (lib/retail/brands.ts)
   division: string;
   vendorCode: string;
   vendorName: string;
-  value: number;
+  units: number;
 }
 
-const ForecastDiarioSchema = new Schema<IForecastDiario>(
+const DailySaleSchema = new Schema<IDailySale>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
     account: { type: String, required: true },
@@ -35,14 +35,15 @@ const ForecastDiarioSchema = new Schema<IForecastDiario>(
     division: { type: String, default: "" },
     vendorCode: { type: String, default: "" },
     vendorName: { type: String, default: "" },
-    value: { type: Number, required: true },
+    units: { type: Number, required: true },
   },
   { versionKey: false }
 );
 
-ForecastDiarioSchema.index({ account: 1, date: -1, sku: 1 });
-ForecastDiarioSchema.index({ uploadId: 1 });
+DailySaleSchema.index({ account: 1, date: -1, sku: 1 });
+DailySaleSchema.index({ uploadId: 1 });
+DailySaleSchema.index({ account: 1, brand: 1, date: -1 });
 
-export const ForecastDiario: Model<IForecastDiario> =
-  (models.ForecastDiario as Model<IForecastDiario>) ??
-  model<IForecastDiario>("ForecastDiario", ForecastDiarioSchema);
+export const DailySale: Model<IDailySale> =
+  (models.DailySale as Model<IDailySale>) ??
+  model<IDailySale>("DailySale", DailySaleSchema);

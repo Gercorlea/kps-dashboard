@@ -3,7 +3,6 @@ import type { NextRequest } from "next/server";
 import { handleApiError, ok, parseJson, parseQuery } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
-import { claveExcelPrivada, getUploadUrl } from "@/lib/r2";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { derivarFechaCorte, fechaISO } from "@/lib/retail/normalize";
 import { createUploadSchema, uploadsQuerySchema } from "@/lib/validation/retail";
@@ -56,23 +55,23 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Crea la carga y devuelve el presigned PUT para subir directo a R2 (§7).
+// Registra la carga y devuelve la fecha de corte sugerida. El archivo NO
+// viaja aquí: se envía al procesar y no se almacena en ninguna parte (§7).
 // Los Excel son confidenciales: prefijo private/, nunca URL pública (§5.7).
 export async function POST(request: NextRequest) {
   try {
     const session = await requireModule("retail");
     await enforceRateLimit("carga-crear", clientIp(request));
+
     const body = await parseJson(request, createUploadSchema);
 
     await connectDB();
     const uploadId = new Types.ObjectId();
-    const r2Key = claveExcelPrivada(String(uploadId), body.filename);
     const cutoffDate = derivarFechaCorte(body.filename) ?? new Date();
 
     await Upload.create({
       _id: uploadId,
       filename: body.filename,
-      r2Key,
       sizeBytes: body.sizeBytes,
       account: body.account,
       cutoffDate,
@@ -80,10 +79,8 @@ export async function POST(request: NextRequest) {
       uploadedBy: session.id,
     });
 
-    const putUrl = await getUploadUrl(r2Key, body.contentType, body.sizeBytes);
     return ok({
       uploadId: String(uploadId),
-      putUrl,
       fechaCorteSugerida: fechaISO(cutoffDate),
       fechaDerivadaDelNombre: derivarFechaCorte(body.filename) !== null,
     });

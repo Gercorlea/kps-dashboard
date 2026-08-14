@@ -1,7 +1,7 @@
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
 // Hoja "Inv Farma": inventario por farmacia × SKU (§6.2).
-export interface IStockFarmacia {
+export interface IPharmacyStock {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
   account: string;
@@ -31,7 +31,7 @@ export interface IStockFarmacia {
   inventoryLevel: number | null;
 }
 
-const StockFarmaciaSchema = new Schema<IStockFarmacia>(
+const PharmacyStockSchema = new Schema<IPharmacyStock>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
     account: { type: String, required: true },
@@ -63,10 +63,10 @@ const StockFarmaciaSchema = new Schema<IStockFarmacia>(
   { versionKey: false }
 );
 
-StockFarmaciaSchema.index({ account: 1, cutoffDate: -1, sku: 1 });
-StockFarmaciaSchema.index({ uploadId: 1 });
-StockFarmaciaSchema.index({ account: 1, cutoffDate: -1, brand: 1 });
+PharmacyStockSchema.index({ account: 1, cutoffDate: -1, sku: 1 });
+PharmacyStockSchema.index({ uploadId: 1 });
+PharmacyStockSchema.index({ account: 1, cutoffDate: -1, brand: 1 });
 
-export const StockFarmacia: Model<IStockFarmacia> =
-  (models.StockFarmacia as Model<IStockFarmacia>) ??
-  model<IStockFarmacia>("StockFarmacia", StockFarmaciaSchema);
+export const PharmacyStock: Model<IPharmacyStock> =
+  (models.PharmacyStock as Model<IPharmacyStock>) ??
+  model<IPharmacyStock>("PharmacyStock", PharmacyStockSchema);
