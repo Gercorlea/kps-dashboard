@@ -26,7 +26,7 @@ export default async function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        description="Resumen operativo de Cronos Retail"
+        description="Resumen operativo de KPS Retail"
       />
       <div className="cr-page-content flex flex-col gap-6">
         {summary ? (

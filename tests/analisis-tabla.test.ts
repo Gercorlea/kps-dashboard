@@ -6,10 +6,16 @@ import {
   patronSinAcentos,
   totalPaginas,
 } from "@/lib/retail/analisis/filtrar";
-import { columnasBuscables } from "@/lib/retail/analisis/inferir-tipos";
+import {
+  columnasBuscables,
+  columnasDimension,
+  columnasMetrica,
+  valorFecha,
+  valorNumerico,
+} from "@/lib/retail/analisis/inferir-tipos";
 import {
   columnasHistorico,
-  filaCrudaDesdeHistorico,
+  datasetDesdeHistorico,
   plantillaPorId,
   WALMART_MENSUAL,
 } from "@/lib/retail/analisis/plantillas";
@@ -199,52 +205,121 @@ describe("columnasHistorico", () => {
   });
 });
 
-describe("filaCrudaDesdeHistorico", () => {
-  const columnas = columnasHistorico(WALMART_MENSUAL);
-  // Tal como lo devuelve el endpoint: fecha ya en ISO, UPC como texto.
-  const doc = {
-    date: "2024-07-06",
-    wmMonth: "2024/07",
-    brand: "MARCA",
-    itemDesc: "PRODUCTO X",
-    itemNbr: 101252325,
-    primeItemNbr: 101252325,
-    upc: "0750229353070",
-    productCode: "12345",
-    posQty: 3,
-    posSales: 1234.5,
-    avgPrice: 411.5,
-    avgSalesPerStore: 617.25,
-    itemQtySold: 3,
-    basketOccurrences: 2,
-  };
+describe("datasetDesdeHistorico", () => {
+  // Los campos que manda el endpoint, en SU orden — que no es el de la
+  // plantilla, justamente para probar que se permutan y no se asumen.
+  const CAMPOS = [
+    "date",
+    "wmMonth",
+    "brand",
+    "itemDesc",
+    "itemNbr",
+    "primeItemNbr",
+    "upc",
+    "productCode",
+    "posQty",
+    "posSales",
+    "avgPrice",
+    "avgSalesPerStore",
+    "itemQtySold",
+    "basketOccurrences",
+  ];
+  const FILA = [
+    "2024-07-06",
+    "2024/07",
+    "MARCA",
+    "PRODUCTO X",
+    101252325,
+    101252325,
+    "0750229353070",
+    "12345",
+    3,
+    1234.5,
+    411.5,
+    617.25,
+    3,
+    2,
+  ];
+  const armar = (campos = CAMPOS, filas = [FILA]) =>
+    datasetDesdeHistorico(WALMART_MENSUAL, campos, filas, "reporte.xlsx");
 
-  it("ordena los valores como las columnas", () => {
-    const fila = filaCrudaDesdeHistorico(doc, columnas);
-    for (const c of columnas) {
-      expect(fila[c.indice]).toBe(doc[c.campo as keyof typeof doc] ?? null);
-    }
+  it("permuta los valores al orden de la plantilla", () => {
+    const { dataset, columnas } = armar();
+    const valor = (campo: string) =>
+      dataset.filas[0][columnas.find((c) => c.campo === campo)!.indice];
+    for (const [i, campo] of CAMPOS.entries()) expect(valor(campo)).toBe(FILA[i]);
   });
 
-  it("rellena con null los campos ausentes", () => {
-    const fila = filaCrudaDesdeHistorico({ itemNbr: 1 }, columnas);
+  it("deja en null la columna que el servidor no mandó", () => {
+    // Si el endpoint deja de enviar un campo, esa columna queda vacía en vez de
+    // correr todas las demás una posición.
+    const sinMarca = CAMPOS.filter((c) => c !== "brand");
+    const { dataset, columnas } = armar(
+      sinMarca,
+      [FILA.filter((_, i) => CAMPOS[i] !== "brand")]
+    );
     const iMarca = columnas.find((c) => c.campo === "brand")!.indice;
-    expect(fila[iMarca]).toBeNull();
+    const iDesc = columnas.find((c) => c.campo === "itemDesc")!.indice;
+    expect(dataset.filas[0][iMarca]).toBeNull();
+    expect(dataset.filas[0][iDesc]).toBe("PRODUCTO X");
   });
 
-  it("se formatea igual que una fila del Excel", () => {
-    const fila = filaCrudaDesdeHistorico(doc, columnas);
-    const buscar = (campo: string) => {
+  it("elige los mismos filtros por omisión que un archivo con plantilla", () => {
+    const { columnas, idxDimension, idxMetrica, idxFecha } = armar();
+    expect(columnas[idxDimension].nombre).toBe("Brand Desc");
+    expect(columnas[idxMetrica].nombre).toBe("POS Sales");
+    expect(columnas[idxFecha].nombre).toBe("Daily");
+  });
+
+  it("ofrece las mismas dimensiones y métricas que la tabla del archivo", () => {
+    const { columnas } = armar();
+    expect(columnasMetrica(columnas).map((c) => c.nombre)).toEqual([
+      "POS Qty",
+      "POS Sales",
+      "Avg Price",
+      "Avg Sales $ per Store",
+      "Item Qty Sold",
+      "# of Basket Occurences",
+    ]);
+    // Los códigos no son métricas: sumar UPCs no significa nada.
+    expect(columnasMetrica(columnas).map((c) => c.nombre)).not.toContain("Item Nbr");
+    expect(columnasDimension(columnas).map((c) => c.nombre)).toContain("Brand Desc");
+  });
+
+  it("las celdas se formatean igual que las de un Excel", () => {
+    const { dataset, columnas } = armar();
+    const texto = (campo: string) => {
       const c = columnas.find((x) => x.campo === campo)!;
-      return formatearCeldaNormalizada(fila[c.indice], c);
+      return formatearCeldaNormalizada(dataset.filas[0][c.indice], c);
     };
     // La fecha llega en ISO y se queda en ISO, sin corrimiento de zona.
-    expect(buscar("date")).toBe("2024-07-06");
+    expect(texto("date")).toBe("2024-07-06");
     // El UPC conserva el cero a la izquierda y el folio no lleva separadores.
-    expect(buscar("upc")).toBe("0750229353070");
-    expect(buscar("itemNbr")).toBe("101252325");
+    expect(texto("upc")).toBe("0750229353070");
+    expect(texto("itemNbr")).toBe("101252325");
     // Las métricas sí llevan formato es-MX.
-    expect(buscar("posSales")).toBe("1,234.50");
+    expect(texto("posSales")).toBe("1,234.50");
+  });
+
+  it("las fechas y los números quedan legibles para las gráficas", () => {
+    const { dataset, columnas } = armar();
+    const col = (campo: string) => columnas.find((c) => c.campo === campo)!;
+    const fila = dataset.filas[0];
+    const fecha = valorFecha(fila[col("date").indice], col("date"));
+    // Getters LOCALES: si se hubiera construido con new Date("2024-07-06")
+    // aquí saldría el 5 de julio en un huso negativo.
+    expect(fecha && [fecha.getFullYear(), fecha.getMonth() + 1, fecha.getDate()]).toEqual([
+      2024, 7, 6,
+    ]);
+    expect(valorNumerico(fila[col("posSales").indice], col("posSales"))).toBe(1234.5);
+  });
+
+  it("describe el dataset como uno sin encabezado que detectar", () => {
+    const { dataset } = armar(CAMPOS, [FILA, FILA]);
+    expect(dataset.hoja).toBe("reporte.xlsx");
+    expect(dataset.totalFilas).toBe(2);
+    // Los nombres vienen declarados por la plantilla, no de una fila del Excel.
+    expect(dataset.filaEncabezado).toBe(-1);
   });
 });
 

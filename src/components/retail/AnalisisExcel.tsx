@@ -7,14 +7,13 @@
 
 import { Database } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { AnalisisHistorico } from "@/components/retail/AnalisisHistorico";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnalisisKpis } from "@/components/retail/AnalisisKpis";
 import { AnalisisTable } from "@/components/retail/AnalisisTable";
 import { AnalisisUploader } from "@/components/retail/AnalisisUploader";
 import { api, ClientApiError } from "@/components/lib/api-client";
 import { useDiferido } from "@/components/lib/useDiferido";
-import { Badge, Meter, Panel } from "@/components/ui/basicos";
+import { Badge, EstadoVacio, Meter, Panel } from "@/components/ui/basicos";
 import {
   agrupar,
   calcularKpis,
@@ -38,16 +37,20 @@ import {
   leerLibro,
 } from "@/lib/retail/analisis/parsear";
 import {
+  datasetDesdeHistorico,
   filasParaHistorico,
+  plantillaPorId,
   seleccionDePlantilla,
   type ColumnaResuelta,
   type Plantilla,
+  type SeleccionInicial,
 } from "@/lib/retail/analisis/plantillas";
 import { formatearEntero } from "@/lib/retail/analisis/formato";
 import { METRICA_CONTEO } from "@/lib/retail/analisis/tipos";
 import { MAX_FILAS_LOTE } from "@/lib/validation/retail";
 import type {
   Agregacion,
+  CeldaCruda,
   Dataset,
   Granularidad,
   HojaCruda,
@@ -66,7 +69,25 @@ const FILAS_POR_PAGINA = 100;
 const TOP_BARRA = 8;
 const TOP_COMPOSICION = 5;
 
-type Estado = "inactivo" | "leyendo" | "listo" | "error";
+type Estado = "cargando" | "inactivo" | "leyendo" | "listo" | "error";
+
+/**
+ * De dónde salieron las filas que se están analizando.
+ *
+ * Sólo cambia el envoltorio — el título de la tabla, su leyenda de procedencia
+ * y si tiene sentido ofrecer "Guardar en histórico". Los filtros, los KPIs, la
+ * tabla y las gráficas corren igual en los dos casos, porque los dos producen
+ * el mismo `Dataset`.
+ */
+type Origen = "archivo" | "historico";
+
+interface Procedencia {
+  origen: Origen;
+  /** Nombre del .xlsx del que salieron las filas. */
+  archivo: string;
+  importadoEl: string | null;
+  truncado: boolean;
+}
 
 interface ResultadoGuardado {
   insertadas: number;
@@ -74,8 +95,39 @@ interface ResultadoGuardado {
   descartadas: number;
 }
 
+/** Lo que devuelven tanto `seleccionDePlantilla` como `datasetDesdeHistorico`. */
+type DatasetResuelto = {
+  plantilla: Plantilla;
+  columnas: ColumnaResuelta[];
+} & SeleccionInicial;
+
+/** Respuesta de GET /api/retail/analisis/dataset. */
+interface RespuestaHistorico {
+  archivo: {
+    sourceFile: string;
+    template: string;
+    account: string;
+    importedAt: string | null;
+    total: number;
+  } | null;
+  campos: string[];
+  filas: CeldaCruda[][];
+  truncado: boolean;
+}
+
+function fechaHora(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? null
+    : d.toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" });
+}
+
 export function AnalisisExcel() {
-  const [estado, setEstado] = useState<Estado>("inactivo");
+  // Arranca cargando: al entrar se busca el último reporte guardado antes de
+  // decidir si la pestaña está vacía.
+  const [estado, setEstado] = useState<Estado>("cargando");
+  const [procedencia, setProcedencia] = useState<Procedencia | null>(null);
   const [mensajeError, setMensajeError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
@@ -113,7 +165,7 @@ export function AnalisisExcel() {
   const [progreso, setProgreso] = useState(0);
   const [guardado, setGuardado] = useState<ResultadoGuardado | null>(null);
 
-  const aplicarDataset = useCallback((ds: Dataset) => {
+  const aplicarDataset = useCallback((ds: Dataset, yaResuelto?: DatasetResuelto) => {
     setGuardado(null);
     setHojaActual(ds.hoja);
     setGranManual(null);
@@ -124,10 +176,12 @@ export function AnalisisExcel() {
     setBusqueda("");
     setPagina(1);
 
-    // Si el layout coincide con una plantilla conocida los roles vienen
-    // declarados y no hay que adivinar cuál de seis columnas numéricas es la
-    // métrica. Si no coincide, se cae a la inferencia genérica.
-    const porPlantilla = seleccionDePlantilla(ds);
+    // El histórico llega con los roles ya resueltos desde la plantilla; un
+    // archivo hay que reconocerlo primero. Si el layout coincide con una
+    // plantilla conocida los roles vienen declarados y no hay que adivinar cuál
+    // de seis columnas numéricas es la métrica. Si no coincide, se cae a la
+    // inferencia genérica.
+    const porPlantilla = yaResuelto ?? seleccionDePlantilla(ds);
     if (porPlantilla) {
       const conRoles = { ...ds, columnas: porPlantilla.columnas };
       setDataset(conRoles);
@@ -149,6 +203,45 @@ export function AnalisisExcel() {
     setIdxFecha(elegirFecha(ds.columnas));
     setAgregacion(met === METRICA_CONTEO ? "conteo" : "suma");
   }, []);
+
+  // Al entrar se baja el último reporte guardado y se arma con él un Dataset
+  // idéntico al de un archivo recién subido. Por eso los filtros, los KPIs, la
+  // tabla y las gráficas funcionan sin una segunda implementación: no hay un
+  // "modo histórico", hay las mismas filas viniendo de otro lado.
+  const cargarHistorico = useCallback(async () => {
+    try {
+      const r = await api<RespuestaHistorico>("/api/retail/analisis/dataset");
+      const plantilla = r.archivo ? plantillaPorId(r.archivo.template) : null;
+      if (!r.archivo || !plantilla || r.filas.length === 0) {
+        setEstado("inactivo");
+        return;
+      }
+      const resuelto = datasetDesdeHistorico(
+        plantilla,
+        r.campos,
+        r.filas,
+        r.archivo.sourceFile
+      );
+      setProcedencia({
+        origen: "historico",
+        archivo: r.archivo.sourceFile,
+        importadoEl: fechaHora(r.archivo.importedAt),
+        truncado: r.truncado,
+      });
+      aplicarDataset(resuelto.dataset, resuelto);
+    } catch {
+      // Que el histórico no cargue no rompe la pestaña: se puede seguir
+      // subiendo un archivo, así que se cae al estado vacío en vez de a un
+      // error que bloquee la vista.
+      setEstado("inactivo");
+    }
+  }, [aplicarDataset]);
+
+  useEffect(() => {
+    // fetch-on-mount: el estado inicial ya es "cargando"
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void cargarHistorico();
+  }, [cargarHistorico]);
 
   // Manda el dataset al histórico por lotes: 15 mil filas en un solo POST son
   // varios MB sin señal de avance, y el upsert por lote deja el progreso
@@ -201,6 +294,12 @@ export function AnalisisExcel() {
       setEstado("leyendo");
       setMensajeError(null);
       setNombreArchivo(file.name);
+      setProcedencia({
+        origen: "archivo",
+        archivo: file.name,
+        importadoEl: null,
+        truncado: false,
+      });
       setAviso(
         file.size > LIMITE_AVISO_BYTES
           ? `El archivo pesa ${Math.round(file.size / 1024 / 1024)} MB; el análisis puede tardar unos segundos.`
@@ -348,6 +447,29 @@ export function AnalisisExcel() {
   const opcionesDimension = dataset ? columnasDimension(dataset.columnas) : [];
   const opcionesMetrica = dataset ? columnasMetrica(dataset.columnas) : [];
 
+  // Procedencia de las filas. Un archivo cuenta de qué hoja salió y dónde se
+  // detectó el encabezado — un acierto dudoso tiene que ser visible en pantalla
+  // en vez de silencioso. El histórico no tuvo detección que exponer: dice de
+  // qué archivo viene y cuándo se importó.
+  const detallesTabla = useMemo(() => {
+    if (!dataset) return [];
+    if (procedencia?.origen === "historico") {
+      return [
+        `archivo «${procedencia.archivo}»`,
+        ...(procedencia.importadoEl ? [`importado el ${procedencia.importadoEl}`] : []),
+        ...(procedencia.truncado
+          ? ["recortado: sube el archivo para analizarlo completo"]
+          : []),
+      ];
+    }
+    return [
+      `hoja «${dataset.hoja}»`,
+      dataset.filaEncabezado >= 0
+        ? `encabezado en la fila ${dataset.filaEncabezado + 1}`
+        : "sin encabezado detectado",
+    ];
+  }, [dataset, procedencia]);
+
   return (
     <div className="flex flex-col gap-6">
       <AnalisisUploader
@@ -364,10 +486,21 @@ export function AnalisisExcel() {
         </p>
       ) : null}
 
-      {/* Sin archivo en memoria la pestaña no se queda en blanco: muestra la
-          tabla del último reporte guardado, paginada contra Mongo. Al cargar un
-          .xlsx la reemplaza el análisis completo de ESE archivo. */}
-      {!dataset && estado !== "leyendo" && !mensajeError ? <AnalisisHistorico /> : null}
+      {estado === "cargando" ? (
+        <div className="flex flex-col gap-6" aria-busy="true">
+          <div className="cr-panel cr-pulse" style={{ height: 96 }} />
+          <div className="cr-panel cr-pulse" style={{ height: 280 }} />
+        </div>
+      ) : null}
+
+      {estado === "inactivo" && !mensajeError ? (
+        <Panel>
+          <EstadoVacio
+            title="Sin archivo cargado"
+            detalle="Sube un .xlsx para ver los datos y su análisis. Se detectan solas las columnas de fecha, numéricas y de categoría. Al guardarlo en el histórico volverá a aparecer aquí la próxima vez que entres."
+          />
+        </Panel>
+      ) : null}
 
       {/* Una sola fila de filtros arriba de todo: cada gráfica, la tabla y los
           KPIs se recalculan contra la misma selección, así que los números
@@ -440,8 +573,9 @@ export function AnalisisExcel() {
       ) : null}
 
       {/* La plantilla reconocida es lo que habilita guardar: sin ella no hay
-          mapeo fiable de encabezados a campos del histórico. */}
-      {dataset && plantilla ? (
+          mapeo fiable de encabezados a campos del histórico. El reporte que
+          viene DEL histórico no se ofrece guardar: ya está guardado. */}
+      {dataset && plantilla && procedencia?.origen === "archivo" ? (
         <Panel title="Histórico de reportes">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-col gap-1">
@@ -509,19 +643,13 @@ export function AnalisisExcel() {
           />
 
           <AnalisisTable
+            titulo={procedencia?.origen === "historico" ? "Último reporte guardado" : "Datos"}
             columnas={columnasTabla}
             filasVisibles={filasVisibles}
             totalFilas={dataset.totalFilas}
             totalFiltradas={filasFiltradas.length}
             totalColumnas={dataset.columnas.length}
-            detalles={[
-              `hoja «${dataset.hoja}»`,
-              // Se expone la detección de encabezado para que un acierto
-              // dudoso sea visible en pantalla en vez de silencioso.
-              dataset.filaEncabezado >= 0
-                ? `encabezado en la fila ${dataset.filaEncabezado + 1}`
-                : "sin encabezado detectado",
-            ]}
+            detalles={detallesTabla}
             busqueda={busqueda}
             // En memoria el filtro corre con el valor diferido, así que ése es
             // el que describe las filas en pantalla.

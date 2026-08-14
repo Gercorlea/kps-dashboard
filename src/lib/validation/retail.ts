@@ -216,6 +216,17 @@ export const historicoAnalisisQuerySchema = z.object({
 // página que pide la UI; `sourceFile` ausente significa "el último cargado".
 export const FILAS_POR_PAGINA = 100;
 
+// Al entrar a la pestaña se baja el reporte COMPLETO para que los filtros, las
+// gráficas y los KPIs corran con el mismo código que un archivo recién subido.
+// El tope evita que un reporte desmedido convierta esa carga en varios MB: por
+// encima se manda lo que cabe y se avisa que está recortado.
+export const MAX_FILAS_DATASET = 50_000;
+
+export const datasetAnalisisQuerySchema = z.object({
+  account: z.string().min(1).max(60).optional(),
+  sourceFile: z.string().min(1).max(300).optional(),
+});
+
 export const filasAnalisisQuerySchema = z.object({
   account: z.string().min(1).max(60).optional(),
   sourceFile: z.string().min(1).max(300).optional(),

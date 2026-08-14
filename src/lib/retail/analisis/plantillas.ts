@@ -11,7 +11,7 @@
 
 import { formatearFecha } from "./formato";
 import { valorFecha, valorNumerico } from "./inferir-tipos";
-import type { Dataset, FilaCruda, MetaColumna } from "./tipos";
+import type { CeldaCruda, Dataset, FilaCruda, MetaColumna } from "./tipos";
 
 export type RolColumna =
   | "fecha" // el eje temporal del reporte
@@ -190,46 +190,61 @@ export function indicePorRol(columnas: ColumnaResuelta[], rol: RolColumna): numb
 }
 
 /**
+ * Métrica por omisión de una plantilla: la preferida si está declarada, si no
+ * la primera con rol de métrica.
+ */
+function indiceMetrica(columnas: ColumnaResuelta[], plantillaId: string): number {
+  const preferida = METRICA_PREFERIDA[plantillaId];
+  const metrica =
+    (preferida
+      ? columnas.find(
+          (c) => c.rol === "metrica" && normalizar(c.nombre) === normalizar(preferida)
+        )
+      : undefined) ?? columnas.find((c) => c.rol === "metrica");
+  return metrica?.indice ?? -1;
+}
+
+/** Filtros iniciales: dimensión, métrica y fecha según los roles declarados. */
+export interface SeleccionInicial {
+  idxDimension: number;
+  idxMetrica: number;
+  idxFecha: number;
+}
+
+function seleccionar(columnas: ColumnaResuelta[], plantillaId: string): SeleccionInicial {
+  return {
+    idxDimension: indicePorRol(columnas, "dimension"),
+    idxMetrica: indiceMetrica(columnas, plantillaId),
+    idxFecha: indicePorRol(columnas, "fecha"),
+  };
+}
+
+/**
  * Selección inicial de filtros para un dataset con plantilla reconocida.
  * Devuelve null si no calza ninguna, para que el llamador use la inferencia.
  */
 export function seleccionDePlantilla(
   dataset: Dataset
-): { plantilla: Plantilla; columnas: ColumnaResuelta[]; idxDimension: number; idxMetrica: number; idxFecha: number } | null {
+): ({ plantilla: Plantilla; columnas: ColumnaResuelta[] } & SeleccionInicial) | null {
   const plantilla = reconocerPlantilla(dataset.columnas);
   if (!plantilla) return null;
 
   const columnas = aplicarPlantilla(dataset.columnas, plantilla);
-  const preferida = METRICA_PREFERIDA[plantilla.id];
-  const metrica =
-    (preferida
-      ? columnas.find((c) => c.rol === "metrica" && normalizar(c.nombre) === normalizar(preferida))
-      : undefined) ?? columnas.find((c) => c.rol === "metrica");
-
-  return {
-    plantilla,
-    columnas,
-    idxDimension: indicePorRol(columnas, "dimension"),
-    idxMetrica: metrica?.indice ?? -1,
-    idxFecha: indicePorRol(columnas, "fecha"),
-  };
+  return { plantilla, columnas, ...seleccionar(columnas, plantilla.id) };
 }
 
-// ------------------------------------------------- del histórico a la tabla
+// ------------------------------------------------ del histórico al analizador
 
 /**
- * Columnas de la tabla cuando las filas vienen de Mongo y no de un Excel.
+ * Columnas cuando las filas vienen de Mongo y no de un Excel.
  *
  * El histórico guarda exactamente las columnas útiles de la plantilla, así que
  * no hay nada que inferir: los tipos y los roles ya están declarados arriba.
- * Se sintetiza un MetaColumna por cada una para que la tabla, el formateo de
- * celdas y el buscador sean el MISMO código en los dos modos.
+ * Se sintetiza una ColumnaResuelta por cada una — la MISMA forma que produce
+ * `aplicarPlantilla` — para que la tabla, los filtros, las gráficas, el
+ * formateo de celdas y el buscador sean el mismo código en los dos modos.
  */
-export interface ColumnaHistorico extends MetaColumna {
-  campo: string;
-}
-
-export function columnasHistorico(plantilla: Plantilla): ColumnaHistorico[] {
+export function columnasHistorico(plantilla: Plantilla): ColumnaResuelta[] {
   return plantilla.columnas
     .filter((c) => c.rol !== "ignorada")
     .map((c, i) => ({
@@ -238,6 +253,8 @@ export function columnasHistorico(plantilla: Plantilla): ColumnaHistorico[] {
       indice: i,
       nombre: c.header,
       campo: c.campo,
+      rol: c.rol,
+      tipoDato: c.tipoDato,
       tipo:
         c.tipoDato === "date" ? "fecha" : c.tipoDato === "number" ? "numero" : "categoria",
       noVacias: 0,
@@ -252,17 +269,39 @@ export function columnasHistorico(plantilla: Plantilla): ColumnaHistorico[] {
     }));
 }
 
-/** Documento del histórico → fila cruda, en el orden de `columnasHistorico`. */
-export function filaCrudaDesdeHistorico(
-  doc: Record<string, unknown>,
-  columnas: ColumnaHistorico[]
-): FilaCruda {
-  return columnas.map((c) => {
-    const v = doc[c.campo];
-    if (v === null || v === undefined) return null;
-    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
-    return String(v);
-  });
+/**
+ * Dataset completo a partir de lo que devuelve el endpoint del histórico.
+ *
+ * `campos` viene del servidor y dice en qué orden llegan los valores de cada
+ * fila; se permutan al orden de la plantilla en vez de confiar en que las dos
+ * listas coincidan. Si el servidor agrega o reordena un campo, aquí no se
+ * desalinean las columnas: las que falten quedan en null.
+ */
+export function datasetDesdeHistorico(
+  plantilla: Plantilla,
+  campos: string[],
+  filas: CeldaCruda[][],
+  nombre: string
+): {
+  dataset: Dataset;
+  plantilla: Plantilla;
+  columnas: ColumnaResuelta[];
+} & SeleccionInicial {
+  const columnas = columnasHistorico(plantilla);
+  const posicion = new Map(campos.map((campo, i) => [campo, i]));
+  // -1 marca la columna que el servidor no mandó.
+  const orden = columnas.map((c) => posicion.get(c.campo) ?? -1);
+
+  const dataset: Dataset = {
+    hoja: nombre,
+    // No hubo detección de encabezado: los nombres vienen declarados.
+    filaEncabezado: -1,
+    columnas,
+    filas: filas.map((fila) => orden.map((i) => (i < 0 ? null : (fila[i] ?? null)))),
+    totalFilas: filas.length,
+  };
+
+  return { dataset, plantilla, columnas, ...seleccionar(columnas, plantilla.id) };
 }
 
 /** Una fila lista para el histórico: campos de la plantilla → valor plano. */
