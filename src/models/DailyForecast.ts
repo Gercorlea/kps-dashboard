@@ -1,12 +1,13 @@
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
-// Hoja PRONOSTICOS (unpivot): un documento por tienda × SKU × semana.
-export interface IPronosticoSemanal {
+// Hoja FC_Mean (unpivot). Excluye "Total" y "Total red": los totales se
+// recalculan al consultar, nunca se cachean del Excel (§7.2).
+export interface IDailyForecast {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
   account: string;
   cutoffDate: Date;
-  weekStart: Date;
+  date: Date;
   storeCode: string;
   storeName: string;
   sku: string;
@@ -19,12 +20,12 @@ export interface IPronosticoSemanal {
   value: number;
 }
 
-const PronosticoSemanalSchema = new Schema<IPronosticoSemanal>(
+const DailyForecastSchema = new Schema<IDailyForecast>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
     account: { type: String, required: true },
     cutoffDate: { type: Date, required: true },
-    weekStart: { type: Date, required: true },
+    date: { type: Date, required: true },
     storeCode: { type: String, required: true },
     storeName: { type: String, default: "" },
     sku: { type: String, required: true },
@@ -39,9 +40,9 @@ const PronosticoSemanalSchema = new Schema<IPronosticoSemanal>(
   { versionKey: false }
 );
 
-PronosticoSemanalSchema.index({ account: 1, weekStart: -1, sku: 1 });
-PronosticoSemanalSchema.index({ uploadId: 1 });
+DailyForecastSchema.index({ account: 1, date: -1, sku: 1 });
+DailyForecastSchema.index({ uploadId: 1 });
 
-export const PronosticoSemanal: Model<IPronosticoSemanal> =
-  (models.PronosticoSemanal as Model<IPronosticoSemanal>) ??
-  model<IPronosticoSemanal>("PronosticoSemanal", PronosticoSemanalSchema);
+export const DailyForecast: Model<IDailyForecast> =
+  (models.DailyForecast as Model<IDailyForecast>) ??
+  model<IDailyForecast>("DailyForecast", DailyForecastSchema);

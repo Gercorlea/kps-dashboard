@@ -4,11 +4,10 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { CheckCircle2, FileSpreadsheet, Loader2, UploadCloud, XCircle } from "lucide-react";
 import { api, ClientApiError } from "@/components/lib/api-client";
+import { XLSX_CONTENT_TYPE } from "@/lib/retail/archivos";
 import { fmtBytes, fmtNum } from "@/components/lib/fmt";
 import { Badge, Meter, Panel } from "@/components/ui/basicos";
 
-const XLSX_MIME =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const MAX_BYTES = 25 * 1024 * 1024;
 
 type Paso =
@@ -87,16 +86,17 @@ export function Uploader() {
     void leerNombresDeHojas(f);
 
     try {
+      // Solo metadatos: registra la carga y pide la fecha de corte sugerida.
+      // El archivo se envía después, al procesar, y no se almacena nunca.
       const creado = await api<{
         uploadId: string;
-        putUrl: string;
         fechaCorteSugerida: string;
         fechaDerivadaDelNombre: boolean;
       }>("/api/retail/uploads", {
         method: "POST",
         body: JSON.stringify({
           filename: f.name,
-          contentType: XLSX_MIME,
+          contentType: XLSX_CONTENT_TYPE,
           sizeBytes: f.size,
           account: "san-pablo",
         }),
@@ -104,25 +104,6 @@ export function Uploader() {
       setUploadId(creado.uploadId);
       setFechaCorte(creado.fechaCorteSugerida);
       setFechaDerivada(creado.fechaDerivadaDelNombre);
-
-      // Subida directa a R2 con presigned PUT y barra de progreso.
-      setPaso({ tipo: "subiendo", progreso: 0 });
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", creado.putUrl);
-        xhr.setRequestHeader("Content-Type", XLSX_MIME);
-        xhr.upload.onprogress = (ev) => {
-          if (ev.lengthComputable) {
-            setPaso({ tipo: "subiendo", progreso: ev.loaded / ev.total });
-          }
-        };
-        xhr.onload = () =>
-          xhr.status >= 200 && xhr.status < 300
-            ? resolve()
-            : reject(new Error(`R2 respondió ${xhr.status}`));
-        xhr.onerror = () => reject(new Error("Fallo de red subiendo a R2 (¿CORS del bucket?)"));
-        xhr.send(f);
-      });
       setPaso({ tipo: "confirmar" });
     } catch (e) {
       setError(e instanceof ClientApiError ? e.message : String(e instanceof Error ? e.message : e));
@@ -131,7 +112,7 @@ export function Uploader() {
   }
 
   async function procesar() {
-    if (!uploadId || !cutoffDate) return;
+    if (!uploadId || !cutoffDate || !fileName) return;
     setError(null);
     setPaso({ tipo: "processing" });
 
@@ -148,13 +129,45 @@ export function Uploader() {
     }, 1500);
 
     try {
-      const r = await api<{
+      // El Excel viaja aquí, se parsea en memoria y se descarta: en la base
+      // solo quedan las filas. XMLHttpRequest y no fetch, por el progreso.
+      const datos = new FormData();
+      datos.append("archivo", fileName);
+      datos.append("cutoffDate", cutoffDate);
+
+      const r = await new Promise<{
         status: string;
         summary: Record<string, ResumenHoja>;
         issues: Incidencia[];
-      }>(`/api/retail/uploads/${uploadId}/process`, {
-        method: "POST",
-        body: JSON.stringify({ cutoffDate }),
+      }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/retail/uploads/${uploadId}/process`);
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable && ev.loaded < ev.total) {
+            setPaso({ tipo: "subiendo", progreso: ev.loaded / ev.total });
+          } else {
+            setPaso({ tipo: "processing" });
+          }
+        };
+        xhr.onload = () => {
+          try {
+            const cuerpo = JSON.parse(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300 && cuerpo.ok) resolve(cuerpo.data);
+            else
+              reject(
+                new ClientApiError(
+                  xhr.status,
+                  cuerpo?.error?.code ?? "ERROR",
+                  cuerpo?.error?.message ?? `El servidor respondió ${xhr.status}`,
+                  cuerpo?.error?.details
+                )
+              );
+          } catch {
+            reject(new Error(`El servidor respondió ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Fallo de red enviando el archivo"));
+        xhr.send(datos);
       });
       setResumen(r.summary ?? {});
       setIncidencias(r.issues ?? []);

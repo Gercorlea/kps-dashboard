@@ -4,7 +4,7 @@ import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { patronSinAcentos } from "@/lib/retail/analisis/filtrar";
 import { filasAnalisisQuerySchema } from "@/lib/validation/retail";
-import { ReporteVenta } from "@/models/ReporteVenta";
+import { SalesReport } from "@/models/SalesReport";
 
 /** Las fechas se guardan a medianoche UTC; se devuelven como "2024-07-06". */
 function fechaISO(d: Date | null | undefined): string {
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     // Qué archivo se está viendo. El más reciente por importedAt cuando no se
     // pide uno, para que "el último cargado" no dependa del orden de inserción.
-    const ultimo = await ReporteVenta.findOne(
+    const ultimo = await SalesReport.findOne(
       q.sourceFile
         ? { sourceFile: q.sourceFile, ...(q.account ? { account: q.account } : {}) }
         : q.account
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
           : {}
     )
       .sort(q.sourceFile ? { date: 1 } : { importedAt: -1 })
-      .select({ sourceFile: 1, plantilla: 1, account: 1, importedAt: 1 })
+      .select({ sourceFile: 1, template: 1, account: 1, importedAt: 1 })
       .lean();
 
     if (!ultimo) {
@@ -59,23 +59,23 @@ export async function GET(request: NextRequest) {
     }
 
     const [total, totalArchivo] = await Promise.all([
-      ReporteVenta.countDocuments(filtro),
-      q.buscar ? ReporteVenta.countDocuments(base) : Promise.resolve(0),
+      SalesReport.countDocuments(filtro),
+      q.buscar ? SalesReport.countDocuments(base) : Promise.resolve(0),
     ]);
 
-    const docs = await ReporteVenta.find(filtro)
+    const docs = await SalesReport.find(filtro)
       // Orden total: (date, itemNbr) es la clave natural del grano, así que no
       // hay empates y una fila no puede aparecer en dos páginas.
       .sort({ date: 1, itemNbr: 1 })
       .skip((q.page - 1) * q.limit)
       .limit(q.limit)
-      .select({ plantilla: 0, account: 0, sourceFile: 0, importedAt: 0, importedBy: 0 })
+      .select({ template: 0, account: 0, sourceFile: 0, importedAt: 0, importedBy: 0 })
       .lean();
 
     return ok({
       archivo: {
         sourceFile: ultimo.sourceFile,
-        plantilla: ultimo.plantilla,
+        template: ultimo.template,
         account: ultimo.account,
         importedAt: ultimo.importedAt?.toISOString() ?? null,
         total: q.buscar ? totalArchivo : total,

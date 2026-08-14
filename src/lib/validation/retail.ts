@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { XLSX_CONTENT_TYPE } from "@/lib/r2";
+import { XLSX_CONTENT_TYPE } from "@/lib/retail/archivos";
 
 // v1: solo San Pablo. El modelo queda preparado para múltiples cuentas,
 // pero no existe fuente de datos de Walmart todavía (§0).
@@ -201,7 +201,7 @@ export type ReporteVentaRow = z.infer<typeof reporteVentaRowSchema>;
 export const MAX_FILAS_LOTE = 2000;
 
 export const guardarAnalisisSchema = z.object({
-  plantilla: z.string().min(1).max(60),
+  template: z.string().min(1).max(60),
   account: z.string().min(1).max(60),
   sourceFile: z.string().min(1).max(300),
   filas: z.array(reporteVentaRowSchema).min(1).max(MAX_FILAS_LOTE),

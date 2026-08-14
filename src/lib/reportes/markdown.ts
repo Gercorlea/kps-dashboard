@@ -4,22 +4,22 @@
 // Subconjunto deliberado: portada, títulos, párrafos, tablas y listas.
 // Sin gráficas ni imágenes.
 
-export interface MetricaPortada {
+export interface CoverMetric {
   value: string;
-  unidad?: string;
-  etiqueta: string;
+  unit?: string;
+  label: string;
 }
 
-export interface PortadaSpec {
+export interface CoverSpec {
   title: string;
-  subtitulo?: string;
-  metricas?: MetricaPortada[];
+  subtitle?: string;
+  metrics?: CoverMetric[];
 }
 
 export type Alineacion = "left" | "right" | "center";
 
 export type Bloque =
-  | { tipo: "portada"; spec: PortadaSpec }
+  | { tipo: "portada"; spec: CoverSpec }
   | { tipo: "title"; nivel: 1 | 2 | 3; texto: string; numero?: string }
   | { tipo: "parrafo"; texto: string }
   | { tipo: "tabla"; encabezados: string[]; filas: string[][]; alineacion: Alineacion[] }
@@ -53,16 +53,16 @@ function alineacionesDe(separador: string): Alineacion[] {
   });
 }
 
-function leerPortada(json: string): PortadaSpec | null {
+function leerPortada(json: string): CoverSpec | null {
   try {
-    const d = JSON.parse(json) as Partial<PortadaSpec>;
+    const d = JSON.parse(json) as Partial<CoverSpec>;
     if (!d.title || typeof d.title !== "string") return null;
     return {
       title: d.title,
-      subtitulo: typeof d.subtitulo === "string" ? d.subtitulo : undefined,
-      metricas: Array.isArray(d.metricas)
-        ? d.metricas
-            .filter((m): m is MetricaPortada => !!m && !!m.value && !!m.etiqueta)
+      subtitle: typeof d.subtitle === "string" ? d.subtitle : undefined,
+      metrics: Array.isArray(d.metrics)
+        ? d.metrics
+            .filter((m): m is CoverMetric => !!m && !!m.value && !!m.label)
             .slice(0, 4)
         : undefined,
     };

@@ -2,15 +2,15 @@ import { handleApiError, ok } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { Chat } from "@/models/Chat";
-import { ForecastDiario } from "@/models/ForecastDiario";
-import { LineaOC } from "@/models/LineaOC";
-import { Mensaje } from "@/models/Mensaje";
-import { PronosticoSemanal } from "@/models/PronosticoSemanal";
-import { StockCedis } from "@/models/StockCedis";
-import { StockFarmacia } from "@/models/StockFarmacia";
+import { DailyForecast } from "@/models/DailyForecast";
+import { PurchaseOrderLine } from "@/models/PurchaseOrderLine";
+import { Message } from "@/models/Message";
+import { WeeklyForecast } from "@/models/WeeklyForecast";
+import { DcStock } from "@/models/DcStock";
+import { PharmacyStock } from "@/models/PharmacyStock";
 import { Upload } from "@/models/Upload";
 import { User } from "@/models/User";
-import { VentaDiaria } from "@/models/VentaDiaria";
+import { DailySale } from "@/models/DailySale";
 
 // Estadísticas del sistema para el módulo de administración (§0).
 export async function GET() {
@@ -24,16 +24,16 @@ export async function GET() {
       Upload.countDocuments(),
       Upload.aggregate([{ $group: { _id: "$status", n: { $sum: 1 } } }]),
       Chat.countDocuments(),
-      Mensaje.countDocuments(),
+      Message.countDocuments(),
     ]);
 
     const [ventas, pronosticos, forecast, cedis, farmacia, lineasOc] = await Promise.all([
-      VentaDiaria.estimatedDocumentCount(),
-      PronosticoSemanal.estimatedDocumentCount(),
-      ForecastDiario.estimatedDocumentCount(),
-      StockCedis.estimatedDocumentCount(),
-      StockFarmacia.estimatedDocumentCount(),
-      LineaOC.estimatedDocumentCount(),
+      DailySale.estimatedDocumentCount(),
+      WeeklyForecast.estimatedDocumentCount(),
+      DailyForecast.estimatedDocumentCount(),
+      DcStock.estimatedDocumentCount(),
+      PharmacyStock.estimatedDocumentCount(),
+      PurchaseOrderLine.estimatedDocumentCount(),
     ]);
 
     return ok({

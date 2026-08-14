@@ -4,14 +4,14 @@ import { Schema, model, models, type Model, type Types } from "mongoose";
 // /retail/analisis. Un documento por artículo × día — el grano del reporte
 // mensual de Walmart, donde (itemNbr, date) es única.
 //
-// A diferencia de VentaDiaria, que nace del flujo de ingesta con hojas fijas,
+// A diferencia de DailySale, que nace del flujo de ingesta con hojas fijas,
 // esta colección se llena desde el analizador: guarda sólo las columnas
 // importantes de la plantilla reconocida y deja fuera las constantes.
-export interface IReporteVenta {
+export interface ISalesReport {
   _id: Types.ObjectId;
 
   // Procedencia: de qué archivo y plantilla salió cada fila.
-  plantilla: string; // "walmart-mensual"
+  template: string; // "walmart-mensual"
   account: string; // "walmart"
   sourceFile: string;
   importedAt: Date;
@@ -40,9 +40,9 @@ export interface IReporteVenta {
   basketOccurrences: number;
 }
 
-const ReporteVentaSchema = new Schema<IReporteVenta>(
+const SalesReportSchema = new Schema<ISalesReport>(
   {
-    plantilla: { type: String, required: true },
+    template: { type: String, required: true },
     account: { type: String, required: true },
     sourceFile: { type: String, default: "" },
     importedAt: { type: Date, required: true },
@@ -70,17 +70,17 @@ const ReporteVentaSchema = new Schema<IReporteVenta>(
 
 // Clave natural del grano. Es lo que hace que volver a subir el mismo reporte
 // ACTUALICE en vez de duplicar: sin esto el histórico se infla en cada carga.
-ReporteVentaSchema.index({ account: 1, itemNbr: 1, date: 1 }, { unique: true });
-ReporteVentaSchema.index({ account: 1, date: -1 });
-ReporteVentaSchema.index({ account: 1, brand: 1, date: -1 });
+SalesReportSchema.index({ account: 1, itemNbr: 1, date: 1 }, { unique: true });
+SalesReportSchema.index({ account: 1, date: -1 });
+SalesReportSchema.index({ account: 1, brand: 1, date: -1 });
 
 // La tabla de /retail/analisis lista un archivo a la vez, ordenado por
 // (date, itemNbr) para que el paginado sea estable: sin un orden total, dos
 // filas empatadas pueden salir en las páginas 1 y 2 a la vez, o en ninguna.
-ReporteVentaSchema.index({ sourceFile: 1, date: 1, itemNbr: 1 });
+SalesReportSchema.index({ sourceFile: 1, date: 1, itemNbr: 1 });
 // Resolver "el último Excel cargado" es un solo findOne ordenado por esto.
-ReporteVentaSchema.index({ importedAt: -1 });
+SalesReportSchema.index({ importedAt: -1 });
 
-export const ReporteVenta: Model<IReporteVenta> =
-  (models.ReporteVenta as Model<IReporteVenta>) ??
-  model<IReporteVenta>("ReporteVenta", ReporteVentaSchema);
+export const SalesReport: Model<ISalesReport> =
+  (models.SalesReport as Model<ISalesReport>) ??
+  model<ISalesReport>("SalesReport", SalesReportSchema);

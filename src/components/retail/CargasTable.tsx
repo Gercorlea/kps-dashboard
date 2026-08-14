@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Download, Eye, FileSpreadsheet, Trash2 } from "lucide-react";
+import { Eye, FileSpreadsheet, Trash2 } from "lucide-react";
 import { api, ClientApiError } from "@/components/lib/api-client";
 import { fmtFechaHora, fmtNum } from "@/components/lib/fmt";
 import { Badge } from "@/components/ui/basicos";
@@ -64,17 +64,7 @@ export function CargasTable({ esSuperadmin }: { esSuperadmin: boolean }) {
     void cargar();
   }, [cargar]);
 
-  async function descargar(id: string) {
-    try {
-      const r = await api<{ downloadUrl: string | null }>(
-        `/api/retail/uploads/${id}?descargar=1`
-      );
-      // Presigned GET de vida corta emitido por el endpoint autenticado (§5.7)
-      if (r.downloadUrl) window.open(r.downloadUrl, "_blank", "noopener");
-    } catch (e) {
-      setError(e instanceof ClientApiError ? e.message : "No se pudo descargar");
-    }
-  }
+
 
   async function borrar(id: string, filename: string) {
     if (!window.confirm(`¿Borrar la carga "${filename}" y todas sus filas?`)) return;
@@ -182,14 +172,6 @@ export function CargasTable({ esSuperadmin }: { esSuperadmin: boolean }) {
                         >
                           SC
                         </Link>
-                        <button
-                          type="button"
-                          className="cr-btn cr-btn--ghost cr-btn--sm"
-                          title="Descargar original"
-                          onClick={() => descargar(c.id)}
-                        >
-                          <Download strokeWidth={1.75} />
-                        </button>
                         {esSuperadmin ? (
                           <button
                             type="button"

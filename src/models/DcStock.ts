@@ -3,12 +3,12 @@ import { Schema, model, models, type Model, type Types } from "mongoose";
 // Hoja CEDIS: una fila por SKU en el centro de distribución. Las columnas
 // de fecha (citas) van en medio de la tabla y se guardan como unpivot
 // embebido (§6.2, §7.2).
-export interface ICitaCedis {
+export interface IDcAppointment {
   date: Date;
   quantity: number;
 }
 
-export interface IStockCedis {
+export interface IDcStock {
   _id: Types.ObjectId;
   uploadId: Types.ObjectId;
   account: string;
@@ -22,7 +22,7 @@ export interface IStockCedis {
   realAvailabilityDC: number | null;
   inTransit: number | null;
   withoutAppointment: number | null;
-  appointments: ICitaCedis[];
+  appointments: IDcAppointment[];
   planCharacteristic: string; // viene "21", "ND" → string, no número
   minimum: number | null;
   coverage: number | null;
@@ -30,7 +30,7 @@ export interface IStockCedis {
   targetStock: number | null;
 }
 
-const StockCedisSchema = new Schema<IStockCedis>(
+const DcStockSchema = new Schema<IDcStock>(
   {
     uploadId: { type: Schema.Types.ObjectId, ref: "Upload", required: true },
     account: { type: String, required: true },
@@ -46,7 +46,7 @@ const StockCedisSchema = new Schema<IStockCedis>(
     withoutAppointment: { type: Number, default: null },
     appointments: {
       type: [
-        new Schema<ICitaCedis>(
+        new Schema<IDcAppointment>(
           {
             date: { type: Date, required: true },
             quantity: { type: Number, required: true },
@@ -65,9 +65,9 @@ const StockCedisSchema = new Schema<IStockCedis>(
   { versionKey: false }
 );
 
-StockCedisSchema.index({ account: 1, cutoffDate: -1, sku: 1 });
-StockCedisSchema.index({ uploadId: 1 });
+DcStockSchema.index({ account: 1, cutoffDate: -1, sku: 1 });
+DcStockSchema.index({ uploadId: 1 });
 
-export const StockCedis: Model<IStockCedis> =
-  (models.StockCedis as Model<IStockCedis>) ??
-  model<IStockCedis>("StockCedis", StockCedisSchema);
+export const DcStock: Model<IDcStock> =
+  (models.DcStock as Model<IDcStock>) ??
+  model<IDcStock>("DcStock", DcStockSchema);

@@ -1,9 +1,9 @@
 import { connectDB } from "@/lib/db";
-import { LineaOC } from "@/models/LineaOC";
-import { StockCedis } from "@/models/StockCedis";
-import { StockFarmacia } from "@/models/StockFarmacia";
+import { PurchaseOrderLine } from "@/models/PurchaseOrderLine";
+import { DcStock } from "@/models/DcStock";
+import { PharmacyStock } from "@/models/PharmacyStock";
 import { Upload } from "@/models/Upload";
-import { VentaDiaria } from "@/models/VentaDiaria";
+import { DailySale } from "@/models/DailySale";
 import { fechaISO } from "./normalize";
 
 // Scorecard (§8): reporte CALCULADO desde las colecciones persistidas.
@@ -125,7 +125,7 @@ async function unidadesPor(
 ): Promise<Array<Record<string, unknown> & { units: number }>> {
   const grupo: Record<string, unknown> = {};
   for (const [alias, field] of Object.entries(campos)) grupo[alias] = `$${field}`;
-  const res = await VentaDiaria.aggregate([
+  const res = await DailySale.aggregate([
     { $match: { account, date: { $gte: periodo.inicio, $lte: periodo.fin } } },
     { $group: { _id: grupo, units: { $sum: "$units" } } },
   ]);
@@ -133,7 +133,7 @@ async function unidadesPor(
 }
 
 async function inventarioTotalEnCorte(account: string, corte: Date): Promise<number | null> {
-  const [farma] = await StockFarmacia.aggregate([
+  const [farma] = await PharmacyStock.aggregate([
     { $match: { account, cutoffDate: corte } },
     {
       $group: {
@@ -147,7 +147,7 @@ async function inventarioTotalEnCorte(account: string, corte: Date): Promise<num
       },
     },
   ]);
-  const [cedis] = await StockCedis.aggregate([
+  const [cedis] = await DcStock.aggregate([
     { $match: { account, cutoffDate: corte } },
     { $group: { _id: null, total: { $sum: { $ifNull: ["$realAvailabilityDC", 0] } }, n: { $sum: 1 } } },
   ]);
@@ -161,7 +161,7 @@ async function inventarioPorCampo(
   field: "brand" | "sku" | "storeCode"
 ): Promise<Map<string, number>> {
   const mapa = new Map<string, number>();
-  const farma = await StockFarmacia.aggregate([
+  const farma = await PharmacyStock.aggregate([
     { $match: { account, cutoffDate: corte } },
     {
       $group: {
@@ -177,7 +177,7 @@ async function inventarioPorCampo(
   for (const r of farma) mapa.set(String(r._id), r.total as number);
   if (field !== "storeCode") {
     // El CEDIS no tiene tienda: solo aplica a marca y SKU.
-    const cedis = await StockCedis.aggregate([
+    const cedis = await DcStock.aggregate([
       { $match: { account, cutoffDate: corte } },
       { $group: { _id: `$${field}`, total: { $sum: { $ifNull: ["$realAvailabilityDC", 0] } } } },
     ]);
@@ -228,7 +228,7 @@ export async function generarScorecard(account: string, hastaStr?: string): Prom
   };
 
   // Rango real de datos de venta (para cobertura y completitud de meses).
-  const [rango] = await VentaDiaria.aggregate([
+  const [rango] = await DailySale.aggregate([
     { $match: { account } },
     { $group: { _id: null, min: { $min: "$date" }, max: { $max: "$date" } } },
   ]);
@@ -236,7 +236,7 @@ export async function generarScorecard(account: string, hastaStr?: string): Prom
   const maxFecha: Date | null = rango ? new Date(rango.max) : null;
 
   // Unidades por mes (año actual + anterior en una sola pasada).
-  const porMes = await VentaDiaria.aggregate([
+  const porMes = await DailySale.aggregate([
     { $match: { account, date: { $gte: periodoAnterior.inicio, $lte: hasta } } },
     {
       $group: {
@@ -458,7 +458,7 @@ export async function generarScorecard(account: string, hastaStr?: string): Prom
   // Promedio ponderado por cantidad, cortado por negociador y por estatus
   // de OC, al último corte (§8.2).
   async function fillRatePor(field: string): Promise<FilaFillRate[]> {
-    const res = await LineaOC.aggregate([
+    const res = await PurchaseOrderLine.aggregate([
       { $match: { account, cutoffDate: ultimoCorte } },
       {
         $group: {

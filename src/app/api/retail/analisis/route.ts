@@ -4,7 +4,7 @@ import { handleApiError, ok, parseJson, parseQuery } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { guardarAnalisisSchema, historicoAnalisisQuerySchema } from "@/lib/validation/retail";
-import { ReporteVenta } from "@/models/ReporteVenta";
+import { SalesReport } from "@/models/SalesReport";
 
 /** "2024-07-06" → medianoche UTC, como el resto de retail (fechaISO). */
 function fechaUTC(iso: string): Date {
@@ -20,7 +20,7 @@ function fechaUTC(iso: string): Date {
 export async function POST(request: NextRequest) {
   try {
     const usuario = await requireModule("retail");
-    const { plantilla, account, sourceFile, filas } = await parseJson(
+    const { template, account, sourceFile, filas } = await parseJson(
       request,
       guardarAnalisisSchema
     );
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
             $set: {
               ...resto,
               date: fecha,
-              plantilla,
+              template,
               account,
               sourceFile,
               importedAt,
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    const res = await ReporteVenta.bulkWrite(ops, { ordered: false });
+    const res = await SalesReport.bulkWrite(ops, { ordered: false });
 
     return ok({
       recibidas: filas.length,
@@ -70,15 +70,15 @@ export async function GET(request: NextRequest) {
     await connectDB();
 
     const filtro = account ? { account } : {};
-    const total = await ReporteVenta.countDocuments(filtro);
+    const total = await SalesReport.countDocuments(filtro);
     if (total === 0) return ok({ total: 0, desde: null, hasta: null, archivos: [] });
 
-    const [rango] = await ReporteVenta.aggregate<{ desde: Date; hasta: Date }>([
+    const [rango] = await SalesReport.aggregate<{ desde: Date; hasta: Date }>([
       { $match: filtro },
       { $group: { _id: null, desde: { $min: "$date" }, hasta: { $max: "$date" } } },
     ]);
 
-    const archivos = await ReporteVenta.aggregate<{ _id: string; filas: number; importedAt: Date }>([
+    const archivos = await SalesReport.aggregate<{ _id: string; filas: number; importedAt: Date }>([
       { $match: filtro },
       {
         $group: {

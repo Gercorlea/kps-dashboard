@@ -9,7 +9,7 @@ import { connectDB } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { chatBodySchema } from "@/lib/validation/chat";
 import { Chat } from "@/models/Chat";
-import { Mensaje } from "@/models/Mensaje";
+import { Message } from "@/models/Message";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       throw new ApiError(422, "VALIDACION", "El mensaje está vacío");
     }
 
-    await Mensaje.create({
+    await Message.create({
       chatId: conversacion._id,
       userId: session.id,
       role: "user",
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       model: body.model,
       onFinish: async ({ texto, model, entrada, salida, tools }) => {
         try {
-          await Mensaje.create({
+          await Message.create({
             chatId: conversacion._id,
             userId: session.id,
             role: "assistant",
