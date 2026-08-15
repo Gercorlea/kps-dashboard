@@ -28,6 +28,34 @@ export function fmtFecha(iso: string | null | undefined): string {
   return iso.slice(0, 10);
 }
 
+// Mes en clave "2026-07" → texto. Se formatea en UTC porque la clave se arma
+// en UTC (stats.ts): con la zona local, julio se mostraría como junio.
+const dfMes = new Intl.DateTimeFormat("es-MX", {
+  month: "short",
+  year: "2-digit",
+  timeZone: "UTC",
+});
+const dfMesLargo = new Intl.DateTimeFormat("es-MX", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+function mesUTC(periodo: string): Date {
+  const [a, m] = periodo.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, 1));
+}
+
+/** "2026-07" → "jul 26". */
+export function fmtMes(periodo: string | null | undefined): string {
+  return periodo ? dfMes.format(mesUTC(periodo)) : "—";
+}
+
+/** "2026-07" → "julio de 2026". */
+export function fmtMesLargo(periodo: string | null | undefined): string {
+  return periodo ? dfMesLargo.format(mesUTC(periodo)) : "—";
+}
+
 export function fmtFechaHora(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);

@@ -28,3 +28,16 @@ export const RETAILER_IDS = RETAILERS.map((r) => r.id) as [string, ...string[]];
 export function nombreRetailer(id: string): string {
   return RETAILERS.find((r) => r.id === id)?.nombre ?? id;
 }
+
+// Color de cada retailer en la gráfica del dashboard. Se resuelve por POSICIÓN
+// en RETAILERS y no por orden de aparición para que la línea de Walmart sea del
+// mismo color aunque cambie de lugar en el ranking. Tokens --viz-* de
+// globals.css, la paleta validada para daltonismo (la misma que el analizador).
+const COLORES_RETAILER = ["var(--viz-1)", "var(--viz-2)", "var(--viz-3)", "var(--viz-4)"];
+const COLOR_OTRO = "var(--viz-6)";
+
+/** Cuentas fuera de la lista comparten color: son la excepción, no una serie. */
+export function colorRetailer(id: string): string {
+  const i = RETAILERS.findIndex((r) => r.id === id);
+  return i < 0 ? COLOR_OTRO : COLORES_RETAILER[i % COLORES_RETAILER.length];
+}

@@ -743,6 +743,10 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 
 .cr-link { color: var(--cr-ink); text-decoration: underline; text-underline-offset: 2px; }
 .cr-link:hover { color: var(--cr-ink-2); }
+/* Enlace sin destino todavía: va como <button> para que sea clicable y
+   enfocable sin fingir una URL que no existe. Hay que quitarle el cromo del
+   botón para que se lea igual que un .cr-link normal. */
+button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 
 /* ─── Tarjeta de reporte descargable (KPS AI) ─── */
 .cr-reporte {

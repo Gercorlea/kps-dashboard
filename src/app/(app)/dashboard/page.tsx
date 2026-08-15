@@ -1,19 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { Badge, Kpi, Panel } from "@/components/ui/basicos";
+import { VentasRetailersChart } from "@/components/dashboard/VentasRetailersChart";
+import { Badge, Kpi, Meter, Panel } from "@/components/ui/basicos";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { getSessionUser } from "@/lib/auth/guards";
 import { canAccess } from "@/lib/rbac";
-import { resumenDashboard, UMBRAL_MOH } from "@/lib/retail/stats";
-import { fmtFechaHora, fmtNum, fmtPct } from "@/components/lib/fmt";
-
-const TONO_STATUS: Record<string, "ok" | "warn" | "danger" | "neutro"> = {
-  procesado: "ok",
-  procesando: "warn",
-  pendiente: "neutro",
-  error: "danger",
-};
+import { colorRetailer } from "@/lib/retail/retailers";
+import { MESES_DASHBOARD, resumenDashboard } from "@/lib/retail/stats";
+import { fmtFecha, fmtMes, fmtNum, fmtPct } from "@/components/lib/fmt";
 
 export default async function DashboardPage() {
   const usuario = await getSessionUser();
@@ -32,91 +27,118 @@ export default async function DashboardPage() {
         {summary ? (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Kpi label="Cargas del mes" value={fmtNum(summary.cargasDelMes)} />
               <Kpi
-                label="Filas del último corte"
-                value={fmtNum(summary.filasUltimoCorte)}
-                detalle={summary.ultimoCorte ? `Corte ${summary.ultimoCorte}` : "Sin cortes"}
+                label={`Ventas ${MESES_DASHBOARD} meses`}
+                value={fmtNum(summary.unidadesTotales)}
+                detalle={`Unidades · ${fmtMes(summary.desde)} a ${fmtMes(summary.hasta)}`}
               />
               <Kpi
-                label="Fill rate último corte"
-                value={fmtPct(summary.fillRatePromedio)}
+                label="Ventas del último mes"
+                value={fmtNum(summary.unidadesUltimoPeriodo)}
+                detalle={
+                  summary.ultimoPeriodo
+                    ? `Unidades · ${fmtMes(summary.ultimoPeriodo)}`
+                    : "Sin ventas registradas"
+                }
               />
               <Kpi
-                label={`SKUs con MOH > ${UMBRAL_MOH}`}
-                value={fmtNum(summary.skusMohAlto)}
-                alerta={summary.skusMohAlto > 0}
+                label="Vs mes anterior"
+                value={fmtPct(summary.variacionUltimoPeriodo, true)}
+                alerta={(summary.variacionUltimoPeriodo ?? 0) < 0}
+                detalle={
+                  summary.periodoPrevio
+                    ? `${fmtMes(summary.ultimoPeriodo)} contra ${fmtMes(summary.periodoPrevio)}`
+                    : "Sin mes previo con qué comparar"
+                }
+              />
+              <Kpi
+                label="Promedio mensual"
+                value={fmtNum(summary.promedioMensual)}
+                detalle={
+                  summary.mesesConVenta > 0
+                    ? `Sobre ${summary.mesesConVenta} ${summary.mesesConVenta === 1 ? "mes" : "meses"} con venta`
+                    : "Sin ventas registradas"
+                }
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-              <div className="xl:col-span-2">
-                <Panel
-                  title="Últimas cargas"
-                  acciones={
-                    <Link href="/retail" className="cr-btn cr-btn--ghost cr-btn--sm">
-                      Ver todas
-                    </Link>
-                  }
-                  sinPadding
-                >
-                  <div className="cr-table-scroll">
-                    <table className="cr-table">
-                      <thead>
-                        <tr>
-                          <th>Archivo</th>
-                          <th>Corte</th>
-                          <th>Estatus</th>
-                          <th className="num">Filas</th>
-                          <th>Subida</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {summary.ultimasCargas.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="cr-body py-8 text-center">
-                              Aún no hay cargas. Sube el primer Excel semanal.
-                            </td>
-                          </tr>
-                        ) : (
-                          summary.ultimasCargas.map((c) => (
-                            <tr key={c.id}>
-                              <td>
-                                <Link href={`/retail/${c.id}`} className="cr-link">
-                                  {c.filename}
-                                </Link>
-                              </td>
-                              <td className="cr-mono">{c.cutoffDate}</td>
-                              <td>
-                                <Badge tono={TONO_STATUS[c.status] ?? "neutro"}>{c.status}</Badge>
-                              </td>
-                              <td className="num">{fmtNum(c.filas)}</td>
-                              <td className="cr-mono">{fmtFechaHora(c.createdAt)}</td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </Panel>
+            <Panel
+              title="Ventas por retailer"
+              acciones={
+                <Link href="/retail/historico" className="cr-btn cr-btn--ghost cr-btn--sm">
+                  Ver histórico
+                </Link>
+              }
+            >
+              <p className="cr-small mb-2">
+                Unidades por mes · últimos {MESES_DASHBOARD} meses
+              </p>
+              <VentasRetailersChart serie={summary.serie} retailers={summary.retailers} />
+            </Panel>
+
+            <Panel title="Retailers" sinPadding>
+              <div className="cr-table-scroll">
+                <table className="cr-table">
+                  <thead>
+                    <tr>
+                      <th>Retailer</th>
+                      <th className="num">Unidades {MESES_DASHBOARD} m</th>
+                      <th>Participación</th>
+                      <th className="num">Meses con venta</th>
+                      <th className="num">Reportes</th>
+                      <th>Último reporte</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.retailers.map((r) => (
+                      <tr key={r.id}>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <span
+                              aria-hidden="true"
+                              className="size-2.5 shrink-0"
+                              style={{
+                                background: colorRetailer(r.id),
+                                borderRadius: "var(--cr-r-xs)",
+                              }}
+                            />
+                            {/* Sin destino todavía: cuando se decida a qué
+                                página va el detalle del retailer, esto pasa a
+                                ser un <Link href={`/retail/${r.id}`}>. */}
+                            <button type="button" className="cr-link">
+                              {r.nombre}
+                            </button>
+                            {r.reportes === 0 ? <Badge>Sin reportes</Badge> : null}
+                          </div>
+                        </td>
+                        <td className="num">{fmtNum(r.unidades)}</td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 shrink-0">
+                              <Meter value={r.participacion ?? 0} tono="ink" />
+                            </div>
+                            <span className="cr-mono">{fmtPct(r.participacion)}</span>
+                          </div>
+                        </td>
+                        <td className="num">{fmtNum(r.meses)}</td>
+                        <td className="num">{fmtNum(r.reportes)}</td>
+                        <td>
+                          <div className="cr-mono">{fmtFecha(r.ultimaCarga)}</div>
+                          {r.ultimoArchivo ? (
+                            <div
+                              className="cr-small max-w-64 truncate"
+                              title={r.ultimoArchivo}
+                            >
+                              {r.ultimoArchivo}
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <Panel title="Cobertura de datos">
-                <dl className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <dt className="cr-label">Desde</dt>
-                    <dd className="cr-mono">{summary.coverage.desde ?? "—"}</dd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <dt className="cr-label">Hasta</dt>
-                    <dd className="cr-mono">{summary.coverage.hasta ?? "—"}</dd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <dt className="cr-label">Cortes disponibles</dt>
-                    <dd className="cr-mono">{fmtNum(summary.coverage.cortes)}</dd>
-                  </div>
-                </dl>
-              </Panel>
-            </div>
+            </Panel>
           </>
         ) : (
           <Panel>

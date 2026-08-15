@@ -18,7 +18,7 @@ Gateway · SheetJS en el servidor · Vitest.
 ```
 src/app/
   (app)/        dashboard autenticado — layout con Sidebar (verifica sesión)
-    dashboard/  overview con KPIs
+    dashboard/  overview con KPIs, venta mensual por retailer y lista de retailers
     retail/     listado, cargar/, [uploadId]/ (detalle + scorecard/), historico/
     cronos-ia/  chat
     admin/      usuarios/, estadisticas/
@@ -133,6 +133,7 @@ comportamiento original.
 | Un bloque más del scorecard | `src/lib/retail/scorecard.ts` |
 | Límites de rate limiting | `src/lib/rate-limit.ts` (`LIMITES`) |
 | Módulos RBAC | `src/lib/rbac.ts` (`MODULES`) |
-| Umbral de MOH del dashboard | `src/lib/retail/stats.ts` (`UMBRAL_MOH`) |
+| Ventana de la gráfica del dashboard | `src/lib/retail/stats.ts` (`MESES_DASHBOARD`) |
+| Retailers y su color en las gráficas | `src/lib/retail/retailers.ts` (`RETAILERS`, `colorRetailer`) |
 | Prompt del asistente | `src/lib/ai.ts` (`SYSTEM_PROMPT`) |
 | Tokens visuales | `src/app/design-system.css` (+ `lib/docs/DESIGN.md`) |
