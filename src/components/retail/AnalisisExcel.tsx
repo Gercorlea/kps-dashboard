@@ -15,10 +15,15 @@ import { api, ClientApiError } from "@/components/lib/api-client";
 import { useDiferido } from "@/components/lib/useDiferido";
 import { Badge, EstadoVacio, Meter, Panel } from "@/components/ui/basicos";
 import {
+  acumuladoresDeGrupos,
   agrupar,
   calcularKpis,
   granularidadAuto,
+  plegarTopN,
+  reagruparSerie,
+  rellenarSerie,
   serieTemporal,
+  type GrupoAcumulado,
 } from "@/lib/retail/analisis/agregar";
 import { filtrarFilas, paginar, totalPaginas } from "@/lib/retail/analisis/filtrar";
 import {
@@ -39,6 +44,7 @@ import {
 import {
   datasetDesdeHistorico,
   filasParaHistorico,
+  permutarFilas,
   plantillaPorId,
   seleccionDePlantilla,
   type ColumnaResuelta,
@@ -106,19 +112,58 @@ type DatasetResuelto = {
   columnas: ColumnaResuelta[];
 } & SeleccionInicial;
 
-/** Respuesta de GET /api/retail/analisis/dataset. */
-interface RespuestaHistorico {
-  archivo: {
-    sourceFile: string;
-    template: string;
-    account: string;
-    importedAt: string | null;
-    total: number;
-  } | null;
+interface ArchivoHistorico {
+  sourceFile: string;
+  template: string;
+  account: string;
+  importedAt: string | null;
+  total: number;
+}
+
+interface SerieAcumulada {
+  granularidad: Granularidad;
+  grupos: GrupoAcumulado[];
+}
+
+/**
+ * Respuesta de GET /api/retail/analisis/resumen: ACUMULADORES, no resultados.
+ *
+ * Trae la suma de todas las métricas para todas las dimensiones, así que elegir
+ * otra métrica o dimensión se resuelve aquí mismo con `acumuladoresDeGrupos` y
+ * `plegarTopN` — sin pedirle nada al servidor. Es lo que hace que cambiar un
+ * filtro sea tan inmediato como con un archivo en memoria: agregar por cada
+ * selección costaba un viaje y se veía el KPI cambiar de etiqueta antes que de
+ * valor.
+ */
+interface RespuestaResumen {
+  archivo: ArchivoHistorico | null;
   cuentas: string[];
+  /** Selección inicial de la plantilla; null si no hay reporte. */
+  seleccion: { dimension: string | null; metrica: string | null; fecha: string | null } | null;
+  /** Orden al que están alineados los `suma[]` y `n[]` de cada grupo. */
+  metricas?: string[];
+  /** La automática, calculada sobre el rango completo del reporte. */
+  granularidad?: Granularidad;
+  dimensiones?: Record<string, GrupoAcumulado[]>;
+  serie?: SerieAcumulada;
+  totales?: GrupoAcumulado;
+  rangoFechas?: { desde: string; hasta: string } | null;
+}
+
+/** Respuesta de GET /api/retail/analisis/filas: una página de la tabla. */
+interface RespuestaFilas {
+  archivo: ArchivoHistorico | null;
   campos: string[];
   filas: CeldaCruda[][];
-  truncado: boolean;
+  total: number;
+  pagina: number;
+  paginas: number;
+}
+
+/** "2024-07-06" → Date en hora LOCAL, que es como la leen los formateadores. */
+function fechaLocal(iso: string): Date {
+  const [a, m, d] = iso.split("-").map(Number);
+  return new Date(a, m - 1, d);
 }
 
 function fechaHora(iso: string | null): string | null {
@@ -175,6 +220,19 @@ export function AnalisisExcel() {
   const [retailerVista, setRetailerVista] = useState("");
   const [cuentasConDatos, setCuentasConDatos] = useState<string[]>([]);
 
+  // Acumuladores y página que llegan del servidor cuando el origen es
+  // histórico. Con un archivo recién subido quedan en null y mandan los memos.
+  const [resumen, setResumen] = useState<RespuestaResumen | null>(null);
+  const [paginaHistorico, setPaginaHistorico] = useState<RespuestaFilas | null>(null);
+  // Serie diaria: fuera del bundle por tamaño, se pide una sola vez. Lleva de
+  // qué archivo es para no mostrar la de un reporte al mirar otro.
+  const [serieDiaria, setSerieDiaria] = useState<(SerieAcumulada & { archivo: string }) | null>(
+    null
+  );
+  // Qué se le pidió ya al servidor, para no repetir peticiones en vuelo.
+  const claveSerieServida = useRef<string | null>(null);
+  const claveFilasServida = useRef<string | null>(null);
+
   // Plantilla reconocida (si la hay) y estado de la escritura al histórico.
   const [plantilla, setPlantilla] = useState<Plantilla | null>(null);
   const [columnasResueltas, setColumnasResueltas] = useState<ColumnaResuelta[] | null>(null);
@@ -221,32 +279,58 @@ export function AnalisisExcel() {
     setAgregacion(met === METRICA_CONTEO ? "conteo" : "suma");
   }, []);
 
-  // Al entrar se baja el último reporte guardado y se arma con él un Dataset
-  // idéntico al de un archivo recién subido. Por eso los filtros, los KPIs, la
-  // tabla y las gráficas funcionan sin una segunda implementación: no hay un
-  // "modo histórico", hay las mismas filas viniendo de otro lado.
+  // Al entrar se piden los agregados y la PRIMERA PÁGINA del último reporte
+  // guardado, no el reporte entero.
+  //
+  // Antes se bajaba completo para armar con él un Dataset idéntico al de un
+  // archivo subido y no tener un "modo histórico". Se midió y esa reutilización
+  // costaba 48 s: 15,344 filas son 5.2 MB y el enlace a la base sostiene
+  // ~110 KB/s. Ahora Mongo agrega y pagina, y lo que se comparte entre los dos
+  // modos son los helpers de agregar.ts, no el transporte de las filas.
+  //
+  // La página sigue armando un Dataset real: `columnasHistorico` saca tipos y
+  // roles de la PLANTILLA y no de los datos, así que 100 filas describen las
+  // columnas igual que 15,344. Por eso la tabla, el formateo de celdas y el
+  // buscador siguen siendo el mismo código.
   const cargarHistorico = useCallback(async () => {
     try {
       const q = retailerVista ? `?account=${encodeURIComponent(retailerVista)}` : "";
-      const r = await api<RespuestaHistorico>(`/api/retail/analisis/dataset${q}`);
-      setCuentasConDatos(r.cuentas);
-      const plantilla = r.archivo ? plantillaPorId(r.archivo.template) : null;
-      if (!r.archivo || !plantilla || r.filas.length === 0) {
+      const [res, pag] = await Promise.all([
+        api<RespuestaResumen>(`/api/retail/analisis/resumen${q}`),
+        api<RespuestaFilas>(
+          `/api/retail/analisis/filas${q}${q ? "&" : "?"}page=1&limit=${FILAS_POR_PAGINA}`
+        ),
+      ]);
+      setCuentasConDatos(res.cuentas);
+      const plantilla = res.archivo ? plantillaPorId(res.archivo.template) : null;
+      if (!res.archivo || !plantilla || pag.filas.length === 0) {
         setEstado("inactivo");
         return;
       }
       const resuelto = datasetDesdeHistorico(
         plantilla,
-        r.campos,
-        r.filas,
-        r.archivo.sourceFile
+        pag.campos,
+        pag.filas,
+        res.archivo.sourceFile
       );
+      setResumen(res);
+      setPaginaHistorico(pag);
+      // Otro reporte es otra serie diaria: la anterior deja de aplicar.
+      setSerieDiaria(null);
+      claveSerieServida.current = null;
+      claveFilasServida.current = JSON.stringify({
+        archivo: res.archivo.sourceFile,
+        buscar: "",
+        pagina: 1,
+      });
       setProcedencia({
         origen: "historico",
-        archivo: r.archivo.sourceFile,
-        retailer: r.archivo.account,
-        importadoEl: fechaHora(r.archivo.importedAt),
-        truncado: r.truncado,
+        archivo: res.archivo.sourceFile,
+        retailer: res.archivo.account,
+        importadoEl: fechaHora(res.archivo.importedAt),
+        // Ya no se recorta nada: la tabla pagina y las gráficas vienen
+        // agregadas sobre el reporte completo.
+        truncado: false,
       });
       aplicarDataset(resuelto.dataset, resuelto);
     } catch {
@@ -325,6 +409,13 @@ export function AnalisisExcel() {
         importadoEl: null,
         truncado: false,
       });
+      // Un archivo se analiza entero en el navegador: lo que había llegado del
+      // servidor para el histórico deja de aplicar.
+      setResumen(null);
+      setPaginaHistorico(null);
+      setSerieDiaria(null);
+      claveSerieServida.current = null;
+      claveFilasServida.current = null;
       // Otro archivo puede ser de otro retailer: se vuelve a preguntar en vez
       // de arrastrar la elección del anterior.
       setRetailerGuardar("");
@@ -474,6 +565,191 @@ export function AnalisisExcel() {
 
   const opcionesDimension = dataset ? columnasDimension(dataset.columnas) : [];
   const opcionesMetrica = dataset ? columnasMetrica(dataset.columnas) : [];
+
+  // ---------------------------------------------- los dos orígenes, un render
+  //
+  // Un archivo subido tiene todas sus filas en memoria y agrega arriba, en los
+  // memos. El histórico las tiene en Mongo y agrega allá, porque traerlas costó
+  // 48 s medidos. De esta costura para abajo el render no distingue: recibe las
+  // mismas formas (`PuntoAgrupado`, `PuntoSerie`, `Kpis`) en los dos casos.
+
+  const esHistorico = procedencia?.origen === "historico";
+  const archivoHistorico = esHistorico ? (procedencia?.archivo ?? null) : null;
+
+  // Los selectores siguen hablando de índices de columna; el servidor habla de
+  // campos de la plantilla. Aquí se traduce.
+  const campoDimension =
+    columnasResueltas && idxDimension >= 0
+      ? (columnasResueltas[idxDimension]?.campo ?? null)
+      : null;
+  const campoMetrica =
+    columnasResueltas && idxMetrica >= 0
+      ? (columnasResueltas[idxMetrica]?.campo ?? null)
+      : null;
+
+  // Cambiar dimensión, métrica o agregación NO pide nada: el bundle ya trae los
+  // acumuladores de todas las combinaciones y el plegado ocurre más abajo.
+  //
+  // La única excepción es la granularidad diaria: son 735 buckets contra los 25
+  // de la mensual, 205 KB contra 50, así que se queda fuera del bundle y se pide
+  // la primera vez que se elige. Después vive en el estado y ya no se repite.
+  const granVista: Granularidad = esHistorico
+    ? (granManual ?? resumen?.granularidad ?? "mes")
+    : granEfectiva;
+
+  useEffect(() => {
+    if (!esHistorico || !archivoHistorico || granVista !== "dia") return;
+    if (serieDiaria?.archivo === archivoHistorico) return;
+    const clave = `dia:${archivoHistorico}`;
+    if (claveSerieServida.current === clave) return;
+    claveSerieServida.current = clave;
+
+    const q = new URLSearchParams({
+      sourceFile: archivoHistorico,
+      parte: "serie",
+      granularidad: "dia",
+    });
+    if (retailerVista) q.set("account", retailerVista);
+    void api<{ serie: SerieAcumulada }>(`/api/retail/analisis/resumen?${q.toString()}`)
+      .then((r) => setSerieDiaria({ archivo: archivoHistorico, ...r.serie }))
+      // Si falla, la gráfica temporal queda vacía pero el resto de la pestaña
+      // sigue en pie; volver a elegir "Día" reintenta.
+      .catch(() => {
+        claveSerieServida.current = null;
+      });
+  }, [esHistorico, archivoHistorico, granVista, retailerVista, serieDiaria]);
+
+  // Buscar y paginar el histórico también son del servidor: filtrar en el
+  // navegador sólo alcanzaría a la página que está en pantalla.
+  useEffect(() => {
+    if (!esHistorico || !archivoHistorico) return;
+    const clave = JSON.stringify({
+      archivo: archivoHistorico,
+      buscar: busquedaDiferida,
+      pagina,
+    });
+    if (claveFilasServida.current === clave) return;
+    claveFilasServida.current = clave;
+
+    const q = new URLSearchParams({
+      sourceFile: archivoHistorico,
+      page: String(pagina),
+      limit: String(FILAS_POR_PAGINA),
+    });
+    if (retailerVista) q.set("account", retailerVista);
+    if (busquedaDiferida) q.set("buscar", busquedaDiferida);
+    void api<RespuestaFilas>(`/api/retail/analisis/filas?${q.toString()}`)
+      .then(setPaginaHistorico)
+      .catch(() => {});
+  }, [esHistorico, archivoHistorico, busquedaDiferida, pagina, retailerVista]);
+
+  // La página del histórico llega en el orden de `campos`; se permuta al de las
+  // columnas con el mismo helper que arma el dataset inicial.
+  const filasHistorico = useMemo(
+    () =>
+      paginaHistorico && columnasResueltas
+        ? permutarFilas(columnasResueltas, paginaHistorico.campos, paginaHistorico.filas)
+        : [],
+    [paginaHistorico, columnasResueltas]
+  );
+
+  // Acumuladores de la dimensión y la métrica elegidas. Cambiar cualquiera de
+  // las dos sólo recalcula este Map sobre ~38 grupos: es la misma operación que
+  // hace `agrupar` con las filas en memoria, pero partiendo de lo que ya sumó
+  // Mongo. De aquí sale todo lo demás sin tocar la red.
+  const acumHistorico = useMemo(() => {
+    const grupos = campoDimension ? resumen?.dimensiones?.[campoDimension] : null;
+    return grupos ? acumuladoresDeGrupos(grupos, resumen?.metricas ?? [], campoMetrica) : null;
+  }, [resumen, campoDimension, campoMetrica]);
+
+  const barraVista = useMemo(
+    () =>
+      esHistorico
+        ? acumHistorico
+          ? plegarTopN(acumHistorico, agregacionEfectiva, TOP_BARRA)
+          : []
+        : datosBarra,
+    [esHistorico, acumHistorico, agregacionEfectiva, datosBarra]
+  );
+
+  // La participación se calcula SIEMPRE sobre la suma (o el conteo), igual que
+  // en el camino del archivo: un promedio no es aditivo.
+  const composicionVista = useMemo(
+    () =>
+      esHistorico
+        ? acumHistorico
+          ? plegarTopN(acumHistorico, campoMetrica ? "suma" : "conteo", TOP_COMPOSICION)
+          : []
+        : datosComposicion,
+    [esHistorico, acumHistorico, campoMetrica, datosComposicion]
+  );
+
+  const serieVista = useMemo(() => {
+    if (!esHistorico) return datosSerie;
+    if (!resumen?.serie) return null;
+    // Mes y año salen de la serie mensual del bundle; el año recortando la
+    // clave. Sólo el día necesita la serie diaria, que puede no haber llegado.
+    if (granVista === "dia") {
+      if (serieDiaria?.archivo !== archivoHistorico) return null;
+      return rellenarSerie(
+        acumuladoresDeGrupos(serieDiaria.grupos, resumen.metricas ?? [], campoMetrica),
+        agregacionEfectiva,
+        "dia"
+      );
+    }
+    const mensual = acumuladoresDeGrupos(
+      resumen.serie.grupos,
+      resumen.metricas ?? [],
+      campoMetrica
+    );
+    return rellenarSerie(
+      granVista === "anio" ? reagruparSerie(mensual, 4) : mensual,
+      agregacionEfectiva,
+      granVista
+    );
+  }, [
+    esHistorico,
+    datosSerie,
+    resumen,
+    serieDiaria,
+    archivoHistorico,
+    granVista,
+    campoMetrica,
+    agregacionEfectiva,
+  ]);
+
+  const kpisVista = useMemo(() => {
+    if (!esHistorico) return kpis;
+    if (!resumen?.totales) return null;
+    const i = campoMetrica ? (resumen.metricas ?? []).indexOf(campoMetrica) : -1;
+    return {
+      // Sin métrica el "total" son las filas, igual que `calcularKpis`, que con
+      // `colMetrica` nulo hace `total++` en vez de sumar una columna.
+      totalMetrica: i < 0 ? resumen.totales.conteo : (resumen.totales.suma[i] ?? 0),
+      totalFilas: resumen.totales.conteo,
+      // El servidor ya fusionó las claves que se normalizan a lo mismo, así que
+      // la cantidad de grupos ES la cantidad de valores distintos.
+      dimensionesDistintas: acumHistorico?.size ?? 0,
+      rangoFechas: resumen.rangoFechas
+        ? {
+            desde: fechaLocal(resumen.rangoFechas.desde),
+            hasta: fechaLocal(resumen.rangoFechas.hasta),
+          }
+        : null,
+    };
+  }, [esHistorico, kpis, resumen, campoMetrica, acumHistorico]);
+
+  const filasVista = esHistorico ? filasHistorico : filasVisibles;
+  const totalFilasVista = esHistorico
+    ? (resumen?.archivo?.total ?? 0)
+    : (dataset?.totalFilas ?? 0);
+  const totalFiltradasVista = esHistorico
+    ? (paginaHistorico?.total ?? 0)
+    : filasFiltradas.length;
+  const paginasVista = esHistorico ? (paginaHistorico?.paginas ?? 1) : paginas;
+  const paginaVista = esHistorico
+    ? Math.min(Math.max(1, pagina), paginasVista)
+    : paginaActual;
 
   // Procedencia de las filas. Un archivo cuenta de qué hoja salió y dónde se
   // detectó el encabezado — un acierto dudoso tiene que ser visible en pantalla
@@ -703,42 +979,43 @@ export function AnalisisExcel() {
         </Panel>
       ) : null}
 
-      {dataset && kpis ? (
+      {dataset && kpisVista ? (
         <>
           <AnalisisKpis
-            kpis={kpis}
+            kpis={kpisVista}
             nombreMetrica={nombreMetrica}
             nombreDimension={colDimension?.nombre ?? null}
           />
 
           <AnalisisTable
-            titulo={procedencia?.origen === "historico" ? "Último reporte guardado" : "Datos"}
+            titulo={esHistorico ? "Último reporte guardado" : "Datos"}
             columnas={columnasTabla}
-            filasVisibles={filasVisibles}
-            totalFilas={dataset.totalFilas}
-            totalFiltradas={filasFiltradas.length}
+            filasVisibles={filasVista}
+            totalFilas={totalFilasVista}
+            totalFiltradas={totalFiltradasVista}
             totalColumnas={dataset.columnas.length}
             detalles={detallesTabla}
             busqueda={busqueda}
             // En memoria el filtro corre con el valor diferido, así que ése es
-            // el que describe las filas en pantalla.
+            // el que describe las filas en pantalla. En histórico es además el
+            // que se le mandó al servidor.
             busquedaAplicada={busquedaDiferida}
             onBusqueda={alBuscar}
             columnasBuscadas={columnasBuscadas.map((c) => c.nombre)}
-            pagina={paginaActual}
-            paginas={paginas}
+            pagina={paginaVista}
+            paginas={paginasVista}
             porPagina={FILAS_POR_PAGINA}
             onPagina={setPagina}
           />
 
           <AnalisisCharts
-            datosBarra={datosBarra}
-            datosSerie={datosSerie}
-            datosComposicion={datosComposicion}
+            datosBarra={barraVista}
+            datosSerie={serieVista}
+            datosComposicion={composicionVista}
             nombreDimension={colDimension?.nombre ?? null}
             nombreMetrica={nombreMetrica}
             agregacion={agregacionEfectiva}
-            granularidad={granEfectiva}
+            granularidad={granVista}
           />
         </>
       ) : null}

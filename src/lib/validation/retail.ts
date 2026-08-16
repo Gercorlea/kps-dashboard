@@ -221,15 +221,28 @@ export const historicoAnalisisQuerySchema = z.object({
 // página que pide la UI; `sourceFile` ausente significa "el último cargado".
 export const FILAS_POR_PAGINA = 100;
 
-// Al entrar a la pestaña se baja el reporte COMPLETO para que los filtros, las
-// gráficas y los KPIs corran con el mismo código que un archivo recién subido.
-// El tope evita que un reporte desmedido convierta esa carga en varios MB: por
-// encima se manda lo que cabe y se avisa que está recortado.
-export const MAX_FILAS_DATASET = 50_000;
+// KPIs y gráficas del histórico: Mongo agrega y el navegador pliega.
+//
+// Antes se bajaba el reporte completo para correr las mismas agregaciones en el
+// navegador que un archivo recién subido. Se midió y no sale: 15,344 filas son
+// 5.2 MB y el enlace a la base sostiene ~110 KB/s, o sea 48 s por entrar a la
+// pestaña.
+//
+// Pero agregar en el servidor PARA UNA SELECCIÓN concreta tampoco sale: cada
+// cambio de métrica costaba un viaje, y se veía el KPI cambiar de etiqueta
+// antes que de valor. Así que la ruta no recibe qué agregar: devuelve los
+// acumuladores de todas las métricas y todas las dimensiones de una vez
+// (~50 KB, un `$facet`) y el cliente elige sin volver a preguntar.
+//
+// La serie diaria (735 buckets, 205 KB) queda fuera del bundle y se pide con
+// `parte=serie&granularidad=dia` la primera vez que alguien la elige.
+export const METRICA_CONTEO_ID = "__conteo__";
 
-export const datasetAnalisisQuerySchema = z.object({
+export const resumenAnalisisQuerySchema = z.object({
   account: z.enum(RETAILER_IDS).optional(),
   sourceFile: z.string().min(1).max(300).optional(),
+  parte: z.enum(["bundle", "serie"]).default("bundle"),
+  granularidad: z.enum(["dia", "mes", "anio"]).optional(),
 });
 
 export const filasAnalisisQuerySchema = z.object({

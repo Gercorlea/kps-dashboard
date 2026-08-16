@@ -270,12 +270,48 @@ export function columnasHistorico(plantilla: Plantilla): ColumnaResuelta[] {
 }
 
 /**
- * Dataset completo a partir de lo que devuelve el endpoint del histórico.
+ * Columnas del histórico y su selección inicial, sin filas de por medio.
  *
- * `campos` viene del servidor y dice en qué orden llegan los valores de cada
- * fila; se permutan al orden de la plantilla en vez de confiar en que las dos
- * listas coincidan. Si el servidor agrega o reordena un campo, aquí no se
- * desalinean las columnas: las que falten quedan en null.
+ * La ruta de resumen la necesita para saber qué campo agrupar cuando el cliente
+ * todavía no eligió nada: al entrar a la pestaña aún no sabe ni qué plantilla
+ * tiene el último reporte. Comparte `seleccionar` con el camino del archivo
+ * subido, así que los dos abren con la misma dimensión y la misma métrica.
+ */
+export function seleccionHistorico(
+  plantilla: Plantilla
+): { columnas: ColumnaResuelta[] } & SeleccionInicial {
+  const columnas = columnasHistorico(plantilla);
+  return { columnas, ...seleccionar(columnas, plantilla.id) };
+}
+
+/**
+ * Reordena las filas del servidor al orden de columnas de la plantilla.
+ *
+ * `campos` dice en qué orden llegan los valores; se permutan en vez de confiar
+ * en que las dos listas coincidan. Si el servidor agrega o reordena un campo,
+ * aquí no se desalinean las columnas: las que falten quedan en null (-1 marca
+ * la columna que el servidor no mandó).
+ *
+ * Se usa tanto al armar el dataset inicial como al cambiar de página de la
+ * tabla, que trae filas nuevas para las mismas columnas.
+ */
+export function permutarFilas(
+  columnas: ColumnaResuelta[],
+  campos: string[],
+  filas: CeldaCruda[][]
+): FilaCruda[] {
+  const posicion = new Map(campos.map((campo, i) => [campo, i]));
+  const orden = columnas.map((c) => posicion.get(c.campo) ?? -1);
+  return filas.map((fila) => orden.map((i) => (i < 0 ? null : (fila[i] ?? null))));
+}
+
+/**
+ * Dataset a partir de lo que devuelve el endpoint del histórico.
+ *
+ * Recibe una PÁGINA de filas, no el reporte entero, y aun así describe bien las
+ * columnas: `columnasHistorico` saca tipos y roles de la plantilla y no de los
+ * datos. `totalFilas` cuenta sólo lo recibido; el total del reporte lo informa
+ * el servidor aparte.
  */
 export function datasetDesdeHistorico(
   plantilla: Plantilla,
@@ -287,21 +323,18 @@ export function datasetDesdeHistorico(
   plantilla: Plantilla;
   columnas: ColumnaResuelta[];
 } & SeleccionInicial {
-  const columnas = columnasHistorico(plantilla);
-  const posicion = new Map(campos.map((campo, i) => [campo, i]));
-  // -1 marca la columna que el servidor no mandó.
-  const orden = columnas.map((c) => posicion.get(c.campo) ?? -1);
+  const { columnas, ...seleccion } = seleccionHistorico(plantilla);
 
   const dataset: Dataset = {
     hoja: nombre,
     // No hubo detección de encabezado: los nombres vienen declarados.
     filaEncabezado: -1,
     columnas,
-    filas: filas.map((fila) => orden.map((i) => (i < 0 ? null : (fila[i] ?? null)))),
+    filas: permutarFilas(columnas, campos, filas),
     totalFilas: filas.length,
   };
 
-  return { dataset, plantilla, columnas, ...seleccionar(columnas, plantilla.id) };
+  return { dataset, plantilla, columnas, ...seleccion };
 }
 
 /** Una fila lista para el histórico: campos de la plantilla → valor plano. */

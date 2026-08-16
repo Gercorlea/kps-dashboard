@@ -3,6 +3,7 @@ import { handleApiError, ok, parseQuery } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { patronSinAcentos } from "@/lib/retail/analisis/filtrar";
+import { plantillaPorId, seleccionHistorico } from "@/lib/retail/analisis/plantillas";
 import { filasAnalisisQuerySchema } from "@/lib/validation/retail";
 import { SalesReport } from "@/models/SalesReport";
 
@@ -17,6 +18,11 @@ function fechaISO(d: Date | null | undefined): string {
 // muestra al entrar a /retail/analisis. Se pagina en el servidor: bajar las 15
 // mil filas del reporte sólo para abrir la pestaña serían varios MB por
 // navegación, y ya existe el flujo de subir el archivo para analizarlo entero.
+//
+// Las filas viajan como ARREGLOS en el orden que dice `campos`, no como objetos:
+// es la forma que consume `datasetDesdeHistorico`, así que el cliente arma con
+// ellas el mismo Dataset que un archivo recién subido y la tabla, el formateo de
+// celdas y el buscador siguen siendo el mismo código en los dos modos.
 export async function GET(request: NextRequest) {
   try {
     await requireModule("retail");
@@ -36,9 +42,14 @@ export async function GET(request: NextRequest) {
       .select({ sourceFile: 1, template: 1, account: 1, importedAt: 1 })
       .lean();
 
-    if (!ultimo) {
-      return ok({ archivo: null, filas: [], total: 0, pagina: 1, paginas: 1 });
+    const plantilla = ultimo ? plantillaPorId(ultimo.template) : null;
+    if (!ultimo || !plantilla) {
+      return ok({ archivo: null, campos: [], filas: [], total: 0, pagina: 1, paginas: 1 });
     }
+
+    // El orden de los campos lo manda la plantilla, que es también de donde el
+    // cliente saca las columnas: así las dos listas no se pueden desalinear.
+    const campos = seleccionHistorico(plantilla).columnas.map((c) => c.campo);
 
     const base = { account: ultimo.account, sourceFile: ultimo.sourceFile };
     const filtro: Record<string, unknown> = { ...base };
@@ -69,7 +80,7 @@ export async function GET(request: NextRequest) {
       .sort({ date: 1, itemNbr: 1 })
       .skip((q.page - 1) * q.limit)
       .limit(q.limit)
-      .select({ template: 0, account: 0, sourceFile: 0, importedAt: 0, importedBy: 0 })
+      .select(Object.fromEntries(campos.map((c) => [c, 1])))
       .lean();
 
     return ok({
@@ -80,11 +91,11 @@ export async function GET(request: NextRequest) {
         importedAt: ultimo.importedAt?.toISOString() ?? null,
         total: q.buscar ? totalArchivo : total,
       },
-      filas: docs.map((d) => ({
-        ...d,
-        _id: String(d._id),
-        date: fechaISO(d.date),
-      })),
+      campos,
+      filas: docs.map((d) => {
+        const doc = d as unknown as Record<string, unknown>;
+        return campos.map((c) => (c === "date" ? fechaISO(d.date) : (doc[c] ?? null)));
+      }),
       total,
       pagina: q.page,
       paginas: Math.max(1, Math.ceil(total / q.limit)),
