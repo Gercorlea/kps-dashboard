@@ -25,7 +25,10 @@ function AnalisisKpisBase({ kpis, nombreMetrica, nombreDimension }: Props) {
       <Kpi label="Filas cargadas" value={formatearEntero(kpis.totalFilas)} />
       {nombreDimension ? (
         <Kpi
-          label={`${nombreDimension} distintos`}
+          // Entre paréntesis y no "… distintos": ahora que las dimensiones se
+          // llaman en español ("Marca", "Nombre del producto"), concordar el
+          // adjetivo exigiría saber género y número de cada etiqueta.
+          label={`${nombreDimension} (distintos)`}
           value={formatearEntero(kpis.dimensionesDistintas)}
         />
       ) : null}

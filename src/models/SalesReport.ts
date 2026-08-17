@@ -14,8 +14,22 @@ export interface ISalesReport {
   template: string; // "walmart-mensual"
   account: string; // "walmart"
   sourceFile: string;
+  /** Última escritura de la fila: se sobrescribe si el reporte se vuelve a subir. */
   importedAt: Date;
   importedBy: Types.ObjectId;
+
+  // Primera escritura de la fila, y quién la hizo. Van aparte porque el upsert
+  // por la clave natural sobrescribe `importedAt`/`importedBy` cada vez que se
+  // vuelve a subir el mismo reporte: sin estos dos campos la fecha en que se
+  // importó por primera vez se perdía, y la ficha del retailer no podía
+  // distinguir "importado el" de "última actualización".
+  //
+  // Opcionales porque las filas guardadas antes de que existieran no los
+  // tienen; quien los lea cae a `importedAt`/`importedBy` con $ifNull, y la
+  // siguiente carga que toque la fila los rellena con lo que traía (ver el
+  // update de pipeline en POST /api/retail/analisis).
+  firstImportedAt?: Date;
+  firstImportedBy?: Types.ObjectId;
 
   // Fecha y periodo. `wmMonth` es el mes FISCAL de Walmart y no siempre
   // coincide con el mes calendario de `date`, así que se guardan los dos.
@@ -47,6 +61,10 @@ const SalesReportSchema = new Schema<ISalesReport>(
     sourceFile: { type: String, default: "" },
     importedAt: { type: Date, required: true },
     importedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    // Sin `default`: los escribe el update del POST, y un default de esquema se
+    // le adelantaría en el upsert.
+    firstImportedAt: { type: Date },
+    firstImportedBy: { type: Schema.Types.ObjectId, ref: "User" },
 
     date: { type: Date, required: true },
     wmMonth: { type: String, default: "" },

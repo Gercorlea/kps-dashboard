@@ -19,12 +19,18 @@ export const OTROS = "Otros";
 
 const MAX_BUCKETS = 2000;
 
-interface Acumulador {
+/**
+ * Par (suma, conteo) de un grupo. Se exporta porque el histórico lo arma desde
+ * un `$group` de Mongo y lo pasa por los mismos plegados que las filas del
+ * navegador: guardar los dos acumuladores —y no sólo el valor resuelto— es lo
+ * que permite que el bucket "Otros" sea correcto también en promedio.
+ */
+export interface Acumulador {
   suma: number;
   conteo: number;
 }
 
-function resolver(acc: Acumulador, agregacion: Agregacion): number {
+export function resolver(acc: Acumulador, agregacion: Agregacion): number {
   if (agregacion === "conteo") return acc.conteo;
   if (agregacion === "promedio") return acc.conteo === 0 ? 0 : acc.suma / acc.conteo;
   return acc.suma;
@@ -97,6 +103,94 @@ export function agrupar(
     }
   }
 
+  return plegarTopN(mapa, agregacion, topN);
+}
+
+/**
+ * Un grupo tal como lo devuelve el `$group` del histórico: la clave ya
+ * normalizada y, alineados al arreglo `metricas` de la respuesta, la suma de
+ * cada métrica y cuántas filas la tenían legible.
+ */
+export interface GrupoAcumulado {
+  clave: string;
+  /** Filas del grupo, con métrica legible o sin ella. */
+  conteo: number;
+  suma: number[];
+  n: number[];
+}
+
+/**
+ * Grupos del servidor → el mapa que comen `plegarTopN` y `rellenarSerie`.
+ *
+ * Es la pieza que hace instantáneo cambiar de métrica en el histórico: el
+ * servidor manda los acumuladores de TODAS las métricas de una vez y aquí se
+ * elige una sin volver a preguntar. `metrica` en null es la métrica sintética
+ * "Cantidad de filas", donde `agrupar` cuenta 1 por fila — de ahí que la suma
+ * sea el propio conteo.
+ */
+export function acumuladoresDeGrupos(
+  grupos: GrupoAcumulado[],
+  metricas: string[],
+  metrica: string | null
+): Map<string, Acumulador> {
+  const i = metrica ? metricas.indexOf(metrica) : -1;
+  const mapa = new Map<string, Acumulador>();
+  for (const g of grupos) {
+    // Una métrica que el servidor no mandó se trata como la sintética, en vez
+    // de producir NaN silenciosos por indexar fuera del arreglo.
+    const acc: Acumulador =
+      i < 0
+        ? { suma: g.conteo, conteo: g.conteo }
+        : { suma: g.suma[i] ?? 0, conteo: g.n[i] ?? 0 };
+    const previo = mapa.get(g.clave);
+    if (previo) {
+      previo.suma += acc.suma;
+      previo.conteo += acc.conteo;
+    } else {
+      mapa.set(g.clave, acc);
+    }
+  }
+  return mapa;
+}
+
+/**
+ * Reagrupa una serie a un bucket más grueso recortando la clave.
+ *
+ * Las claves son "YYYY-MM-DD" / "YYYY-MM" / "YYYY", así que mes → año es
+ * recortar a 4 caracteres y día → mes a 7. Se hace sobre el texto y no sobre
+ * fechas justamente para no reintroducir un corrimiento de zona horaria.
+ */
+export function reagruparSerie(
+  mapa: Map<string, Acumulador>,
+  largo: number
+): Map<string, Acumulador> {
+  const salida = new Map<string, Acumulador>();
+  for (const [clave, acc] of mapa) {
+    const corta = clave.slice(0, largo);
+    const previo = salida.get(corta);
+    if (previo) {
+      previo.suma += acc.suma;
+      previo.conteo += acc.conteo;
+    } else {
+      salida.set(corta, { suma: acc.suma, conteo: acc.conteo });
+    }
+  }
+  return salida;
+}
+
+/**
+ * Ordena los grupos, deja los `topN` primeros y pliega el resto en OTROS.
+ *
+ * Separado de `agrupar` porque el histórico llega hasta aquí por otro camino:
+ * sus acumuladores salen de un `$group` de Mongo, no de recorrer filas. Con el
+ * plegado compartido las dos vistas producen el mismo `PuntoAgrupado[]`, que es
+ * lo que evita que se desincronicen.
+ */
+export function plegarTopN(
+  mapa: Map<string, Acumulador>,
+  agregacion: Agregacion,
+  topN: number
+): PuntoAgrupado[] {
   const puntos: PuntoAgrupado[] = [];
   for (const [clave, acc] of mapa) {
     puntos.push({
@@ -158,8 +252,13 @@ function rangoDeFechas(
  */
 export function granularidadAuto(filas: FilaCruda[], colFecha: MetaColumna): Granularidad {
   const rango = rangoDeFechas(filas, colFecha);
-  if (!rango) return "mes";
-  const dias = (rango.hasta.getTime() - rango.desde.getTime()) / 86_400_000;
+  return rango ? granularidadPorRango(rango.desde, rango.hasta) : "mes";
+}
+
+/** Igual que `granularidadAuto` pero desde un rango ya calculado: en el
+ *  histórico el mínimo y el máximo salen de un `$group`, sin recorrer filas. */
+export function granularidadPorRango(desde: Date, hasta: Date): Granularidad {
+  const dias = (hasta.getTime() - desde.getTime()) / 86_400_000;
   if (dias < 60) return "dia";
   if (dias < 1825) return "mes";
   return "anio";
@@ -209,6 +308,21 @@ export function serieTemporal(
     }
   }
 
+  return rellenarSerie(mapa, agregacion, granularidad);
+}
+
+/**
+ * Ordena los buckets y rellena los huecos con cero.
+ *
+ * Igual que `plegarTopN`, se separa para que el histórico entre por aquí con
+ * los acumuladores que le devolvió Mongo y obtenga la misma serie que el
+ * navegador.
+ */
+export function rellenarSerie(
+  mapa: Map<string, Acumulador>,
+  agregacion: Agregacion,
+  granularidad: Granularidad
+): PuntoSerie[] {
   if (mapa.size === 0) return [];
 
   const claves = [...mapa.keys()].sort();

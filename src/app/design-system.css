@@ -139,6 +139,16 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
   display: flex; justify-content: space-between; align-items: center; }
 .cr-panel__body { padding: 16px 18px; }
 
+/* Fila de tabla clicable entera. El enlace del nombre se estira sobre la fila
+   con un ::after en vez de envolver el <tr> en un <a> —que no es HTML válido—
+   o de repetir un enlace por celda, que el lector de pantalla anunciaría ocho
+   veces. La fila es el bloque contenedor, así que las celdas NO deben quedar
+   posicionadas o el área clicable se recortaría a la primera.
+   Si un navegador ignora `position` en <tr>, el nombre sigue siendo un enlace
+   normal: se degrada, no se rompe. */
+.cr-fila-link { position: relative; }
+.cr-fila-link .cr-link::after { content: ""; position: absolute; inset: 0; }
+
 /* ============================ KPI cards ============================ */
 
 .cr-kpi { background: #fff; border: 1px solid rgba(10,12,18,.10); border-radius: 3px;
@@ -256,9 +266,26 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
   padding: 16px; display: flex; flex-wrap: wrap; gap: 12px;
   align-items: center; justify-content: space-between; min-height: 56px;
 }
+/* Cabecera de detalle: título con badges, una línea de métricas y la barra de
+   pestañas abajo. Reemplaza a .cr-page-head cuando la página tiene secciones,
+   para que las pestañas queden pegadas a la cabecera y no floten sobre el
+   contenido. */
+.cr-detalle-head {
+  background: #fff; border-bottom: 1px solid var(--cr-line-soft); padding: 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.cr-detalle-head__fila {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between;
+}
+/* La barra de pestañas puede desbordar en móvil: scrollea sola en vez de
+   partirse en dos filas. */
+.cr-detalle-head__tabs { display: flex; align-items: center; gap: 16px; justify-content: space-between; }
+.cr-detalle-head__tabs > .cr-segment { overflow-x: auto; max-width: 100%; }
+
 .cr-page-content { flex: 1; padding: 16px; background: var(--cr-bg); }
-@media (min-width: 768px)  { .cr-page-head { padding: 18px 24px; } .cr-page-content { padding: 24px; } }
-@media (min-width: 1280px) { .cr-page-head { padding: 20px 40px; } .cr-page-content { padding: 40px; } }
+@media (min-width: 768px)  { .cr-page-head, .cr-detalle-head { padding: 18px 24px; } .cr-page-content { padding: 24px; } }
+@media (min-width: 1280px) { .cr-page-head, .cr-detalle-head { padding: 20px 40px; } .cr-page-content { padding: 40px; } }
 
 @media (max-width: 1023.9px) {
   .cr-shell__main { padding-top: var(--cr-mobile-nav-height); }
@@ -743,6 +770,10 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 
 .cr-link { color: var(--cr-ink); text-decoration: underline; text-underline-offset: 2px; }
 .cr-link:hover { color: var(--cr-ink-2); }
+/* Enlace sin destino todavía: va como <button> para que sea clicable y
+   enfocable sin fingir una URL que no existe. Hay que quitarle el cromo del
+   botón para que se lea igual que un .cr-link normal. */
+button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 
 /* ─── Tarjeta de reporte descargable (KPS AI) ─── */
 .cr-reporte {
