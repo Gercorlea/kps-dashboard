@@ -10,6 +10,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileSpreadsheet } from "lucide-react";
 import { api } from "@/components/lib/api-client";
@@ -90,6 +91,7 @@ function fechaLocal(iso: string): Date {
 }
 
 export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
+  const router = useRouter();
   const [vista, setVista] = useState<Vista>("resumen");
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [archivos, setArchivos] = useState<Archivo[] | null>(null);
@@ -476,6 +478,17 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   account={ficha.id}
                   sourceFile={reporteAbierto}
                   onVolver={() => setReporteAbierto(null)}
+                  onBorrado={() => {
+                    setReporteAbierto(null);
+                    // El esqueleto mientras se recarga, y no la lista vieja: el
+                    // reporte borrado seguiría en pantalla hasta que llegue la
+                    // respuesta.
+                    setCargando(true);
+                    void cargar();
+                    // La cabecera (reportes, artículos, periodo) la pinta el
+                    // servidor: sin esto seguiría contando el reporte borrado.
+                    router.refresh();
+                  }}
                 />
               ) : (
                 <Panel title="Reportes guardados" sinPadding>

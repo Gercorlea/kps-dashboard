@@ -68,6 +68,14 @@ export const reporteAnalisisQuerySchema = z.object({
   sourceFile: z.string().min(1).max(300),
 });
 
+// Borrar un reporte del histórico. Aquí el retailer es OBLIGATORIO, al revés
+// que al leerlo: dos retailers pueden haber guardado un archivo con el mismo
+// nombre, y un borrado sin acotar se llevaría por delante el del otro.
+export const borrarReporteSchema = z.object({
+  account: z.enum(RETAILER_IDS),
+  sourceFile: z.string().min(1).max(300),
+});
+
 // La tabla del histórico pagina en el servidor: nunca se bajan 15 mil filas al
 // navegador sólo para entrar a la pestaña. `limit` tope 100 es el tamaño de
 // página que pide la UI; `sourceFile` ausente significa "el último cargado".

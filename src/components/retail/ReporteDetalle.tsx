@@ -2,16 +2,17 @@
 // "Reportes guardados" (RetailerDetalle).
 //
 // La lista sólo alcanza a decir el archivo, quién lo subió y cuándo; aquí se
-// contesta lo que viene después —qué trae dentro, cuánto suma y quién ha escrito
-// en él—. Es una vista de lectura: no hay filtros ni selección que mantener, así
-// que pide sus datos al abrirse y no vuelve a tocar la red.
+// contesta lo que viene después —qué trae dentro y cuánto suma— y se ofrece la
+// única acción del reporte: borrarlo, para el archivo que no debió guardarse.
+// Fuera de eso no hay filtros ni selección que mantener, así que pide sus datos
+// al abrirse y no vuelve a tocar la red.
 //
 // Sin "use client": entra al bundle de cliente por ser importado desde
 // RetailerDetalle, igual que el resto de los componentes del módulo.
 
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/components/lib/api-client";
+import { api, ClientApiError } from "@/components/lib/api-client";
 import { fmtDec, fmtFecha, fmtFechaHora, fmtNum } from "@/components/lib/fmt";
 import { AutorReporte, type UsuarioReporte } from "@/components/retail/AutorReporte";
 import { Badge, Kpi, Panel } from "@/components/ui/basicos";
@@ -35,20 +36,27 @@ interface Ficha {
   subidoPor: UsuarioReporte | null;
   actualizadoPor: UsuarioReporte | null;
   metricas: { campo: string; nombre: string; total: number }[];
-  autores: { usuario: UsuarioReporte | null; filas: number; desde: string; hasta: string }[];
 }
 
 export function ReporteDetalle({
   account,
   sourceFile,
   onVolver,
+  onBorrado,
 }: {
   account: string;
   sourceFile: string;
   onVolver: () => void;
+  /** Se llama cuando el reporte ya no está: el llamador recarga y vuelve. */
+  onBorrado: () => void;
 }) {
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [cargando, setCargando] = useState(true);
+  // Borrar es irreversible, así que se pide confirmación en el mismo panel: un
+  // window.confirm no puede decir cuántas filas se van.
+  const [confirmando, setConfirmando] = useState(false);
+  const [borrando, setBorrando] = useState(false);
+  const [errorBorrado, setErrorBorrado] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     const q = new URLSearchParams({ account, sourceFile });
@@ -66,6 +74,28 @@ export function ReporteDetalle({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void cargar();
   }, [cargar]);
+
+  const borrar = useCallback(async () => {
+    setBorrando(true);
+    setErrorBorrado(null);
+    const q = new URLSearchParams({ account, sourceFile });
+    try {
+      await api<{ borradas: number }>(`/api/retail/analisis/reporte?${q.toString()}`, {
+        method: "DELETE",
+      });
+      onBorrado();
+    } catch (error) {
+      setBorrando(false);
+      setConfirmando(false);
+      setErrorBorrado(
+        error instanceof ClientApiError
+          ? `No se pudo borrar el reporte: ${error.message}`
+          : "No se pudo borrar el reporte."
+      );
+    }
+    // Sin `finally`: al borrar bien, este componente se desmonta y apagar el
+    // spinner sería un setState sobre lo que ya no está en pantalla.
+  }, [account, sourceFile, onBorrado]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -189,37 +219,72 @@ export function ReporteDetalle({
             </Panel>
           ) : null}
 
-          <Panel title="Quién escribió estas filas" sinPadding>
-            <div className="cr-table-scroll">
-              <table className="cr-table">
-                <thead>
-                  <tr>
-                    <th>Usuario</th>
-                    <th className="num">Filas</th>
-                    <th>Primera escritura</th>
-                    <th>Última escritura</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ficha.autores.map((a, i) => (
-                    <tr key={a.usuario?.id ?? `sin-usuario-${i}`}>
-                      <td>
-                        <AutorReporte usuario={a.usuario} />
-                      </td>
-                      <td className="num">{fmtNum(a.filas)}</td>
-                      <td className="cr-mono">{fmtFechaHora(a.desde)}</td>
-                      <td className="cr-mono">{fmtFechaHora(a.hasta)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="cr-panel__body">
-              <p className="cr-small">
-                Cada fila cuenta según la última carga que la escribió: al volver a subir el
-                reporte, sus filas pasan a nombre de quien lo subió esa vez.
+          {/* Al final de la página y separado del resto: la salida para el
+              archivo que no debió guardarse, no una acción más de la ficha. */}
+          <Panel title="Borrar reporte">
+            {/* Sin tope de ancho en el texto: cabe de sobra en una línea junto
+                al botón, y `max-w-prose` (65ch) lo partía en dos. Si la pantalla
+                se angosta de verdad, el flex-wrap lo baja entero. */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <p className="cr-body">
+                <strong>Este cambio no se puede deshacer.</strong> Para recuperarlo hay que
+                volver a subir el Excel.
               </p>
+
+              {confirmando ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="cr-small" style={{ color: "var(--cr-danger)" }}>
+                    ¿Borrar las {fmtNum(ficha.filas)} filas?
+                  </span>
+                  <button
+                    type="button"
+                    className="cr-btn cr-btn--danger cr-btn--sm"
+                    disabled={borrando}
+                    aria-busy={borrando}
+                    onClick={() => void borrar()}
+                  >
+                    {borrando ? (
+                      <>
+                        <span className="cr-spin" aria-hidden="true" />
+                        Borrando…
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 strokeWidth={1.75} />
+                        Sí, borrar
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="cr-btn cr-btn--ghost cr-btn--sm"
+                    disabled={borrando}
+                    onClick={() => setConfirmando(false)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="cr-btn cr-btn--danger cr-btn--sm"
+                  onClick={() => setConfirmando(true)}
+                >
+                  <Trash2 strokeWidth={1.75} />
+                  Borrar reporte
+                </button>
+              )}
             </div>
+
+            {errorBorrado ? (
+              <p
+                className="cr-small mt-3"
+                style={{ color: "var(--cr-danger)" }}
+                role="alert"
+              >
+                {errorBorrado}
+              </p>
+            ) : null}
           </Panel>
         </>
       )}

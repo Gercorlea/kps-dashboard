@@ -7,7 +7,7 @@ import { columnasHistorico, plantillaPorId } from "@/lib/retail/analisis/plantil
 import { PRIMERA_ESCRITURA, ULTIMA_ACTUALIZACION } from "@/lib/retail/importaciones";
 import { fechaISO } from "@/lib/retail/normalize";
 import { usuariosPorId } from "@/lib/usuarios";
-import { reporteAnalisisQuerySchema } from "@/lib/validation/retail";
+import { borrarReporteSchema, reporteAnalisisQuerySchema } from "@/lib/validation/retail";
 import { SalesReport } from "@/models/SalesReport";
 
 // GET /api/retail/analisis/reporte — ficha de UN reporte guardado.
@@ -37,17 +37,14 @@ interface Resumen {
 }
 
 /**
- * Quién escribió las filas que hay hoy en el reporte.
+ * Quién escribió más recientemente en el reporte: es quien lo actualizó.
  *
- * Se agrupa por usuario y no por carga: una sola carga viaja en lotes de 2000
- * filas y cada lote trae su propia marca de tiempo, así que "una carga" no es
- * algo que las filas puedan contar por sí solas. Por usuario sí, y con eso se
- * responde lo que se pregunta al abrir la ficha.
+ * Se agrupa por usuario y no por carga porque "una carga" no es algo que las
+ * filas puedan contar por sí solas —una sola viaja en lotes de 2000 filas, cada
+ * uno con su marca de tiempo—; el máximo por usuario sí identifica al último.
  */
-interface Autor {
+interface UltimoAutor {
   _id: Types.ObjectId | null;
-  filas: number;
-  desde: Date;
   hasta: Date;
 }
 
@@ -123,20 +120,17 @@ export async function GET(request: NextRequest) {
           },
         },
       ],
-      autores: [
-        {
-          $group: {
-            _id: "$importedBy",
-            filas: { $sum: 1 },
-            desde: { $min: "$importedAt" },
-            hasta: { $max: "$importedAt" },
-          },
-        },
+      ultimoAutor: [
+        { $group: { _id: "$importedBy", hasta: { $max: "$importedAt" } } },
         { $sort: { hasta: -1 } },
+        { $limit: 1 },
       ],
     };
 
-    const [facetado] = await SalesReport.aggregate<{ resumen: Resumen[]; autores: Autor[] }>([
+    const [facetado] = await SalesReport.aggregate<{
+      resumen: Resumen[];
+      ultimoAutor: UltimoAutor[];
+    }>([
       { $match: filtro },
       // Proyectar antes del $facet: las dos ramas ordenan en memoria y ninguna
       // necesita el resto de las columnas del reporte.
@@ -148,17 +142,11 @@ export async function GET(request: NextRequest) {
     if (!resumen) {
       throw new ApiError(404, "NO_ENCONTRADO", "Ese reporte no está en el histórico");
     }
-    const autores = facetado?.autores ?? [];
-
     // Quien escribió más recientemente es quien actualizó el reporte; sólo se
     // informa si hubo actualización, para no atribuirle a nadie un cambio que
     // no ocurrió.
-    const ultimoAutor = resumen.actualizado ? autores[0]?._id : null;
-    const usuarios = await usuariosPorId([
-      resumen.subidoPor,
-      ultimoAutor,
-      ...autores.map((a) => a._id),
-    ]);
+    const ultimoAutor = resumen.actualizado ? facetado?.ultimoAutor?.[0]?._id : null;
+    const usuarios = await usuariosPorId([resumen.subidoPor, ultimoAutor]);
 
     const marcas = (resumen.marcas ?? []).filter((m) => m.trim() !== "").sort();
 
@@ -183,13 +171,40 @@ export async function GET(request: NextRequest) {
         nombre: m.nombre,
         total: (resumen[`s_${m.campo}`] as number) ?? 0,
       })),
-      autores: autores.map((a) => ({
-        usuario: usuarios.get(String(a._id)) ?? null,
-        filas: a.filas,
-        desde: new Date(a.desde).toISOString(),
-        hasta: new Date(a.hasta).toISOString(),
-      })),
     });
+  } catch (e) {
+    return handleApiError(e);
+  }
+}
+
+// DELETE /api/retail/analisis/reporte — saca un reporte del histórico.
+//
+// Es la salida para el reporte subido por equivocación: el analizador sólo sabe
+// guardar, y sin esto la única forma de corregir un archivo mal cargado era
+// volver a subir el bueno encima, que arregla las filas repetidas pero deja las
+// que el archivo malo tenía de más.
+//
+// Borra por `sourceFile` dentro del retailer, que es lo que la ficha llama "un
+// reporte". Ojo con la consecuencia del upsert por clave natural: si una carga
+// posterior reescribió filas de este archivo, esas filas ya son del otro
+// reporte y no se tocan; y al revés, las que este reporte le quitó a uno
+// anterior sí se van con él. Por eso la interfaz enseña cuántas filas se van
+// antes de confirmar.
+export async function DELETE(request: NextRequest) {
+  try {
+    // Mismo permiso que para guardar: quien puede escribir en el histórico de
+    // retail puede deshacer lo que escribió. Restringirlo a superadmin dejaría
+    // a quien se equivocó esperando a que otro le corrija el error.
+    await requireModule("retail");
+    const { account, sourceFile } = parseQuery(request.url, borrarReporteSchema);
+    await connectDB();
+
+    const { deletedCount } = await SalesReport.deleteMany({ account, sourceFile });
+    if (deletedCount === 0) {
+      throw new ApiError(404, "NO_ENCONTRADO", "Ese reporte no está en el histórico");
+    }
+
+    return ok({ borradas: deletedCount });
   } catch (e) {
     return handleApiError(e);
   }
