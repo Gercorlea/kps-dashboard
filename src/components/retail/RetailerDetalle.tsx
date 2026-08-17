@@ -16,6 +16,8 @@ import { api } from "@/components/lib/api-client";
 import { fmtFecha, fmtFechaHora, fmtNum, fmtPct } from "@/components/lib/fmt";
 import { AnalisisKpis } from "@/components/retail/AnalisisKpis";
 import { AnalisisTable } from "@/components/retail/AnalisisTable";
+import { AutorReporte, type UsuarioReporte } from "@/components/retail/AutorReporte";
+import { ReporteDetalle } from "@/components/retail/ReporteDetalle";
 import { Badge, EstadoVacio, Meter, Panel } from "@/components/ui/basicos";
 import {
   acumuladoresDeGrupos,
@@ -70,10 +72,15 @@ interface Bundle {
   rangoFechas?: { desde: string; hasta: string } | null;
 }
 
+/** Una fila de "Reportes guardados". */
 interface Archivo {
   sourceFile: string;
   filas: number;
-  importedAt: string | null;
+  /** Primera vez que se guardó el reporte; no cambia al volver a subirlo. */
+  importado: string | null;
+  /** Null mientras el reporte no se haya vuelto a subir. */
+  actualizado: string | null;
+  subidoPor: UsuarioReporte | null;
 }
 
 /** "2024-07-06" → Date en hora LOCAL, que es como la leen los formateadores. */
@@ -96,6 +103,8 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   const [granManual, setGranManual] = useState<Granularidad | null>(null);
   const [paginaProductos, setPaginaProductos] = useState(1);
   const [busqueda, setBusqueda] = useState("");
+  // Reporte abierto dentro de la pestaña de reportes; null = la lista.
+  const [reporteAbierto, setReporteAbierto] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     if (ficha.reportes === 0) return;
@@ -298,7 +307,12 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                 type="button"
                 role="tab"
                 aria-selected={vista === v.id}
-                onClick={() => setVista(v.id)}
+                onClick={() => {
+                  setVista(v.id);
+                  // Cambiar de pestaña vuelve a la lista: la ficha de un
+                  // reporte no es un lugar al que se regrese "por detrás".
+                  setReporteAbierto(null);
+                }}
                 className={`cr-segment__item${vista === v.id ? " cr-segment__item--active" : ""}`}
               >
                 {v.etiqueta}
@@ -457,38 +471,66 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
             ) : null}
 
             {vista === "reportes" ? (
-              <Panel title="Reportes guardados" sinPadding>
-                <div className="cr-table-scroll">
-                  <table className="cr-table">
-                    <thead>
-                      <tr>
-                        <th>Archivo</th>
-                        <th className="num">Filas</th>
-                        <th>Importado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(archivos ?? []).length === 0 ? (
+              reporteAbierto ? (
+                <ReporteDetalle
+                  account={ficha.id}
+                  sourceFile={reporteAbierto}
+                  onVolver={() => setReporteAbierto(null)}
+                />
+              ) : (
+                <Panel title="Reportes guardados" sinPadding>
+                  <div className="cr-table-scroll">
+                    <table className="cr-table">
+                      <thead>
                         <tr>
-                          <td colSpan={3} className="cr-body py-8 text-center">
-                            Sin reportes guardados.
-                          </td>
+                          <th>Archivo</th>
+                          <th>Subido por</th>
+                          <th>Importado</th>
+                          <th>Última actualización</th>
                         </tr>
-                      ) : (
-                        (archivos ?? []).map((a) => (
-                          <tr key={a.sourceFile}>
-                            <td className="max-w-96 truncate" title={a.sourceFile}>
-                              {a.sourceFile}
+                      </thead>
+                      <tbody>
+                        {(archivos ?? []).length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="cr-body py-8 text-center">
+                              Sin reportes guardados.
                             </td>
-                            <td className="num">{fmtNum(a.filas)}</td>
-                            <td className="cr-mono">{fmtFechaHora(a.importedAt)}</td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </Panel>
+                        ) : (
+                          (archivos ?? []).map((a) => (
+                            // El botón del nombre cubre toda la fila (ver
+                            // .cr-fila-link), igual que en la lista de
+                            // retailers: se puede hacer clic en cualquier parte
+                            // sin meter un control por celda.
+                            <tr key={a.sourceFile} className="cr-fila-link">
+                              <td className="max-w-96 truncate">
+                                <button
+                                  type="button"
+                                  className="cr-link block max-w-full cursor-pointer truncate text-left"
+                                  title={a.sourceFile}
+                                  onClick={() => setReporteAbierto(a.sourceFile)}
+                                >
+                                  {a.sourceFile}
+                                </button>
+                              </td>
+                              <td className="max-w-64">
+                                <AutorReporte usuario={a.subidoPor} />
+                              </td>
+                              <td className="cr-mono">{fmtFechaHora(a.importado)}</td>
+                              {/* Un reporte que nunca se volvió a subir no
+                                  tiene fecha de actualización, y la de
+                                  importado no se mueve por eso. */}
+                              <td className="cr-mono">
+                                {a.actualizado ? fmtFechaHora(a.actualizado) : "—"}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+              )
             ) : null}
           </>
         )}

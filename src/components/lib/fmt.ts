@@ -56,12 +56,22 @@ export function fmtMesLargo(periodo: string | null | undefined): string {
   return periodo ? dfMesLargo.format(mesUTC(periodo)) : "—";
 }
 
+/**
+ * Marca de tiempo en hora LOCAL, "2026-08-17 09:54".
+ *
+ * La fecha y la hora salen de la misma lectura local del instante: recortar el
+ * ISO —que viene en UTC— y sacar la hora del Date local mostraba el día
+ * siguiente con la hora de hoy en las horas que caen entre las dos medianoches,
+ * y las fechas de importación de un reporte se leen justo así.
+ */
 export function fmtFechaHora(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return `${iso.slice(0, 10)} ${String(d.getHours()).padStart(2, "0")}:${String(
-    d.getMinutes()
-  ).padStart(2, "0")}`;
+  if (Number.isNaN(d.getTime())) return "—";
+  const dd = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${dd(d.getMonth() + 1)}-${dd(d.getDate())} ${dd(
+    d.getHours()
+  )}:${dd(d.getMinutes())}`;
 }
 
 export function fmtBytes(n: number): string {

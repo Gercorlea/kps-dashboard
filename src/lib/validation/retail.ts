@@ -59,6 +59,15 @@ export const historicoAnalisisQuerySchema = z.object({
   account: z.enum(RETAILER_IDS).optional(),
 });
 
+// Ficha de UN reporte guardado: lo que se abre al hacer clic en una fila de la
+// lista de reportes del retailer. `sourceFile` es obligatorio —es la identidad
+// del reporte— y `account` acota por si dos retailers guardaron un archivo con
+// el mismo nombre.
+export const reporteAnalisisQuerySchema = z.object({
+  account: z.enum(RETAILER_IDS).optional(),
+  sourceFile: z.string().min(1).max(300),
+});
+
 // La tabla del histórico pagina en el servidor: nunca se bajan 15 mil filas al
 // navegador sólo para entrar a la pestaña. `limit` tope 100 es el tamaño de
 // página que pide la UI; `sourceFile` ausente significa "el último cargado".

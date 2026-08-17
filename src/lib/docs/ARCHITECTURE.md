@@ -50,6 +50,16 @@ reporte actualiza en vez de duplicar.
 
 El Excel **no se almacena**: sólo viajan las filas ya mapeadas a campos.
 
+Ese upsert sobrescribe `importedAt`/`importedBy` de cada fila, así que la primera
+escritura se guarda aparte con `$setOnInsert` en `firstImportedAt`/
+`firstImportedBy`. Con los dos pares, una fila con `importedAt > firstImportedAt`
+es exactamente una fila que reescribió una carga posterior: de ahí salen el
+"Importado" y la "Última actualización" que muestra la ficha del retailer, sin
+que una carga partida en lotes de 2000 filas —cada uno con su marca de tiempo—
+parezca una actualización. Los acumuladores viven en
+`lib/retail/importaciones.ts` para que la lista de reportes y la ficha de un
+reporte (`GET /api/retail/analisis/reporte`) cuenten lo mismo.
+
 > El flujo anterior de ingesta por hojas fijas (`/retail/cargar`, el parser por
 > hoja y el scorecard) se retiró: sus colecciones llevaban tiempo vacías —0
 > documentos en ventas, inventarios, OC y pronósticos— y sólo sabía procesar San
