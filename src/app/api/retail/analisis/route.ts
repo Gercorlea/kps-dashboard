@@ -40,6 +40,31 @@ export async function POST(request: NextRequest) {
 
     const importedAt = new Date();
     const importedBy = new Types.ObjectId(usuario.id);
+
+    // Rescate de las filas guardadas antes de que existiera `firstImportedAt`:
+    // se les copia el `importedAt` que traen ANTES de que el lote se lo pise,
+    // que es la única fecha de importación que quedaba de ellas.
+    //
+    // Va en una orden aparte y no dentro del upsert de cada fila a propósito.
+    // La primera versión resolvía esto con un update de pipeline por fila
+    // (`$ifNull: ["$firstImportedAt", "$importedAt", …]`), y se midió: el
+    // pipeline obliga a envolver cada valor en `$literal` —un texto que empieza
+    // por "$" se leería como referencia a un campo— y eso infla el comando un
+    // 46% (1,463 → 2,143 KB por lote de 2000 filas). Con el enlace a la base a
+    // ~110 KB/s eso son 8 segundos más POR LOTE: la carga de 15 mil filas pasó
+    // de 80 a 150 segundos. Así el lote vuelve a viajar con operadores y el
+    // rescate cuesta una sola orden pequeña (~200 ms, y cero filas tocadas en
+    // cuanto la cuenta está al día).
+    //
+    // `updatePipeline: true` es obligatorio en esta versión de Mongoose para
+    // pasar un pipeline a un update: avisa de que no va a castear los valores.
+    // Aquí no hay nada que castear —los dos campos se copian de la propia fila—.
+    await SalesReport.updateMany(
+      { account, firstImportedAt: { $exists: false } },
+      [{ $set: { firstImportedAt: "$importedAt", firstImportedBy: "$importedBy" } }],
+      { updatePipeline: true }
+    );
+
     const ops = filas.map((f) => {
       const { date, ...resto } = f;
       const fecha = fechaUTC(date);
@@ -60,6 +85,10 @@ export async function POST(request: NextRequest) {
             // lo que separa "importado el" de "última actualización" en la
             // ficha del retailer. Una fila con importedAt > firstImportedAt es,
             // exactamente, una fila que reescribió una carga posterior.
+            //
+            // Sólo cubre las ALTAS; de las filas viejas que no traen el campo
+            // se encarga el rescate de arriba, antes de que este $set les pise
+            // el importedAt.
             $setOnInsert: { firstImportedAt: importedAt, firstImportedBy: importedBy },
           },
           upsert: true,

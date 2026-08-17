@@ -51,9 +51,16 @@ reporte actualiza en vez de duplicar.
 El Excel **no se almacena**: sólo viajan las filas ya mapeadas a campos.
 
 Ese upsert sobrescribe `importedAt`/`importedBy` de cada fila, así que la primera
-escritura se guarda aparte con `$setOnInsert` en `firstImportedAt`/
-`firstImportedBy`. Con los dos pares, una fila con `importedAt > firstImportedAt`
-es exactamente una fila que reescribió una carga posterior: de ahí salen el
+escritura se guarda aparte en `firstImportedAt`/`firstImportedBy` con
+`$setOnInsert`. Como eso sólo cubre las altas —y las filas guardadas antes de que
+el campo existiera se ACTUALIZAN, no se insertan—, cada POST arranca con un
+`updateMany` que le copia a esas filas el `importedAt` que traen antes de
+pisárselo. Va en una orden aparte y no dentro del upsert de cada fila porque se
+midió: resolverlo con un update de pipeline por fila obliga a envolver cada valor
+en `$literal` (un texto que empieza por "$" se leería como referencia a un campo)
+e infla el comando un 46%, que sobre un enlace de ~110 KB/s son 80 → 150 s por
+carga. Con los dos pares, una fila con `importedAt > firstImportedAt` es
+exactamente una fila que reescribió una carga posterior: de ahí salen el
 "Importado" y la "Última actualización" que muestra la ficha del retailer, sin
 que una carga partida en lotes de 2000 filas —cada uno con su marca de tiempo—
 parezca una actualización. Los acumuladores viven en

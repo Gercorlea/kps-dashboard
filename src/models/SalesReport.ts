@@ -25,7 +25,9 @@ export interface ISalesReport {
   // distinguir "importado el" de "última actualización".
   //
   // Opcionales porque las filas guardadas antes de que existieran no los
-  // tienen; quien los lea cae a `importedAt`/`importedBy` con $ifNull.
+  // tienen; quien los lea cae a `importedAt`/`importedBy` con $ifNull, y la
+  // siguiente carga que toque la fila los rellena con lo que traía (ver el
+  // update de pipeline en POST /api/retail/analisis).
   firstImportedAt?: Date;
   firstImportedBy?: Types.ObjectId;
 
@@ -59,8 +61,8 @@ const SalesReportSchema = new Schema<ISalesReport>(
     sourceFile: { type: String, default: "" },
     importedAt: { type: Date, required: true },
     importedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    // Sin `default`: lo escribe el $setOnInsert del POST, y un default de
-    // esquema se le adelantaría en el upsert.
+    // Sin `default`: los escribe el update del POST, y un default de esquema se
+    // le adelantaría en el upsert.
     firstImportedAt: { type: Date },
     firstImportedBy: { type: Schema.Types.ObjectId, ref: "User" },
 

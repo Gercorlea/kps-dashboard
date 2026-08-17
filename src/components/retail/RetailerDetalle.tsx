@@ -281,7 +281,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
           </div>
           <Link href="/retail/analisis" className="cr-btn cr-btn--secondary cr-btn--sm">
             <FileSpreadsheet strokeWidth={1.75} />
-            Analizar un Excel
+            Cargar un Excel
           </Link>
         </div>
 
