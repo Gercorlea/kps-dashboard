@@ -129,7 +129,13 @@ export async function GET(request: NextRequest) {
     // en blanco al elegirlas. Nada que venga de la query entra a un $group.
     const metricas = columnasMetrica(columnas).map((c) => (c as ColumnaResuelta).campo);
     const dimensiones = columnasDimension(columnas).map((c) => (c as ColumnaResuelta).campo);
-    const base = { account: ultimo.account, sourceFile: ultimo.sourceFile };
+    // Con alcance de cuenta se agregan TODOS los reportes del retailer, que es
+    // lo que mira su ficha; con alcance de archivo, sólo el que se está viendo
+    // en /retail/analisis. El resto del pipeline no distingue.
+    const base =
+      q.alcance === "cuenta"
+        ? { account: ultimo.account }
+        : { account: ultimo.account, sourceFile: ultimo.sourceFile };
     const acc = acumuladores(metricas);
 
     // Sólo la serie, en la granularidad pedida. Es la petición diferida de
@@ -200,6 +206,9 @@ export async function GET(request: NextRequest) {
     const hasta = rango?.hasta ? new Date(rango.hasta) : null;
 
     return ok({
+      // Con alcance de cuenta, `sourceFile` e `importedAt` son los del ÚLTIMO
+      // reporte (útiles para la cabecera del retailer) mientras que `total` y
+      // todo lo agregado abarcan los reportes del retailer completos.
       archivo: {
         sourceFile: ultimo.sourceFile,
         template: ultimo.template,

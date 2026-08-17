@@ -265,6 +265,104 @@ export async function resumenDashboard(): Promise<ResumenDashboard> {
   };
 }
 
+// --- Lista de retailers (/retail) --------------------------------------
+
+export interface DetalleRetailer {
+  id: string;
+  nombre: string;
+  /** Importe vendido en todos sus reportes. */
+  importe: number;
+  unidades: number;
+  /** Artículos distintos vistos en el histórico del retailer. */
+  articulos: number;
+  reportes: number;
+  /** Sobre el importe de todos los retailers; null si nadie vendió. */
+  participacion: number | null;
+  desde: string | null;
+  hasta: string | null;
+  ultimoReporte: string | null;
+  ultimoArchivo: string | null;
+}
+
+interface AgregadoCuenta {
+  _id: string;
+  importe: number;
+  unidades: number;
+  articulos: string[];
+  archivos: string[];
+  desde: Date | null;
+  hasta: Date | null;
+  ultimoReporte: Date | null;
+}
+
+/**
+ * Una fila por retailer para la portada del módulo.
+ *
+ * Sin ventana de tiempo, a diferencia de `resumenDashboard`: la portada habla
+ * de todo lo que se ha guardado del retailer, no de los últimos doce meses.
+ * Sale sólo de SalesReport —la colección del analizador, la única con datos—
+ * y los cuatro de RETAILERS aparecen siempre, tengan reportes o no.
+ */
+export async function detalleRetailers(): Promise<DetalleRetailer[]> {
+  await connectDB();
+
+  const filas = await SalesReport.aggregate<AgregadoCuenta>([
+    {
+      $group: {
+        _id: "$account",
+        importe: { $sum: { $ifNull: ["$posSales", 0] } },
+        unidades: { $sum: { $ifNull: ["$posQty", 0] } },
+        articulos: { $addToSet: "$itemNbr" },
+        archivos: { $addToSet: "$sourceFile" },
+        desde: { $min: "$date" },
+        hasta: { $max: "$date" },
+        ultimoReporte: { $max: "$importedAt" },
+      },
+    },
+  ]);
+
+  const porCuenta = new Map(filas.map((f) => [f._id, f]));
+  const total = filas.reduce((t, f) => t + f.importe, 0);
+
+  // El último archivo no sale del $group: `$max` sobre importedAt no arrastra
+  // el sourceFile de esa misma fila. Se resuelve con un findOne por cuenta con
+  // datos, que el índice { importedAt: -1 } contesta de inmediato.
+  const ultimos = await Promise.all(
+    [...porCuenta.keys()].map((account) =>
+      SalesReport.findOne({ account })
+        .sort({ importedAt: -1 })
+        .select({ sourceFile: 1 })
+        .lean()
+        .then((d) => [account, d?.sourceFile ?? null] as const)
+    )
+  );
+  const ultimoArchivo = new Map(ultimos);
+
+  const ids = [
+    ...RETAILERS.map((r) => r.id),
+    ...[...porCuenta.keys()].filter((id) => !RETAILERS.some((r) => r.id === id)),
+  ];
+
+  return [...new Set(ids)]
+    .map((id) => {
+      const f = porCuenta.get(id);
+      return {
+        id,
+        nombre: nombreRetailer(id),
+        importe: f?.importe ?? 0,
+        unidades: f?.unidades ?? 0,
+        articulos: f?.articulos.length ?? 0,
+        reportes: f?.archivos.length ?? 0,
+        participacion: total > 0 ? (f?.importe ?? 0) / total : null,
+        desde: f?.desde ? fechaISO(new Date(f.desde)) : null,
+        hasta: f?.hasta ? fechaISO(new Date(f.hasta)) : null,
+        ultimoReporte: f?.ultimoReporte ? new Date(f.ultimoReporte).toISOString() : null,
+        ultimoArchivo: ultimoArchivo.get(id) ?? null,
+      };
+    })
+    .sort((a, b) => b.importe - a.importe || a.nombre.localeCompare(b.nombre));
+}
+
 // --- Serie histórica multi-corte (§10 /retail/historico) ---------------
 
 export interface SerieHistorica {

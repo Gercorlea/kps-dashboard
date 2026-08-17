@@ -2,54 +2,24 @@ import { describe, expect, it } from "vitest";
 import { loginSchema } from "@/lib/validation/auth";
 import {
   CUENTAS,
-  createUploadSchema,
   guardarAnalisisSchema,
-  processUploadSchema,
+  historicoQuerySchema,
 } from "@/lib/validation/retail";
 import { nombreRetailer, RETAILER_IDS, RETAILERS } from "@/lib/retail/retailers";
 
-const XLSX_MIME =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+// Los esquemas de carga por hojas fijas se fueron con ese flujo: sus
+// colecciones estaban vacías y la vía real de entrada es el analizador, que
+// valida con `guardarAnalisisSchema`.
 
-describe("createUploadSchema (§5.7)", () => {
-  const base = {
-    filename: "KPS_12_05_2026.xlsx",
-    contentType: XLSX_MIME,
-    sizeBytes: 5_000_000,
-    account: "san-pablo" as const,
-  };
-
-  it("acepta un .xlsx válido", () => {
-    expect(createUploadSchema.safeParse(base).success).toBe(true);
+describe("historicoQuerySchema", () => {
+  it("acepta fechas ISO y rechaza otros formatos", () => {
+    expect(historicoQuerySchema.safeParse({ desde: "2026-05-12" }).success).toBe(true);
+    expect(historicoQuerySchema.safeParse({ desde: "12/05/2026" }).success).toBe(false);
   });
 
-  it("rechaza extensiones que no sean .xlsx", () => {
-    expect(createUploadSchema.safeParse({ ...base, filename: "datos.xls" }).success).toBe(false);
-    expect(createUploadSchema.safeParse({ ...base, filename: "datos.csv" }).success).toBe(false);
-  });
-
-  it("rechaza content-type incorrecto", () => {
-    expect(
-      createUploadSchema.safeParse({ ...base, contentType: "application/octet-stream" }).success
-    ).toBe(false);
-  });
-
-  it("rechaza archivos de más de 25 MB", () => {
-    expect(
-      createUploadSchema.safeParse({ ...base, sizeBytes: 26 * 1024 * 1024 }).success
-    ).toBe(false);
-  });
-
-  it("solo acepta cuentas conocidas (v1: san-pablo)", () => {
-    expect(createUploadSchema.safeParse({ ...base, account: "walmart" }).success).toBe(false);
-  });
-});
-
-describe("processUploadSchema (§7.4)", () => {
-  it("exige date ISO", () => {
-    expect(processUploadSchema.safeParse({ cutoffDate: "2026-05-12" }).success).toBe(true);
-    expect(processUploadSchema.safeParse({ cutoffDate: "12/05/2026" }).success).toBe(false);
-    expect(processUploadSchema.safeParse({}).success).toBe(false);
+  it("cae en san-pablo, la única cuenta que tuvo ingesta por hojas fijas", () => {
+    const r = historicoQuerySchema.safeParse({});
+    expect(r.success && r.data.account).toBe("san-pablo");
   });
 });
 
@@ -115,8 +85,10 @@ describe("retailers del analizador", () => {
     expect(nombreRetailer("cuenta-vieja")).toBe("cuenta-vieja");
   });
 
-  it("no toca CUENTAS, que es del flujo de ingesta de San Pablo", () => {
-    // Ampliar CUENTAS dejaría crear cargas que ese flujo no sabe procesar.
+  it("no toca CUENTAS, que sigue siendo la del histórico de San Pablo", () => {
+    // RETAILERS (analizador) y CUENTAS (histórico multi-corte) son listas
+    // distintas a propósito: confundirlas mostraría en /retail/historico
+    // cuentas de las que no hay cortes.
     expect(CUENTAS).toEqual(["san-pablo"]);
   });
 });

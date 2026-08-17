@@ -19,7 +19,7 @@ Gateway · SheetJS en el servidor · Vitest.
 src/app/
   (app)/        dashboard autenticado — layout con Sidebar (verifica sesión)
     dashboard/  overview con KPIs, venta mensual por retailer y lista de retailers
-    retail/     listado, cargar/, [uploadId]/ (detalle + scorecard/), historico/
+    retail/     lista de retailers, [retailer]/ (ficha), analisis/, historico/
     cronos-ia/  chat
     admin/      usuarios/, estadisticas/
   (auth)/       login/, recuperar/, restablecer/[token]/
@@ -40,43 +40,47 @@ src/proxy.ts    intercepción global (convención proxy de Next 16)
    `requireModule("retail")` → 401/403 del contrato de API.
    Archivos: `src/lib/auth/{jwt,cookies,hash,guards,session}.ts`.
 
-## Flujo de ingesta de Excel
+## Entrada de datos: el analizador
 
-1. `POST /api/retail/uploads` valida con Zod (extensión, MIME, ≤25 MB), crea el
-   `Upload` en `pending` y devuelve el id de carga y la fecha sugerida
-   (`private/retail/<uploadId>/<archivo>`; los Excel son confidenciales).
-2. Se confirma la fecha de corte; el archivo se envía al procesar (barra de progreso).
-3. La UI muestra la **fecha de corte derivada del nombre** (editable, requerida)
-   y las hojas detectadas; al confirmar, `POST /api/retail/uploads/[id]/process`
-   (runtime nodejs, `maxDuration 300`).
-4. El servidor parsea el archivo en memoria, calcula **sha256** (duplicado → `409` con el
-   `uploadId` existente), parsea hoja por hoja (`lib/retail/parse-workbook.ts`),
-   **borra las filas previas del upload** (reproceso idempotente) e inserta con
-   `bulkWrite` en lotes de 3,000. El avance por hoja se escribe en
-   `Upload.resumen` y la UI lo muestra por polling.
+La vía de entrada es `/retail/analisis`: se sube un .xlsx, se parsea **en el
+navegador**, se reconoce la plantilla (`lib/retail/analisis/plantillas.ts`) y al
+guardar se elige el retailer. El servidor hace upsert por la clave natural
+`(account, itemNbr, date)` en `salesreports`, así que volver a subir el mismo
+reporte actualiza en vez de duplicar.
 
-### Decisión clave: almacenamiento en formato largo (long), no ancho
+El Excel **no se almacena**: sólo viajan las filas ya mapeadas a campos.
 
-Los Excel traen las fechas **como columnas** (`05.05.2026`, …) y ese set cambia
-cada semana. Guardar columnas tal cual exigiría migrar el esquema semana a
-semana y ninguna query histórica sería posible. Por eso **cada columna de fecha
-se desnormaliza (unpivot) a documentos individuales** `{ …dimensiones, fecha,
-valor }`. Es lo que habilita el comparativo año contra año y las series del
-histórico. (Ver `lib/retail/parse-workbook.ts`.)
+> El flujo anterior de ingesta por hojas fijas (`/retail/cargar`, el parser por
+> hoja y el scorecard) se retiró: sus colecciones llevaban tiempo vacías —0
+> documentos en ventas, inventarios, OC y pronósticos— y sólo sabía procesar San
+> Pablo, porque estampaba `account: "san-pablo"` fijo en cada carga. Los modelos
+> siguen declarados porque `/retail/historico` y la herramienta de consulta de
+> KPS AI aún los referencian.
 
-Trampas del archivo real blindadas en el parser (todas con test):
-pivots pegados a la derecha (el ancho real es la fila 1 hasta la primera celda
-vacía), fechas `Date` vs `dd.mm.yyyy` (parseo manual — `new Date("13.05.2026")`
-es Invalid Date), encabezados con espacio final, `Fecha de entrega <Mes>` por
-prefijo, códigos con ceros a la izquierda (`0141`; SKU siempre string), filas
-vacías al final, `Total`/`Total red` excluidos, marca derivada por catálogo
-ordenado (`lib/retail/brands.ts`) con `SIN CLASIFICAR` visible en la UI.
+## Lectura: agregar en Mongo, plegar en el navegador
+
+Las vistas de retail (`/retail/[retailer]`, `/retail/analisis`) piden a
+`GET /api/retail/analisis/resumen` un **bundle de acumuladores**: en un solo
+`$facet`, la suma de todas las métricas para todas las dimensiones. El navegador
+elige cuál mirar con los helpers de `lib/retail/analisis/agregar.ts`
+(`acumuladoresDeGrupos` → `plegarTopN` / `rellenarSerie`), los mismos que corren
+sobre un archivo recién subido.
+
+Es una decisión medida, no una preferencia: traer las filas para agregarlas en
+el navegador costaba 48 s (5.2 MB por un enlace a la base de ~110 KB/s), y
+agregar en el servidor **por cada selección** metía un viaje en cada cambio de
+filtro. El bundle son ~22 KB y un solo viaje. `alcance=cuenta` agrega todos los
+reportes de un retailer; `alcance=archivo`, sólo el que se está viendo.
+
+Que el plegado sea compartido es lo que evita que las dos vistas se
+desincronicen; `tests/analisis-paridad.test.ts` fija esa frontera.
 
 ## Modelo de datos (colecciones e índices)
 
 | Colección | Origen | Índices principales |
 |---|---|---|
-| `uploads` | metadatos por archivo | `{fileHash}` unique sparse · `{cuenta, fechaCorte:-1}` · `{status}` |
+| `salesreports` | reportes del analizador | `{account, itemNbr, date}` unique · `{account, date:-1}` · `{sourceFile, date, itemNbr}` · `{importedAt:-1}` |
+| `uploads` | metadatos por archivo (ingesta retirada) | `{fileHash}` unique parcial · `{cuenta, fechaCorte:-1}` · `{status}` |
 | `ventadiarias` | VENTAS (unpivot) | `{cuenta, fecha:-1, sku}` · `{uploadId}` · `{cuenta, marca, fecha:-1}` |
 | `pronosticosemanals` | PRONOSTICOS (unpivot) | `{cuenta, semanaInicio:-1, sku}` · `{uploadId}` |
 | `forecastdiarios` | FC_Mean (unpivot) | `{cuenta, fecha:-1, sku}` · `{uploadId}` |
@@ -88,25 +92,6 @@ ordenado (`lib/retail/brands.ts`) con `SIN CLASIFICAR` visible en la UI.
 Todos los modelos usan el guard `mongoose.models.X ?? mongoose.model(...)`, los
 índices se declaran en el schema y `findOneAndUpdate` usa
 `{ returnDocument: "after" }` (nunca `{ new: true }`).
-
-## Scorecard
-
-`lib/retail/scorecard.ts` — `GET /api/retail/scorecard?cuenta=san-pablo&hasta=…`.
-Reporte **calculado** con agregaciones sobre las colecciones persistidas:
-bloques Mes / Marca / Top productos / Tiendas / Fill rate, todos con
-`Inc vs AA = actual/anterior − 1` (divisor 0 o sin dato → `—`, nunca ∞) y
-`MOH = inventario / unidades del mes` (en bloques no mensuales, las unidades
-del mes son el promedio mensual del período). El inventario suma
-`StockFarmacia.libreUtilizacion + transitoFarma` y
-`StockCedis.disponibilidadRealCD` al corte. La **narrativa** se genera por
-plantilla determinista desde los números calculados — nunca con el LLM. La
-cobertura (rango, cortes, meses completos vs parciales) se muestra en el
-encabezado; sin histórico del año anterior el bloque lleva el badge
-"Sin histórico comparable".
-
-v1 cubre **solo San Pablo**; `cuenta` queda en el modelo y el selector listo
-para más cuentas (Walmart no tiene fuente de datos todavía). El bloque de
-tiendas sustituye al de "Formato" (San Pablo no trae formato de tienda).
 
 ## KPS AI
 
@@ -128,9 +113,8 @@ comportamiento original.
 
 | Cambio | Archivo |
 |---|---|
-| Agregar una marca | `src/lib/retail/brands.ts` (una línea en `MARCAS`) |
-| Mapear una columna nueva | `src/lib/retail/parse-workbook.ts` (mapa de la hoja) |
-| Un bloque más del scorecard | `src/lib/retail/scorecard.ts` |
+| Reconocer un reporte nuevo | `src/lib/retail/analisis/plantillas.ts` (una `Plantilla` más) |
+| Cambiar qué se agrega o cómo se pliega | `src/lib/retail/analisis/agregar.ts` (+ `tests/analisis-paridad.test.ts`) |
 | Límites de rate limiting | `src/lib/rate-limit.ts` (`LIMITES`) |
 | Módulos RBAC | `src/lib/rbac.ts` (`MODULES`) |
 | Ventana de la gráfica del dashboard | `src/lib/retail/stats.ts` (`MESES_DASHBOARD`) |

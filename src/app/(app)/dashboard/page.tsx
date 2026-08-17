@@ -102,12 +102,9 @@ export default async function DashboardPage() {
                                 borderRadius: "var(--cr-r-xs)",
                               }}
                             />
-                            {/* Sin destino todavía: cuando se decida a qué
-                                página va el detalle del retailer, esto pasa a
-                                ser un <Link href={`/retail/${r.id}`}>. */}
-                            <button type="button" className="cr-link">
+                            <Link href={`/retail/${r.id}`} className="cr-link">
                               {r.nombre}
-                            </button>
+                            </Link>
                             {r.reportes === 0 ? <Badge>Sin reportes</Badge> : null}
                           </div>
                         </td>
