@@ -427,28 +427,44 @@ const RE_DIMENSION =
 export const MAX_CARDINALIDAD_DIMENSION = 50;
 
 /**
- * Columnas ofrecidas como dimensión: categorías, más numéricas y fechas de baja
- * cardinalidad. Las constantes quedan fuera — agrupar por una columna con un
- * solo valor produce una barra única que no dice nada.
+ * ¿Sirve para agrupar? Categorías, más numéricas y fechas de baja cardinalidad.
+ * Las constantes quedan fuera — agrupar por una columna con un solo valor
+ * produce una barra única que no dice nada.
  */
-export function columnasDimension(columnas: MetaColumna[]): MetaColumna[] {
-  return columnas.filter(
-    (c) =>
-      !c.esConstante &&
-      (c.tipo === "categoria" ||
-        ((c.tipo === "numero" || c.tipo === "fecha") &&
-          c.cardinalidad > 1 &&
-          c.cardinalidad <= MAX_CARDINALIDAD_DIMENSION))
+export function esDimensionable(c: MetaColumna): boolean {
+  return (
+    !c.esConstante &&
+    (c.tipo === "categoria" ||
+      ((c.tipo === "numero" || c.tipo === "fecha") &&
+        c.cardinalidad > 1 &&
+        c.cardinalidad <= MAX_CARDINALIDAD_DIMENSION))
   );
 }
 
 /**
- * Columnas ofrecidas como métrica. Fuera los identificadores (sumar folios no
- * significa nada) y las constantes (una columna de puros ceros como
- * "Net Net Unit Margin%" no grafica nada).
+ * ¿Sirve para medir? Fuera los identificadores (sumar folios no significa nada)
+ * y las constantes (una columna de puros ceros como "Net Net Unit Margin%" no
+ * grafica nada).
  */
-export function columnasMetrica(columnas: MetaColumna[]): MetaColumna[] {
-  return columnas.filter((c) => c.tipo === "numero" && !c.esIdentificador && !c.esConstante);
+export function esMetricable(c: MetaColumna): boolean {
+  return c.tipo === "numero" && !c.esIdentificador && !c.esConstante;
+}
+
+/**
+ * Columnas ofrecidas como dimensión cuando NO hay plantilla que lo declare.
+ * Con plantilla manda `opcionesDeFiltro` (plantillas.ts): adivinar está bien
+ * para un archivo cualquiera, pero para un reporte conocido el catálogo de
+ * filtros es una decisión de negocio y no un heurístico.
+ */
+// Genéricas para conservar el tipo del elemento: quien pasa `ColumnaResuelta[]`
+// recibe `ColumnaResuelta[]` y puede leer `campo` sin castear.
+export function columnasDimension<T extends MetaColumna>(columnas: T[]): T[] {
+  return columnas.filter(esDimensionable);
+}
+
+/** Columnas ofrecidas como métrica cuando no hay plantilla. */
+export function columnasMetrica<T extends MetaColumna>(columnas: T[]): T[] {
+  return columnas.filter(esMetricable);
 }
 
 export function elegirMetrica(columnas: MetaColumna[]): number {

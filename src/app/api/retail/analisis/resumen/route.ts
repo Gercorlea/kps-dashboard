@@ -5,9 +5,12 @@ import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { granularidadPorRango, SIN_VALOR } from "@/lib/retail/analisis/agregar";
 import type { GrupoAcumulado } from "@/lib/retail/analisis/agregar";
-import { columnasDimension, columnasMetrica } from "@/lib/retail/analisis/inferir-tipos";
-import { plantillaPorId, seleccionHistorico } from "@/lib/retail/analisis/plantillas";
-import type { ColumnaResuelta } from "@/lib/retail/analisis/plantillas";
+import { columnasMetrica } from "@/lib/retail/analisis/inferir-tipos";
+import {
+  opcionesDeFiltro,
+  plantillaPorId,
+  seleccionHistorico,
+} from "@/lib/retail/analisis/plantillas";
 import type { Granularidad } from "@/lib/retail/analisis/tipos";
 import { resumenAnalisisQuerySchema } from "@/lib/validation/retail";
 import { SalesReport } from "@/models/SalesReport";
@@ -122,13 +125,18 @@ export async function GET(request: NextRequest) {
     const { columnas, idxDimension, idxMetrica, idxFecha } = seleccionHistorico(plantilla);
     const campoDe = (i: number) => (i >= 0 ? columnas[i].campo : null);
     const fecha = campoDe(idxFecha);
-    // Qué agrupar y qué sumar sale de las MISMAS funciones que llenan los
-    // selectores del cliente, no de un filtro por rol: `columnasDimension`
-    // también ofrece los códigos (UPC, Product Code), y filtrar aquí por
-    // `rol === "dimension"` dejaba esas opciones sin acumuladores y la gráfica
-    // en blanco al elegirlas. Nada que venga de la query entra a un $group.
-    const metricas = columnasMetrica(columnas).map((c) => (c as ColumnaResuelta).campo);
-    const dimensiones = columnasDimension(columnas).map((c) => (c as ColumnaResuelta).campo);
+    // Qué agrupar sale de la MISMA función que llena el selector del cliente:
+    // una dimensión ofrecida sin su rama de acumuladores deja la gráfica en
+    // blanco al elegirla, y una rama que nadie puede elegir es una pasada por
+    // la colección regalada. Nada que venga de la query entra a un $group.
+    //
+    // Las métricas van por su cuenta y a propósito: se suman TODAS las de la
+    // plantilla aunque el selector ofrezca sólo dos, porque la pestaña de
+    // productos de la ficha del retailer pinta una columna por métrica con
+    // estos mismos acumuladores. Ofrecer de menos en el filtro no es razón para
+    // calcular de menos.
+    const metricas = columnasMetrica(columnas).map((c) => c.campo);
+    const dimensiones = opcionesDeFiltro(columnas, "dimension").map((c) => c.campo);
     // Con alcance de cuenta se agregan TODOS los reportes del retailer, que es
     // lo que mira su ficha; con alcance de archivo, sólo el que se está viendo
     // en /retail/analisis. El resto del pipeline no distingue.

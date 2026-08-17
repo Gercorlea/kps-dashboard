@@ -44,6 +44,7 @@ import {
 import {
   datasetDesdeHistorico,
   filasParaHistorico,
+  opcionesDeFiltro,
   permutarFilas,
   plantillaPorId,
   seleccionDePlantilla,
@@ -563,8 +564,33 @@ export function AnalisisExcel() {
     [dataset, colDimension, colMetrica, colFecha]
   );
 
-  const opcionesDimension = dataset ? columnasDimension(dataset.columnas) : [];
-  const opcionesMetrica = dataset ? columnasMetrica(dataset.columnas) : [];
+  // Con plantilla reconocida el catálogo de filtros lo declara ella; un archivo
+  // cualquiera sigue cayendo a la inferencia, que es lo único que tiene.
+  const opcionesDimension = columnasResueltas
+    ? opcionesDeFiltro(columnasResueltas, "dimension")
+    : dataset
+      ? columnasDimension(dataset.columnas)
+      : [];
+  const opcionesMetrica = columnasResueltas
+    ? opcionesDeFiltro(columnasResueltas, "metrica")
+    : dataset
+      ? columnasMetrica(dataset.columnas)
+      : [];
+
+  // "Cantidad de filas" es la métrica de rescate para un archivo sin columnas
+  // numéricas. Con plantilla hay métricas declaradas, así que sólo estorbaría.
+  const ofrecerConteo = opcionesMetrica.length === 0 || !columnasResueltas;
+
+  // Elegir una métrica real saca de "Conteo", que ya no está en el desplegable:
+  // sin esto la agregación quedaría en un valor sin opción que lo represente.
+  const alCambiarMetrica = useCallback(
+    (valor: string) => {
+      const i = Number(valor);
+      setIdxMetrica(i);
+      if (i !== METRICA_CONTEO) setAgregacion((a) => (a === "conteo" ? "suma" : a));
+    },
+    []
+  );
 
   // ---------------------------------------------- los dos orígenes, un render
   //
@@ -855,12 +881,8 @@ export function AnalisisExcel() {
           ) : null}
 
           {dataset ? (
-            <Selector
-              etiqueta="Métrica"
-              valor={String(idxMetrica)}
-              onCambio={(v) => setIdxMetrica(Number(v))}
-            >
-              <option value={METRICA_CONTEO}>Cantidad de filas</option>
+            <Selector etiqueta="Métrica" valor={String(idxMetrica)} onCambio={alCambiarMetrica}>
+              {ofrecerConteo ? <option value={METRICA_CONTEO}>Cantidad de filas</option> : null}
               {opcionesMetrica.map((c) => (
                 <option key={c.indice} value={c.indice}>
                   {c.nombre}
@@ -875,9 +897,13 @@ export function AnalisisExcel() {
               valor={agregacion}
               onCambio={(v) => setAgregacion(v as Agregacion)}
             >
+              {/* Sin "Conteo": contaba FILAS del reporte, no unidades ni
+                  ventas, y con una fila por artículo y día lo que devolvía era
+                  "en cuántos días apareció", que se lee como un dato de venta y
+                  no lo es. Quien quiera filas tiene la métrica "Cantidad de
+                  filas" cuando el archivo no trae plantilla. */}
               <option value="suma">Suma</option>
               <option value="promedio">Promedio</option>
-              <option value="conteo">Conteo</option>
             </Selector>
           ) : null}
 

@@ -152,8 +152,14 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
     () => columnas.filter((c) => Object.hasOwn(bundle?.dimensiones ?? {}, c.campo)),
     [columnas, bundle]
   );
+  // Las dimensiones que manda el bundle ya son las que declara la plantilla;
+  // las métricas no, porque el servidor suma TODAS (la tabla de productos pinta
+  // una columna por cada una) y el selector ofrece sólo las declaradas.
   const opcionesMetrica = useMemo(
-    () => columnas.filter((c) => (bundle?.metricas ?? []).includes(c.campo)),
+    () =>
+      columnas.filter(
+        (c) => c.filtro === "metrica" && (bundle?.metricas ?? []).includes(c.campo)
+      ),
     [columnas, bundle]
   );
 
@@ -375,9 +381,18 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                 <Selector
                   etiqueta="Métrica"
                   valor={campoMetrica ?? ""}
-                  onCambio={(v) => setCampoMetrica(v || null)}
+                  onCambio={(v) => {
+                    setCampoMetrica(v || null);
+                    // Elegir una métrica saca de "Conteo", que ya no se ofrece.
+                    if (v) setAgregacion((a) => (a === "conteo" ? "suma" : a));
+                  }}
                 >
-                  <option value="">Cantidad de filas</option>
+                  {/* "Cantidad de filas" sólo como rescate: si la plantilla
+                      declara métricas, el selector habla de ventas y unidades y
+                      no de filas de un Excel. */}
+                  {opcionesMetrica.length === 0 ? (
+                    <option value="">Cantidad de filas</option>
+                  ) : null}
                   {opcionesMetrica.map((c) => (
                     <option key={c.campo} value={c.campo}>
                       {c.nombre}
@@ -391,9 +406,10 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                     valor={agregacion}
                     onCambio={(v) => setAgregacion(v as Agregacion)}
                   >
+                    {/* Sin "Conteo": contaba filas del reporte y no ventas.
+                        Mismo criterio que en /retail/analisis. */}
                     <option value="suma">Suma</option>
                     <option value="promedio">Promedio</option>
-                    <option value="conteo">Conteo</option>
                   </Selector>
                 ) : null}
 

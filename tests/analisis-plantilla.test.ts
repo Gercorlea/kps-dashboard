@@ -14,6 +14,7 @@ import { formatearCelda, formatearFecha } from "@/lib/retail/analisis/formato";
 import {
   aplicarPlantilla,
   filasParaHistorico,
+  opcionesDeFiltro,
   reconocerPlantilla,
   seleccionDePlantilla,
   WALMART_MENSUAL,
@@ -152,16 +153,67 @@ describe("plantillas", () => {
   it("los roles de la plantilla mandan sobre lo inferido", async () => {
     const ds = await plantillaWalmart();
     const resueltas = aplicarPlantilla(ds.columnas, WALMART_MENSUAL);
-    const porNombre = (n: string) => resueltas.find((c) => c.nombre === n);
+    // Por campo y no por nombre: el nombre visible es el que ve el cliente y
+    // puede cambiar, el campo es el contrato con Mongo y no.
+    const porCampo = (c: string) => resueltas.find((x) => x.campo === c);
 
-    expect(porNombre("Daily")?.rol).toBe("fecha");
-    expect(porNombre("Daily")?.campo).toBe("date");
-    expect(porNombre("UPC")?.rol).toBe("codigo");
-    expect(porNombre("UPC")?.esIdentificador).toBe(true);
-    expect(porNombre("POS Sales")?.rol).toBe("metrica");
-    expect(porNombre("Vendor Name")?.rol).toBe("ignorada");
+    expect(porCampo("date")?.rol).toBe("fecha");
+    expect(porCampo("date")?.nombre).toBe("Daily");
+    expect(porCampo("upc")?.rol).toBe("codigo");
+    expect(porCampo("upc")?.esIdentificador).toBe(true);
+    expect(porCampo("posSales")?.rol).toBe("metrica");
+    expect(porCampo("vendorName")?.rol).toBe("ignorada");
     // Marcar una ignorada como constante es lo que la saca de los selectores.
-    expect(porNombre("Vendor Name")?.esConstante).toBe(true);
+    expect(porCampo("vendorName")?.esConstante).toBe(true);
+  });
+
+  it("la etiqueta de la plantilla reemplaza al encabezado en inglés", async () => {
+    const ds = await plantillaWalmart();
+    const resueltas = aplicarPlantilla(ds.columnas, WALMART_MENSUAL);
+    const nombre = (campo: string) => resueltas.find((c) => c.campo === campo)?.nombre;
+
+    expect(nombre("brand")).toBe("Marca");
+    expect(nombre("primeItemNbr")).toBe("Código del producto");
+    expect(nombre("itemDesc")).toBe("Nombre del producto");
+    expect(nombre("posQty")).toBe("Unidades");
+    expect(nombre("posSales")).toBe("Ventas netas");
+    // Sin etiqueta declarada se conserva el encabezado del Excel.
+    expect(nombre("upc")).toBe("UPC");
+    expect(nombre("avgPrice")).toBe("Avg Price");
+  });
+
+  it("el catálogo de filtros lo declara la plantilla, no la inferencia", async () => {
+    const ds = await plantillaWalmart();
+    const resueltas = aplicarPlantilla(ds.columnas, WALMART_MENSUAL);
+
+    expect(opcionesDeFiltro(resueltas, "dimension").map((c) => c.campo)).toEqual([
+      "brand",
+      "primeItemNbr",
+      "itemDesc",
+      "upc",
+    ]);
+    expect(opcionesDeFiltro(resueltas, "metrica").map((c) => c.campo)).toEqual([
+      "posQty",
+      "posSales",
+    ]);
+  });
+
+  it("una columna que Walmart agregue sigue llegando a su filtro", async () => {
+    const ds = await plantillaWalmart();
+    // Numérica y sin declarar: la plantilla no la menciona, así que el filtro
+    // sale de lo inferido en vez de quedar fuera de todos los selectores.
+    const conExtra = [
+      ...ds.columnas,
+      {
+        ...ds.columnas[ds.columnas.findIndex((c) => c.nombre === "POS Sales")],
+        indice: 99,
+        nombre: "Columna Nueva",
+      },
+    ];
+    const resueltas = aplicarPlantilla(conExtra, WALMART_MENSUAL);
+    expect(opcionesDeFiltro(resueltas, "metrica").map((c) => c.nombre)).toContain(
+      "Columna Nueva"
+    );
   });
 
   it("la selección por plantilla apunta a POS Sales, Brand Desc y Daily", async () => {

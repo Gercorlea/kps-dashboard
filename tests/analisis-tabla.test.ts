@@ -16,6 +16,7 @@ import {
 import {
   columnasHistorico,
   datasetDesdeHistorico,
+  opcionesDeFiltro,
   plantillaPorId,
   WALMART_MENSUAL,
 } from "@/lib/retail/analisis/plantillas";
@@ -189,19 +190,40 @@ describe("columnasHistorico", () => {
   });
 
   it("marca como identificadores los códigos y no las métricas", () => {
-    const porNombre = new Map(columnas.map((c) => [c.nombre, c]));
-    expect(porNombre.get("Item Nbr")?.esIdentificador).toBe(true);
-    expect(porNombre.get("UPC")?.esIdentificador).toBe(true);
-    expect(porNombre.get("POS Sales")?.esIdentificador).toBe(false);
-    expect(porNombre.get("POS Sales")?.tipo).toBe("numero");
-    expect(porNombre.get("Daily")?.tipo).toBe("fecha");
+    // Por campo: el nombre visible lo fija la etiqueta de la plantilla.
+    const porCampo = new Map(columnas.map((c) => [c.campo, c]));
+    expect(porCampo.get("itemNbr")?.esIdentificador).toBe(true);
+    expect(porCampo.get("upc")?.esIdentificador).toBe(true);
+    expect(porCampo.get("posSales")?.esIdentificador).toBe(false);
+    expect(porCampo.get("posSales")?.tipo).toBe("numero");
+    expect(porCampo.get("date")?.tipo).toBe("fecha");
   });
 
   it("expone las mismas columnas buscables que la tabla del archivo", () => {
     const nombres = columnasBuscables(columnas).map((c) => c.nombre);
-    expect(nombres).toContain("Prime Item Desc");
+    expect(nombres).toContain("Nombre del producto");
     expect(nombres).toContain("UPC");
-    expect(nombres).not.toContain("POS Sales");
+    expect(nombres).not.toContain("Ventas netas");
+  });
+
+  it("lleva las etiquetas de la plantilla, no los encabezados en inglés", () => {
+    const porCampo = new Map(columnas.map((c) => [c.campo, c]));
+    expect(porCampo.get("brand")?.nombre).toBe("Marca");
+    expect(porCampo.get("posQty")?.nombre).toBe("Unidades");
+    expect(porCampo.get("posSales")?.nombre).toBe("Ventas netas");
+  });
+
+  it("ofrece en cada filtro sólo lo que declara la plantilla", () => {
+    expect(opcionesDeFiltro(columnas, "dimension").map((c) => c.nombre)).toEqual([
+      "Marca",
+      "Código del producto",
+      "Nombre del producto",
+      "UPC",
+    ]);
+    expect(opcionesDeFiltro(columnas, "metrica").map((c) => c.nombre)).toEqual([
+      "Unidades",
+      "Ventas netas",
+    ]);
   });
 });
 
@@ -266,24 +288,27 @@ describe("datasetDesdeHistorico", () => {
 
   it("elige los mismos filtros por omisión que un archivo con plantilla", () => {
     const { columnas, idxDimension, idxMetrica, idxFecha } = armar();
-    expect(columnas[idxDimension].nombre).toBe("Brand Desc");
-    expect(columnas[idxMetrica].nombre).toBe("POS Sales");
-    expect(columnas[idxFecha].nombre).toBe("Daily");
+    expect(columnas[idxDimension].campo).toBe("brand");
+    expect(columnas[idxMetrica].campo).toBe("posSales");
+    expect(columnas[idxFecha].campo).toBe("date");
   });
 
-  it("ofrece las mismas dimensiones y métricas que la tabla del archivo", () => {
+  it("sigue sumando todas las métricas aunque el filtro ofrezca dos", () => {
+    // La ruta de resumen usa `columnasMetrica` para los acumuladores y no el
+    // catálogo de filtros: la tabla de productos de la ficha del retailer pinta
+    // una columna por cada una de estas.
     const { columnas } = armar();
-    expect(columnasMetrica(columnas).map((c) => c.nombre)).toEqual([
-      "POS Qty",
-      "POS Sales",
-      "Avg Price",
-      "Avg Sales $ per Store",
-      "Item Qty Sold",
-      "# of Basket Occurences",
+    expect(columnasMetrica(columnas).map((c) => c.campo)).toEqual([
+      "posQty",
+      "posSales",
+      "avgPrice",
+      "avgSalesPerStore",
+      "itemQtySold",
+      "basketOccurrences",
     ]);
     // Los códigos no son métricas: sumar UPCs no significa nada.
-    expect(columnasMetrica(columnas).map((c) => c.nombre)).not.toContain("Item Nbr");
-    expect(columnasDimension(columnas).map((c) => c.nombre)).toContain("Brand Desc");
+    expect(columnasMetrica(columnas).map((c) => c.campo)).not.toContain("itemNbr");
+    expect(columnasDimension(columnas).map((c) => c.campo)).toContain("brand");
   });
 
   it("las celdas se formatean igual que las de un Excel", () => {
