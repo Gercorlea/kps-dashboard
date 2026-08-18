@@ -77,7 +77,7 @@ export default async function RetailPage() {
             </Link>
           }
         >
-          <p className="cr-small mb-2">
+          <p className="cr-viz-sub">
             Unidades por mes · últimos {MESES_DASHBOARD} meses
           </p>
           <VentasRetailersChart serie={summary.serie} retailers={summary.retailers} />

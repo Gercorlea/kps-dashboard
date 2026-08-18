@@ -73,6 +73,24 @@ export function formatearMonedaCompacta(n: number): string {
   return conSimbolo(formatearCompacto(n));
 }
 
+/**
+ * Marca de eje. Igual que `formatearCompacto` pero abrevia desde el millar y no
+ * desde la decena de millar: en un eje las marcas se leen COMO COLUMNA, y
+ * "6,000 · 12 k · 18 k" salta a la vista como un error de formato. El umbral
+ * más alto de `formatearCompacto` sigue siendo el correcto para una etiqueta
+ * suelta al final de una barra, donde no hay con qué comparar.
+ */
+export function formatearEje(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return Math.abs(n) >= 1_000 ? nfCompacto.format(n) : formatearNumero(n);
+}
+
+/** La misma marca de eje con "$" delante. */
+export function formatearEjeMoneda(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return conSimbolo(formatearEje(n));
+}
+
 // Mes en UTC y no en local: se formatea una fecha sintética armada con
 // Date.UTC, igual que en fmt.ts, para que enero no se muestre como diciembre.
 const dfMesCorto = new Intl.DateTimeFormat(LOCALE, { month: "short", timeZone: "UTC" });
