@@ -161,6 +161,112 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
   letter-spacing: .1em; color: #99a0ab; }
 .cr-kpi__value { font-size: 30px; font-weight: 800; letter-spacing: -.025em; color: #15171c; }
 
+/* ==================== Card de retailer (portada de /retail) ====================
+   Una card por retailer en lugar de una fila de tabla: la fila daba ocho
+   columnas del mismo peso y ninguna identidad —había que leerla entera para
+   saber de quién era—. La identidad entra por `--cr-rcard-color`, que estampa
+   el componente con el color de la cuenta; el CSS no sabe qué retailer es. */
+
+.cr-rcard {
+  position: relative; display: flex; flex-direction: column; gap: 14px;
+  padding: 16px; background: var(--cr-surface);
+  border: 1px solid var(--cr-line); border-radius: var(--cr-r-sm);
+  box-shadow: var(--cr-shadow-1); overflow: hidden;
+  transition: background .12s, border-color .12s;
+}
+/* Cinta de identidad: el mismo recurso de .cr-kpi, 2px arriba y nada más. */
+.cr-rcard::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--cr-rcard-color, var(--cr-ink));
+}
+.cr-rcard:hover { background: var(--cr-surface-2); border-color: var(--cr-line-2); }
+.cr-rcard:focus-within { border-color: var(--cr-line-2); }
+/* Sin reportes: la cinta baja a línea para que la card no compita con las que
+   sí tienen datos. */
+.cr-rcard--vacio::before { background: var(--cr-line-2); }
+
+/* La card entera es el enlace, igual que .cr-fila-link en las tablas: el
+   ::after del nombre se estira sobre la card. */
+.cr-rcard__link { text-decoration: none; }
+.cr-rcard__link::after { content: ""; position: absolute; inset: 0; }
+.cr-rcard:hover .cr-rcard__link { text-decoration: underline; text-underline-offset: 2px; }
+
+.cr-rcard__head { display: flex; align-items: center; gap: 8px; }
+.cr-rcard__nombre {
+  font-size: 14px; font-weight: 600; color: var(--cr-ink);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-rcard__ir {
+  margin-left: auto; flex-shrink: 0; color: var(--cr-ink-3);
+  transition: color .12s, transform .12s;
+}
+.cr-rcard:hover .cr-rcard__ir { color: var(--cr-ink); transform: translateX(2px); }
+
+/* Renglón de encabezado de un bloque: label a la izquierda, dato suelto a la
+   derecha (la participación, la variación del mes). */
+.cr-rcard__cifra {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; min-height: 18px;
+}
+.cr-rcard__label {
+  font-family: var(--cr-font-mono); font-size: 9px; font-weight: 500;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--cr-ink-3);
+}
+.cr-rcard__part {
+  font-family: var(--cr-font-mono); font-size: 11px;
+  font-variant-numeric: tabular-nums; color: var(--cr-ink-2);
+}
+.cr-rcard__valor {
+  font-family: var(--cr-font-mono); font-size: 21px; font-weight: 600;
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--cr-ink);
+  margin: 2px 0 8px;
+}
+
+/* Participación sobre el importe total. Va en el color del retailer y no en
+   tinta: es la misma cuenta de la que habla la cinta de arriba. */
+.cr-rcard__barra {
+  height: 4px; background: var(--cr-surface-3);
+  border-radius: var(--cr-r-xs); overflow: hidden;
+}
+.cr-rcard__barra span {
+  display: block; height: 100%;
+  background: var(--cr-rcard-color, var(--cr-ink));
+}
+
+/* Sparkline de doce meses. */
+.cr-rcard__spark { position: relative; margin-top: 4px; }
+.cr-rcard__spark svg { display: block; width: 100%; height: 40px; }
+/* Marca del último mes con dato. Cuadrada y colocada en %, no un <circle>: el
+   viewBox se estira a lo ancho y un círculo saldría ovalado. */
+.cr-rcard__punta {
+  position: absolute; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+  border-radius: var(--cr-r-xs);
+}
+
+/* Las tres cifras secundarias, en la misma rejilla en todas las cards. */
+.cr-rcard__cifras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cr-rcard__cifras dt {
+  font-family: var(--cr-font-mono); font-size: 9px; font-weight: 500;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--cr-ink-3);
+}
+.cr-rcard__cifras dd {
+  margin-top: 2px; font-family: var(--cr-font-mono); font-size: 13px;
+  font-variant-numeric: tabular-nums; color: var(--cr-ink);
+}
+
+.cr-rcard__pie {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: auto; padding-top: 12px; border-top: 1px solid var(--cr-line-soft);
+  font-family: var(--cr-font-mono); font-size: 11px; color: var(--cr-ink-3);
+}
+
+/* Retailer sin reportes: el hueco de la cifra y el sparkline se rellena con el
+   motivo, para que la rejilla no se descuadre al mezclar cards con y sin datos. */
+.cr-rcard__vacio {
+  flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  padding: 16px 0; font-size: 12px; color: var(--cr-ink-3);
+}
+
 /* ============================ Badges ============================ */
 
 .cr-badge { display: inline-flex; font-family: var(--cr-font-mono);

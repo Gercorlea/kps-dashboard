@@ -3,15 +3,15 @@ import { redirect } from "next/navigation";
 import { AccesoDenegado } from "@/components/dashboard/AccesoDenegado";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { VentasRetailersChart } from "@/components/dashboard/VentasRetailersChart";
-import { Badge, Kpi, Meter, Panel } from "@/components/ui/basicos";
-import { fmtFecha, fmtMes, fmtNum, fmtPct } from "@/components/lib/fmt";
+import { RetailerCards } from "@/components/retail/RetailerCards";
+import { Kpi, Panel } from "@/components/ui/basicos";
+import { fmtMes, fmtNum, fmtPct } from "@/components/lib/fmt";
 import { getSessionUser } from "@/lib/auth/guards";
 import { canAccess } from "@/lib/rbac";
-import { colorRetailer } from "@/lib/retail/retailers";
 import { detalleRetailers, MESES_DASHBOARD, resumenDashboard } from "@/lib/retail/stats";
 
 // Portada del módulo: los KPIs y la gráfica de ventas —que antes estaban en
-// /dashboard— y un retailer por fila. Antes era la bandeja de archivos
+// /dashboard— y una card por retailer. Antes era la bandeja de archivos
 // subidos, pero ese flujo se retiró —sus colecciones llevaban tiempo vacías— y
 // la unidad de trabajo del módulo pasó a ser el retailer.
 //
@@ -25,6 +25,7 @@ export default async function RetailPage() {
   // Las dos consultas son independientes: van en paralelo para no encadenar dos
   // viajes a Mongo, que es lo lento de la ruta.
   const [retailers, summary] = await Promise.all([detalleRetailers(), resumenDashboard()]);
+  const conReportes = retailers.filter((r) => r.reportes > 0).length;
 
   return (
     <>
@@ -83,70 +84,15 @@ export default async function RetailPage() {
           <VentasRetailersChart serie={summary.serie} retailers={summary.retailers} />
         </Panel>
 
-        <Panel sinPadding>
-          <div className="cr-table-scroll">
-            <table className="cr-table">
-              <thead>
-                <tr>
-                  <th>Retailer</th>
-                  <th>Periodo</th>
-                  <th className="num">Importe</th>
-                  <th className="num">Unidades</th>
-                  <th className="num">Artículos</th>
-                  <th className="num">Reportes</th>
-                  <th>Participación</th>
-                  <th>Último reporte</th>
-                </tr>
-              </thead>
-              <tbody>
-                {retailers.map((r) => {
-                  const conDatos = r.reportes > 0;
-                  return (
-                    <tr key={r.id} className="cr-fila-link">
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <span
-                            aria-hidden="true"
-                            className="size-2.5 shrink-0"
-                            style={{
-                              background: colorRetailer(r.id),
-                              borderRadius: "var(--cr-r-xs)",
-                            }}
-                          />
-                          {/* El enlace del nombre cubre toda la fila (ver
-                              .cr-fila-link): se puede hacer clic en cualquier
-                              parte sin meter un <a> por celda. */}
-                          <Link href={`/retail/${r.id}`} className="cr-link">
-                            {r.nombre}
-                          </Link>
-                          {conDatos ? null : <Badge>Sin reportes</Badge>}
-                        </div>
-                      </td>
-                      <td className="cr-mono cr-small">
-                        {conDatos ? `${fmtFecha(r.desde)} — ${fmtFecha(r.hasta)}` : "—"}
-                      </td>
-                      <td className="num">{conDatos ? fmtNum(r.importe) : "—"}</td>
-                      <td className="num">{conDatos ? fmtNum(r.unidades) : "—"}</td>
-                      <td className="num">{conDatos ? fmtNum(r.articulos) : "—"}</td>
-                      <td className="num">{fmtNum(r.reportes)}</td>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <div className="w-20 shrink-0">
-                            <Meter value={r.participacion ?? 0} tono="ink" />
-                          </div>
-                          <span className="cr-mono">{fmtPct(r.participacion)}</span>
-                        </div>
-                      </td>
-                      <td className="cr-mono" title={r.ultimoArchivo ?? undefined}>
-                        {fmtFecha(r.ultimoReporte)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <section className="flex flex-col gap-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="cr-h3">Retailers</h3>
+            <span className="cr-small">
+              {conReportes} de {retailers.length} con reportes guardados
+            </span>
           </div>
-        </Panel>
+          <RetailerCards retailers={retailers} serie={summary.serie} />
+        </section>
       </div>
     </>
   );
