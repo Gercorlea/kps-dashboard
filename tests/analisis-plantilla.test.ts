@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { valorMetricaAgregada } from "@/lib/retail/analisis/agregar";
+import { compararAnios, valorMetricaAgregada } from "@/lib/retail/analisis/agregar";
+import type { Acumulador } from "@/lib/retail/analisis/agregar";
 import {
   columnasDimension,
   columnasMetrica,
@@ -400,5 +401,93 @@ describe("filas para el histórico", () => {
     );
     const mapeado = filas.reduce((s, f) => s + (f.posSales as number), 0);
     expect(mapeado).toBeCloseTo(directo, 2);
+  });
+});
+
+describe("comparativa año contra año", () => {
+  /** Serie mensual: { "2025-01": 100, ... } → el mapa que come compararAnios. */
+  const serie = (valores: Record<string, number>): Map<string, Acumulador> =>
+    new Map(Object.entries(valores).map(([k, suma]) => [k, { suma, conteo: 1 }]));
+
+  it("enfrenta el mismo mes de los dos años más recientes", () => {
+    const c = compararAnios(
+      serie({ "2025-01": 9861, "2025-02": 10455, "2026-01": 9757, "2026-02": 9520 }),
+      "suma"
+    )!;
+
+    expect(c.anioActual).toBe(2026);
+    expect(c.anioPrevio).toBe(2025);
+    expect(c.puntos).toEqual([
+      { mes: 1, actual: 9757, previo: 9861 },
+      { mes: 2, actual: 9520, previo: 10455 },
+    ]);
+    expect(c.totalActual).toBe(19277);
+    expect(c.totalPrevio).toBe(20316);
+    expect(c.variacion).toBeCloseTo((19277 - 20316) / 20316, 10);
+  });
+
+  it("sin dos años no hay nada que comparar", () => {
+    expect(compararAnios(serie({ "2026-01": 10, "2026-02": 20 }), "suma")).toBeNull();
+    expect(compararAnios(new Map(), "suma")).toBeNull();
+  });
+
+  it("el mes que sólo tiene un año va en null y no en cero", () => {
+    // El retailer reportó hasta marzo de 2026: marzo no es una venta de cero.
+    const c = compararAnios(
+      serie({ "2025-02": 500, "2025-03": 700, "2026-02": 600 }),
+      "suma"
+    )!;
+
+    expect(c.puntos).toEqual([
+      { mes: 2, actual: 600, previo: 500 },
+      { mes: 3, actual: null, previo: 700 },
+    ]);
+  });
+
+  it("los totales sólo cuentan los meses que tienen los dos años", () => {
+    // 2025 completo contra un 2026 que va en enero: sumar los doce meses del
+    // año pasado contra uno daría un -92% que no es real.
+    const c = compararAnios(
+      serie({
+        "2025-01": 100,
+        "2025-02": 100,
+        "2025-03": 100,
+        "2026-01": 120,
+      }),
+      "suma"
+    )!;
+
+    expect(c.mesesComparables).toBe(1);
+    expect(c.totalActual).toBe(120);
+    expect(c.totalPrevio).toBe(100);
+    expect(c.variacion).toBeCloseTo(0.2, 10);
+    // La gráfica sí dibuja los tres meses; sólo los totales se acotan.
+    expect(c.puntos).toHaveLength(3);
+  });
+
+  it("con promedio, el total del año no es la suma de los promedios", () => {
+    const mapa = new Map<string, Acumulador>([
+      ["2025-01", { suma: 100, conteo: 10 }],
+      ["2025-02", { suma: 300, conteo: 10 }],
+      ["2026-01", { suma: 200, conteo: 10 }],
+      ["2026-02", { suma: 200, conteo: 10 }],
+    ]);
+    const c = compararAnios(mapa, "promedio")!;
+
+    // Por mes, el promedio de cada uno.
+    expect(c.puntos).toEqual([
+      { mes: 1, actual: 20, previo: 10 },
+      { mes: 2, actual: 20, previo: 30 },
+    ]);
+    // Y el del año es 400/20, no 10 + 30.
+    expect(c.totalPrevio).toBe(20);
+    expect(c.totalActual).toBe(20);
+    expect(c.variacion).toBe(0);
+  });
+
+  it("sin base positiva no hay porcentaje", () => {
+    const c = compararAnios(serie({ "2025-01": 0, "2026-01": 500 }), "suma")!;
+    expect(c.totalPrevio).toBe(0);
+    expect(c.variacion).toBeNull();
   });
 });

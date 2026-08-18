@@ -20,10 +20,11 @@ import {
   YAxis,
 } from "recharts";
 import { Panel } from "@/components/ui/basicos";
-import { OTROS } from "@/lib/retail/analisis/agregar";
+import { OTROS, type ComparativaAnual } from "@/lib/retail/analisis/agregar";
 import {
   formatearCompacto,
   formatearEntero,
+  formatearMesCorto,
   formatearMoneda,
   formatearMonedaCompacta,
   formatearNumero,
@@ -68,13 +69,19 @@ interface LeyendaItem {
   clave: string;
   etiqueta: string;
   color: string;
-  porcentaje: string;
+  /** Cifra al lado del nombre; en la de participación, el porcentaje. */
+  nota?: string;
 }
 
 interface Props {
   datosBarra: PuntoAgrupado[];
   datosSerie: PuntoSerie[] | null;
   datosComposicion: PuntoAgrupado[];
+  /**
+   * Comparativa año contra año. Opcional: sólo la ficha del retailer la manda,
+   * y sin dos años de reportes no hay nada que comparar (null).
+   */
+  datosAnual?: ComparativaAnual | null;
   nombreDimension: string | null;
   nombreMetrica: string;
   agregacion: Agregacion;
@@ -99,6 +106,12 @@ const ETIQUETA_AGREGACION: Record<Agregacion, string> = {
   conteo: "Cantidad",
 };
 
+/** Variación con signo explícito: un "+5%" se distingue de un "5%" a secas. */
+function formatearPorcentajeConSigno(fraccion: number): string {
+  const texto = formatearPorcentaje(fraccion);
+  return fraccion > 0 ? `+${texto}` : texto;
+}
+
 function acortar(texto: string, max = 18): string {
   return texto.length > max ? `${texto.slice(0, max - 1)}…` : texto;
 }
@@ -122,7 +135,7 @@ function comoTexto(v: unknown): string {
  * El texto va en tinta, nunca en el color de la serie: el cuadrito ya lleva la
  * identidad.
  */
-function LeyendaComposicion({ puntos }: { puntos: LeyendaItem[] }) {
+function Leyenda({ puntos }: { puntos: LeyendaItem[] }) {
   return (
     <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
       {puntos.map((p) => (
@@ -135,7 +148,7 @@ function LeyendaComposicion({ puntos }: { puntos: LeyendaItem[] }) {
           <span className="cr-small" style={{ color: "var(--cr-ink-2)" }}>
             {p.etiqueta}
           </span>
-          <span className="cr-mono cr-small">{p.porcentaje}</span>
+          {p.nota ? <span className="cr-mono cr-small">{p.nota}</span> : null}
         </li>
       ))}
     </ul>
@@ -146,6 +159,7 @@ function AnalisisChartsBase({
   datosBarra,
   datosSerie,
   datosComposicion,
+  datosAnual = null,
   nombreDimension,
   nombreMetrica,
   agregacion,
@@ -183,7 +197,7 @@ function AnalisisChartsBase({
         ? `${p.clave} (${formatearEntero(p.gruposPlegados)} grupos)`
         : acortar(p.clave, 28),
     color: colorSegmento(p.clave, i),
-    porcentaje: totalComposicion > 0 ? formatearPorcentaje(p.valor / totalComposicion) : "",
+    nota: totalComposicion > 0 ? formatearPorcentaje(p.valor / totalComposicion) : "",
   }));
 
   // "Otros" no es un puesto del top: es lo que quedó fuera.
@@ -286,6 +300,80 @@ function AnalisisChartsBase({
         </Panel>
       ) : null}
 
+      {datosAnual ? (
+        <Panel
+          title={`${nombreMetrica}: ${datosAnual.anioActual} vs ${datosAnual.anioPrevio}`}
+        >
+          <p className="cr-small mb-2">
+            {datosAnual.mesesComparables > 0
+              ? ` ${fmtValor(datosAnual.totalActual)} vs ${fmtValor(
+                  datosAnual.totalPrevio
+                )} sobre los ${datosAnual.mesesComparables} ${
+                  datosAnual.mesesComparables === 1 ? "mes" : "meses"
+                } que tienen los dos años${
+                  datosAnual.variacion === null
+                    ? ""
+                    : ` (${formatearPorcentajeConSigno(datosAnual.variacion)})`
+                }`
+              : " · los dos años no comparten ningún mes, así que no hay total que comparar"}
+          </p>
+          <div style={{ height: 240 }}>
+            <ResponsiveContainer debounce={50}>
+              <BarChart
+                data={datosAnual.puntos}
+                margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
+              >
+                <CartesianGrid stroke={GRID} vertical={false} />
+                <XAxis dataKey="mes" tickFormatter={formatearMesCorto} {...ejes} />
+                <YAxis width={48} tickFormatter={fmtValorCompacto} {...ejes} />
+                <Tooltip
+                  cursor={{ fill: "var(--cr-surface-3)" }}
+                  contentStyle={ESTILO_TOOLTIP}
+                  labelFormatter={(v: unknown) => formatearMesCorto(comoNumero(v))}
+                  formatter={(v: unknown, nombre: unknown) =>
+                    [fmtValor(comoNumero(v)), comoTexto(nombre)] as [string, string]
+                  }
+                />
+                {/* El año previo va primero para que quede a la IZQUIERDA de
+                    cada par: se lee de atrás hacia adelante, como el tiempo.
+                    Un mes en null no dibuja barra —recharts lo salta— y así un
+                    mes que todavía no llega no parece una venta en cero. */}
+                <Bar
+                  dataKey="previo"
+                  name={String(datosAnual.anioPrevio)}
+                  fill={SLOTS[1]}
+                  maxBarSize={26}
+                  radius={[2, 2, 0, 0]}
+                  isAnimationActive={false}
+                />
+                <Bar
+                  dataKey="actual"
+                  name={String(datosAnual.anioActual)}
+                  fill={SLOTS[0]}
+                  maxBarSize={26}
+                  radius={[2, 2, 0, 0]}
+                  isAnimationActive={false}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <Leyenda
+            puntos={[
+              {
+                clave: "previo",
+                etiqueta: String(datosAnual.anioPrevio),
+                color: SLOTS[1],
+              },
+              {
+                clave: "actual",
+                etiqueta: String(datosAnual.anioActual),
+                color: SLOTS[0],
+              },
+            ]}
+          />
+        </Panel>
+      ) : null}
+
       {composicionValida ? (
         <Panel title={`Participación por ${nombreDimension}`}>
           <p className="cr-small mb-2">
@@ -335,7 +423,7 @@ function AnalisisChartsBase({
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <LeyendaComposicion puntos={leyendaComposicion} />
+          <Leyenda puntos={leyendaComposicion} />
         </Panel>
       ) : null}
     </div>

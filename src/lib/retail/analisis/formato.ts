@@ -73,6 +73,20 @@ export function formatearMonedaCompacta(n: number): string {
   return conSimbolo(formatearCompacto(n));
 }
 
+// Mes en UTC y no en local: se formatea una fecha sintética armada con
+// Date.UTC, igual que en fmt.ts, para que enero no se muestre como diciembre.
+const dfMesCorto = new Intl.DateTimeFormat(LOCALE, { month: "short", timeZone: "UTC" });
+
+/**
+ * Número de mes (1-12) → "Ene". Para el eje de la comparativa anual, donde
+ * caben doce etiquetas y el nombre completo no.
+ */
+export function formatearMesCorto(mes: number): string {
+  // es-MX devuelve "ene." con punto; sobra en un eje.
+  const texto = dfMesCorto.format(new Date(Date.UTC(2000, mes - 1, 1))).replace(".", "");
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
 /** Fecha en ISO local, sin corrimiento de zona horaria. */
 export function formatearFecha(d: Date): string {
   return `${d.getFullYear()}-${dosDigitos(d.getMonth() + 1)}-${dosDigitos(d.getDate())}`;

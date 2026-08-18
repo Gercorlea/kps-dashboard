@@ -211,6 +211,100 @@ export function valorMetricaAgregada(
 }
 
 /**
+ * Comparativa año contra año: el mismo mes de los dos años, uno junto a otro.
+ *
+ * `puntos` trae un mes por cada uno que tenga dato en ALGUNO de los dos años,
+ * con null —y no cero— en el año que no lo tenga: el retailer cuyo último
+ * reporte es de abril no vendió cero en mayo, es que mayo todavía no existe, y
+ * una barra en cero diría lo contrario.
+ *
+ * Los totales, en cambio, se calculan SÓLO sobre los meses con dato en los dos
+ * años. Comparar doce meses del año pasado contra los cuatro que van del actual
+ * daría una caída del 70% que no es tal, y es justo el número que alguien
+ * copiaría a un correo.
+ */
+export interface ComparativaAnual {
+  anioActual: number;
+  anioPrevio: number;
+  puntos: { mes: number; actual: number | null; previo: number | null }[];
+  /** Meses con dato en los dos años; es la base de los totales. */
+  mesesComparables: number;
+  totalActual: number;
+  totalPrevio: number;
+  /** Fracción (1 = +100%); null si no hay base contra la cual comparar. */
+  variacion: number | null;
+}
+
+/** Suma dos acumuladores sin tocar ninguno de los dos. */
+function juntar(a: Acumulador, b: Acumulador): Acumulador {
+  return { suma: a.suma + b.suma, conteo: a.conteo + b.conteo };
+}
+
+/**
+ * Serie mensual ("YYYY-MM" → acumulador) → comparativa de los dos años más
+ * recientes que aparezcan. Null si sólo hay uno: no hay nada que comparar.
+ *
+ * Se toman los dos años PRESENTES y no `anio` y `anio - 1` para que un hueco en
+ * medio (2024 y 2026, sin 2025) siga produciendo una comparativa; las etiquetas
+ * llevan el año de verdad, así que no se puede leer mal.
+ */
+export function compararAnios(
+  mapa: Map<string, Acumulador>,
+  agregacion: Agregacion
+): ComparativaAnual | null {
+  const anios = new Set<number>();
+  for (const clave of mapa.keys()) {
+    const anio = Number(clave.slice(0, 4));
+    if (Number.isInteger(anio)) anios.add(anio);
+  }
+  if (anios.size < 2) return null;
+
+  const [anioActual, anioPrevio] = [...anios].sort((a, b) => b - a);
+
+  const puntos: ComparativaAnual["puntos"] = [];
+  let accActual: Acumulador = { suma: 0, conteo: 0 };
+  let accPrevio: Acumulador = { suma: 0, conteo: 0 };
+  let mesesComparables = 0;
+
+  for (let mes = 1; mes <= 12; mes++) {
+    const mm = mes < 10 ? `0${mes}` : String(mes);
+    const a = mapa.get(`${anioActual}-${mm}`);
+    const p = mapa.get(`${anioPrevio}-${mm}`);
+    if (!a && !p) continue;
+
+    puntos.push({
+      mes,
+      actual: a ? resolver(a, agregacion) : null,
+      previo: p ? resolver(p, agregacion) : null,
+    });
+
+    // Sólo los meses que están en los dos años entran a los totales.
+    if (a && p) {
+      accActual = juntar(accActual, a);
+      accPrevio = juntar(accPrevio, p);
+      mesesComparables++;
+    }
+  }
+
+  // Se resuelve el acumulador junto y no se suman los valores mes a mes: con
+  // agregación "promedio" la suma de doce promedios no es el promedio del año.
+  const totalActual = resolver(accActual, agregacion);
+  const totalPrevio = resolver(accPrevio, agregacion);
+
+  return {
+    anioActual,
+    anioPrevio,
+    puntos,
+    mesesComparables,
+    totalActual,
+    totalPrevio,
+    // Mismo criterio que el resumen del dashboard: sin base positiva no hay
+    // porcentaje, en vez de un ∞ o un signo al revés con una base negativa.
+    variacion: totalPrevio > 0 ? (totalActual - totalPrevio) / totalPrevio : null,
+  };
+}
+
+/**
  * Reagrupa una serie a un bucket más grueso recortando la clave.
  *
  * Las claves son "YYYY-MM-DD" / "YYYY-MM" / "YYYY", así que mes → año es

@@ -22,6 +22,7 @@ import { ReporteDetalle } from "@/components/retail/ReporteDetalle";
 import { Badge, EstadoVacio, Meter, Panel } from "@/components/ui/basicos";
 import {
   acumuladoresDeGrupos,
+  compararAnios,
   plegarTopN,
   reagruparSerie,
   rellenarSerie,
@@ -227,6 +228,19 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
       granEfectiva === "anio" ? "anio" : "mes"
     );
   }, [bundle, campoMetrica, agregacionEfectiva, granEfectiva]);
+
+  // Comparativa año contra año. Siempre por MES, sin importar el selector de
+  // granularidad: comparar dos años bucket a bucket con granularidad de año
+  // dejaría una barra por año, que es la misma cifra que ya dice el subtítulo.
+  const datosAnual = useMemo(() => {
+    if (!bundle?.serie) return null;
+    const mensual = acumuladoresDeGrupos(
+      bundle.serie.grupos,
+      bundle.metricas ?? [],
+      campoMetrica
+    );
+    return compararAnios(mensual, agregacionEfectiva);
+  }, [bundle, campoMetrica, agregacionEfectiva]);
 
   const kpis = useMemo(() => {
     if (!bundle?.totales) return null;
@@ -564,6 +578,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   datosBarra={datosBarra}
                   datosSerie={datosSerie}
                   datosComposicion={datosComposicion}
+                  datosAnual={datosAnual}
                   nombreDimension={nombreDe(campoDimension)}
                   nombreMetrica={nombreMetrica}
                   agregacion={agregacionEfectiva}
@@ -578,6 +593,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                 datosBarra={datosBarra}
                 datosSerie={datosSerie}
                 datosComposicion={datosComposicion}
+                datosAnual={datosAnual}
                 nombreDimension={nombreDe(campoDimension)}
                 nombreMetrica={nombreMetrica}
                 agregacion={agregacionEfectiva}
