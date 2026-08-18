@@ -165,6 +165,10 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
 
   const agregacionEfectiva: Agregacion = campoMetrica ? agregacion : "conteo";
   const nombreMetrica = nombreDe(campoMetrica) ?? "Cantidad de filas";
+  // Contar filas nunca es dinero, así que sin métrica elegida esto es false
+  // solo: `columnas.find` no encuentra el campo null.
+  const metricaMoneda =
+    columnas.find((c) => c.campo === campoMetrica)?.esMoneda ?? false;
   const granEfectiva: Granularidad = granManual ?? bundle?.granularidad ?? "mes";
 
   // Acumuladores de la dimensión y la métrica elegidas. Todo lo de abajo sale
@@ -230,6 +234,9 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
           indice: i + 1,
           nombre: col?.nombre ?? campo,
           tipo: "numero" as const,
+          // Importes con "$" en su columna: aquí conviven "Unidades" y "Ventas
+          // netas", y sin el símbolo las dos se leen igual.
+          esMoneda: col?.esMoneda ?? false,
           noVacias: 0,
           cardinalidad: 0,
           esIdentificador: false,
@@ -432,6 +439,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   kpis={kpis}
                   nombreMetrica={nombreMetrica}
                   nombreDimension={nombreDe(campoDimension)}
+                  metricaMoneda={metricaMoneda}
                 />
                 <AnalisisCharts
                   datosBarra={datosBarra}
@@ -441,6 +449,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   nombreMetrica={nombreMetrica}
                   agregacion={agregacionEfectiva}
                   granularidad={granEfectiva}
+                  metricaMoneda={metricaMoneda}
                 />
               </>
             ) : null}
@@ -454,6 +463,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                 nombreMetrica={nombreMetrica}
                 agregacion={agregacionEfectiva}
                 granularidad={granEfectiva}
+                metricaMoneda={metricaMoneda}
               />
             ) : null}
 

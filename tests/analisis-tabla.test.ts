@@ -322,8 +322,12 @@ describe("datasetDesdeHistorico", () => {
     // El UPC conserva el cero a la izquierda y el folio no lleva separadores.
     expect(texto("upc")).toBe("0750229353070");
     expect(texto("itemNbr")).toBe("101252325");
-    // Las métricas sí llevan formato es-MX.
-    expect(texto("posSales")).toBe("1,234.50");
+    // Las métricas sí llevan formato es-MX, y las que la plantilla declara como
+    // importe salen con "$": en la tabla de productos conviven con las de
+    // unidades y sin el símbolo se leerían igual.
+    expect(texto("posSales")).toBe("$1,234.50");
+    // Una métrica que NO es dinero se queda sin símbolo.
+    expect(texto("posQty")).toBe("3");
   });
 
   it("las fechas y los números quedan legibles para las gráficas", () => {

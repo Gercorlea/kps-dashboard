@@ -27,6 +27,12 @@ export interface MetaColumna {
   esConstante: boolean;
   magnitud: number; // suma de |v| sobre la muestra; 0 si no es numérica
   formatoNumerico: FormatoNumerico;
+  /**
+   * La columna es un importe y se muestra con "$". Opcional porque la
+   * inferencia no lo adivina: un número no dice si son pesos o piezas, así que
+   * sólo lo declara la plantilla (ver `moneda` en plantillas.ts).
+   */
+  esMoneda?: boolean;
   // Para columnas de fecha escritas como texto: orden de los componentes.
   ordenFecha: "dia-mes" | "mes-dia" | null;
 }

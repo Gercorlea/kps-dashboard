@@ -57,6 +57,13 @@ export interface ColumnaPlantilla {
    * se traten todos igual.
    */
   tipoDato: "date" | "number" | "string";
+  /**
+   * La columna es un importe en dinero. Se declara aquí y no se infiere porque
+   * el dato no lo dice: "POS Qty" y "POS Sales" son las dos números y sólo la
+   * segunda son pesos. Lo lee el formateo de celdas y el de las gráficas para
+   * anteponer el "$".
+   */
+  moneda?: boolean;
   /** Por qué se ignora; sólo para las de rol "ignorada". */
   motivo?: string;
 }
@@ -146,9 +153,16 @@ export const WALMART_MENSUAL: Plantilla = {
       rol: "metrica",
       filtro: "metrica",
       tipoDato: "number",
+      moneda: true,
     },
-    { header: "Avg Price", campo: "avgPrice", rol: "metrica", tipoDato: "number" },
-    { header: "Avg Sales $ per Store", campo: "avgSalesPerStore", rol: "metrica", tipoDato: "number" },
+    { header: "Avg Price", campo: "avgPrice", rol: "metrica", tipoDato: "number", moneda: true },
+    {
+      header: "Avg Sales $ per Store",
+      campo: "avgSalesPerStore",
+      rol: "metrica",
+      tipoDato: "number",
+      moneda: true,
+    },
     { header: "Item Qty Sold", campo: "itemQtySold", rol: "metrica", tipoDato: "number" },
     { header: "# of Basket Occurences", campo: "basketOccurrences", rol: "metrica", tipoDato: "number" },
     {
@@ -274,6 +288,7 @@ export function aplicarPlantilla(
       // una columna ignorada queda fuera de todos los selectores.
       esIdentificador: def.rol === "codigo" || col.esIdentificador,
       esConstante: def.rol === "ignorada" ? true : col.esConstante,
+      esMoneda: def.moneda ?? false,
     };
   });
 }
@@ -364,6 +379,7 @@ export function columnasHistorico(plantilla: Plantilla): ColumnaResuelta[] {
       cardinalidad: 0,
       esIdentificador: c.rol === "codigo",
       esConstante: false,
+      esMoneda: c.moneda ?? false,
       magnitud: 0,
       // Mongo devuelve números como números y fechas ya en ISO, así que no hay
       // separador decimal ni orden dd/mm que resolver.

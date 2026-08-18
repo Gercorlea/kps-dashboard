@@ -46,6 +46,33 @@ export function formatearCompacto(n: number): string {
   return Math.abs(n) >= 10_000 ? nfCompacto.format(n) : formatearNumero(n);
 }
 
+/**
+ * Importes: el mismo número con "$" delante.
+ *
+ * Se antepone el símbolo en vez de usar `style: "currency"` de Intl para que un
+ * importe se lea EXACTAMENTE igual que el resto de los números de la app —los
+ * enteros sin ".00", los decimales con dos— y sólo se distinga por el signo. Va
+ * pegado al número, como se escribe en México: "$1,234.50".
+ *
+ * El negativo lleva el signo delante del símbolo ("-$120"), que es como lo
+ * escribe es-MX y evita el "$-120" que saldría de concatenar sin más.
+ */
+function conSimbolo(texto: string): string {
+  return texto.startsWith("-") ? `-$${texto.slice(1)}` : `$${texto}`;
+}
+
+/** Importe con la fidelidad de `formatearNumero`: tablas y tooltips. */
+export function formatearMoneda(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return conSimbolo(formatearNumero(n));
+}
+
+/** Importe compacto para ejes y etiquetas de barra: 1234567 → "$1.2 M". */
+export function formatearMonedaCompacta(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return conSimbolo(formatearCompacto(n));
+}
+
 /** Fecha en ISO local, sin corrimiento de zona horaria. */
 export function formatearFecha(d: Date): string {
   return `${d.getFullYear()}-${dosDigitos(d.getMonth() + 1)}-${dosDigitos(d.getDate())}`;
@@ -102,5 +129,8 @@ export function formatearCeldaNormalizada(v: CeldaCruda, col: MetaColumna): stri
   // un "Item Nbr" no lleva separadores de miles.
   if (col.esIdentificador) return formatearCelda(v, true);
 
-  return formatearCelda(v);
+  // El "$" sólo cuando la celda acabó siendo un número: un importe que llegó
+  // como texto ilegible se muestra tal cual, sin fingir que es dinero.
+  const texto = formatearCelda(v);
+  return col.esMoneda && typeof v === "number" ? conSimbolo(texto) : texto;
 }

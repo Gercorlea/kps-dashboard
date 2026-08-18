@@ -24,6 +24,8 @@ import { OTROS } from "@/lib/retail/analisis/agregar";
 import {
   formatearCompacto,
   formatearEntero,
+  formatearMoneda,
+  formatearMonedaCompacta,
   formatearNumero,
   formatearPorcentaje,
 } from "@/lib/retail/analisis/formato";
@@ -77,6 +79,12 @@ interface Props {
   nombreMetrica: string;
   agregacion: Agregacion;
   granularidad: Granularidad;
+  /**
+   * La métrica elegida es un importe: ejes, etiquetas y tooltips llevan "$".
+   * Lo decide el llamador a partir de la plantilla —no se adivina del número—
+   * y por omisión es false, que es como se comportaban las gráficas antes.
+   */
+  metricaMoneda?: boolean;
 }
 
 const ETIQUETA_PERIODO: Record<Granularidad, string> = {
@@ -142,8 +150,15 @@ function AnalisisChartsBase({
   nombreMetrica,
   agregacion,
   granularidad,
+  metricaMoneda = false,
 }: Props) {
   const hayDimension = nombreDimension !== null && datosBarra.length > 0;
+
+  // Los dos formateadores de la métrica en un solo lugar: los usan el eje, la
+  // etiqueta de barra y los tres tooltips, y así no queda una gráfica con "$"
+  // y otra sin él.
+  const fmtValor = metricaMoneda ? formatearMoneda : formatearNumero;
+  const fmtValorCompacto = metricaMoneda ? formatearMonedaCompacta : formatearCompacto;
 
   // Participación sólo tiene sentido con magnitudes aditivas y positivas: con
   // valores negativos un 100% apilado miente. En ese caso no se dibuja.
@@ -201,7 +216,7 @@ function AnalisisChartsBase({
               margin={{ top: 4, right: 52, bottom: 8, left: 4 }}
             >
               <CartesianGrid stroke={GRID} horizontal={false} />
-              <XAxis type="number" tickFormatter={formatearCompacto} {...ejes} />
+              <XAxis type="number" tickFormatter={fmtValorCompacto} {...ejes} />
               <YAxis
                 type="category"
                 dataKey="clave"
@@ -213,7 +228,7 @@ function AnalisisChartsBase({
                 cursor={{ fill: "var(--cr-surface-3)" }}
                 contentStyle={ESTILO_TOOLTIP}
                 formatter={(v: unknown) =>
-                  [formatearNumero(comoNumero(v)), nombreMetrica] as [string, string]
+                  [fmtValor(comoNumero(v)), nombreMetrica] as [string, string]
                 }
               />
               {/* Una sola serie ⇒ un solo color. Un degradado por valor
@@ -229,7 +244,7 @@ function AnalisisChartsBase({
                 <LabelList
                   dataKey="valor"
                   position="right"
-                  formatter={(v: unknown) => formatearCompacto(comoNumero(v))}
+                  formatter={(v: unknown) => fmtValorCompacto(comoNumero(v))}
                   style={{ fill: LABEL, fontSize: 10, fontFamily: "var(--cr-font-mono)" }}
                 />
               </Bar>
@@ -248,12 +263,12 @@ function AnalisisChartsBase({
               <LineChart data={datosSerie} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
                 <CartesianGrid stroke={GRID} vertical={false} />
                 <XAxis dataKey="clave" minTickGap={24} {...ejes} />
-                <YAxis width={48} tickFormatter={formatearCompacto} {...ejes} />
+                <YAxis width={48} tickFormatter={fmtValorCompacto} {...ejes} />
                 <Tooltip
                   contentStyle={ESTILO_TOOLTIP}
                   labelFormatter={(v: unknown) => comoTexto(v)}
                   formatter={(v: unknown) =>
-                    [formatearNumero(comoNumero(v)), nombreMetrica] as [string, string]
+                    [fmtValor(comoNumero(v)), nombreMetrica] as [string, string]
                   }
                 />
                 <Line
@@ -292,7 +307,7 @@ function AnalisisChartsBase({
                   formatter={(v: unknown, nombre: unknown) => {
                     const n = comoNumero(v);
                     return [
-                      `${formatearNumero(n)} · ${formatearPorcentaje(n / totalComposicion)}`,
+                      `${fmtValor(n)} · ${formatearPorcentaje(n / totalComposicion)}`,
                       acortar(comoTexto(nombre), 28),
                     ] as [string, string];
                   }}
