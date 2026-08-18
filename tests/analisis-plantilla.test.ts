@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { valorMetricaAgregada } from "@/lib/retail/analisis/agregar";
 import {
   columnasDimension,
   columnasMetrica,
@@ -207,15 +208,12 @@ describe("plantillas", () => {
 
     // Identidad del producto: el nombre solo agruparía varios UPC en una fila.
     expect(producto.claves).toEqual(["itemDesc", "upc", "brand"]);
-    // Las métricas de canasta y la que duplica a POS Qty quedan fuera.
-    expect(producto.metricas).toEqual([
-      "posQty",
-      "posSales",
-      "avgPrice",
-      "avgSalesPerStore",
-    ]);
+    // Las de canasta, la que duplica a POS Qty y la lectura por tienda quedan
+    // fuera; se siguen guardando y se ven en /retail/analisis.
+    expect(producto.metricas).toEqual(["posQty", "posSales", "avgPrice"]);
     expect(producto.metricas).not.toContain("itemQtySold");
     expect(producto.metricas).not.toContain("basketOccurrences");
+    expect(producto.metricas).not.toContain("avgSalesPerStore");
 
     // Un campo mal escrito aquí deja la tabla sin columna o agrupa por nada, y
     // el servidor lo descartaría en silencio: se verifica que todos existan.
@@ -226,6 +224,87 @@ describe("plantillas", () => {
     // Y que cada mitad sea de la clase que le toca.
     expect(producto.metricas.every((m) => campoDe(m)?.rol === "metrica")).toBe(true);
     expect(producto.claves.every((c) => campoDe(c)?.tipo === "categoria")).toBe(true);
+  });
+
+  it("las columnas que ya vienen promediadas no se declaran aditivas", async () => {
+    const ds = await plantillaWalmart();
+    const resueltas = aplicarPlantilla(ds.columnas, WALMART_MENSUAL);
+    const agregado = (campo: string) => resueltas.find((c) => c.campo === campo)?.agregado;
+
+    // Unidades e importes se suman; los dos promedios de Walmart, no. Sumarlos
+    // daba un "precio promedio" de 167,618 en vez de 239.
+    expect(agregado("posQty")).toEqual({ tipo: "suma" });
+    expect(agregado("posSales")).toEqual({ tipo: "suma" });
+    expect(agregado("avgPrice")).toEqual({
+      tipo: "razon",
+      numerador: "posSales",
+      divisor: "posQty",
+    });
+    expect(agregado("avgSalesPerStore")).toEqual({ tipo: "promedio" });
+  });
+
+  it("Avg Price es exactamente POS Sales / POS Qty en el archivo real", async () => {
+    // Es lo que justifica declarar la razón: el cociente de los dos totales no
+    // es una aproximación del precio promedio, es el precio promedio.
+    const ds = await plantillaWalmart();
+    const [qty, sales, price] = ["POS Qty", "POS Sales", "Avg Price"].map((n) => col(ds, n));
+
+    let comparadas = 0;
+    for (const fila of ds.filas) {
+      const q = valorNumerico(fila[qty.indice], qty);
+      const v = valorNumerico(fila[sales.indice], sales);
+      const p = valorNumerico(fila[price.indice], price);
+      if (q === null || v === null || p === null || q === 0) continue;
+      expect(Math.abs(v / q - p)).toBeLessThan(1e-6);
+      comparadas++;
+    }
+    // Que la comparación no haya pasado de largo sobre un archivo vacío.
+    expect(comparadas).toBeGreaterThan(1000);
+  });
+
+  it("cada métrica se junta como la declara la plantilla", () => {
+    const metricas = ["posQty", "posSales", "avgPrice", "avgSalesPerStore"];
+    // Un producto con 4 filas: 10 piezas por 2,390 y 2 filas sin venta.
+    const grupo = { suma: [10, 2390, 956, 240], n: [4, 4, 4, 4] };
+
+    expect(valorMetricaAgregada(grupo, metricas, "posQty", { tipo: "suma" })).toBe(10);
+    expect(valorMetricaAgregada(grupo, metricas, "posSales", { tipo: "suma" })).toBe(2390);
+    // El precio sale del cociente de totales, no de sumar la columna (956) ni
+    // de promediarla (239 aquí coincide, pero sólo porque el ejemplo es plano).
+    expect(
+      valorMetricaAgregada(grupo, metricas, "avgPrice", {
+        tipo: "razon",
+        numerador: "posSales",
+        divisor: "posQty",
+      })
+    ).toBe(239);
+    expect(
+      valorMetricaAgregada(grupo, metricas, "avgSalesPerStore", { tipo: "promedio" })
+    ).toBe(60);
+    // Sin la columna que declara, la suma sería la respuesta equivocada.
+    expect(valorMetricaAgregada(grupo, metricas, "posQty", { tipo: "suma" })).not.toBe(956);
+  });
+
+  it("una métrica sin con qué calcularse da null y no cero", () => {
+    const metricas = ["posQty", "posSales", "avgPrice"];
+    const razon = { tipo: "razon" as const, numerador: "posSales", divisor: "posQty" };
+
+    // Un producto sin unidades vendidas no tiene precio promedio: "—" en la
+    // tabla, que es distinto de "vale cero".
+    expect(valorMetricaAgregada({ suma: [0, 0, 0], n: [3, 3, 3] }, metricas, "avgPrice", razon))
+      .toBeNull();
+    // Cero filas con el dato: tampoco hay promedio que sacar.
+    expect(
+      valorMetricaAgregada({ suma: [0, 0, 0], n: [0, 0, 0] }, metricas, "avgPrice", {
+        tipo: "promedio",
+      })
+    ).toBeNull();
+    // Una razón que apunta a una columna ausente no cae de vuelta en la suma.
+    expect(
+      valorMetricaAgregada({ suma: [1, 2], n: [1, 1] }, ["posSales", "avgPrice"], "avgPrice", razon)
+    ).toBeNull();
+    // Por omisión se suma, que es lo correcto para lo aditivo.
+    expect(valorMetricaAgregada({ suma: [7, 9], n: [1, 1] }, ["posQty", "x"], "posQty")).toBe(7);
   });
 
   it("una columna que Walmart agregue sigue llegando a su filtro", async () => {

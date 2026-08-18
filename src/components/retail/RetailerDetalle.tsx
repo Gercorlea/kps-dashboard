@@ -25,6 +25,7 @@ import {
   plegarTopN,
   reagruparSerie,
   rellenarSerie,
+  valorMetricaAgregada,
   type GrupoAcumulado,
   type GrupoProducto,
 } from "@/lib/retail/analisis/agregar";
@@ -50,6 +51,15 @@ const TOP_COMPOSICION = 5;
 const PRODUCTOS_POR_PAGINA = 100;
 
 type Vista = "resumen" | "ventas" | "productos" | "reportes";
+
+/** Sentido del orden de la tabla de productos. */
+type Direccion = "asc" | "desc";
+
+/** Cómo se dice el sentido según el tipo del campo, para la leyenda. */
+function etiquetaSentido(numerico: boolean, direccion: Direccion): string {
+  if (numerico) return direccion === "desc" ? "(mayor a menor)" : "(menor a mayor)";
+  return direccion === "asc" ? "(A → Z)" : "(Z → A)";
+}
 
 const VISTAS: { id: Vista; etiqueta: string }[] = [
   { id: "resumen", etiqueta: "Resumen" },
@@ -107,9 +117,11 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   const [agregacion, setAgregacion] = useState<Agregacion>("suma");
   const [granManual, setGranManual] = useState<Granularidad | null>(null);
   const [paginaProductos, setPaginaProductos] = useState(1);
-  // Campo por el que se ordena la tabla de productos. Vive aparte de la métrica
-  // de las gráficas: esa pestaña dejó de compartir los filtros de arriba.
+  // Campo por el que se ordena la tabla de productos, y en qué sentido. Viven
+  // aparte de la métrica de las gráficas: esa pestaña dejó de compartir los
+  // filtros de arriba. La dirección en null es "la que corresponda al campo".
   const [orden, setOrden] = useState<string | null>(null);
+  const [direccion, setDireccion] = useState<Direccion | null>(null);
   const [busqueda, setBusqueda] = useState("");
   // Reporte abierto dentro de la pestaña de reportes; null = la lista.
   const [reporteAbierto, setReporteAbierto] = useState<string | null>(null);
@@ -282,21 +294,24 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   }, [orden, camposProductos, plantilla, bundle]);
 
   const iOrden = Math.max(0, camposProductos.indexOf(ordenEfectivo ?? ""));
-  // Los números de mayor a menor —lo que se quiere de "ventas netas"— y el
-  // texto de la A a la Z. Es implícito a propósito: un segundo selector de
-  // dirección para responder "¿el producto que menos vendió?" no vale la pena.
   const ordenNumerico = iOrden >= nClavesProducto;
+  // Por omisión, lo que se espera de cada tipo: los números de mayor a menor
+  // —lo que se quiere de "ventas netas"— y el texto de la A a la Z. `direccion`
+  // se limpia al cambiar de campo, así que pasar de Ventas netas a Marca abre
+  // en A→Z y no en Z→A por arrastrar el "descendente" anterior.
+  const direccionEfectiva: Direccion = direccion ?? (ordenNumerico ? "desc" : "asc");
 
   const filasProductos = useMemo<CeldaCruda[][]>(() => {
     const grupos = bundle?.producto?.grupos;
     if (!grupos) return [];
-    // Las métricas que se muestran son un subconjunto de las que suma el
-    // servidor, así que hay que traducir posición de columna → posición en
-    // `suma`. Un -1 (métrica declarada que el servidor no mandó) deja la celda
-    // vacía en vez de indexar fuera del arreglo.
-    const indices = (plantilla?.producto?.metricas ?? []).map((m) =>
-      (bundle?.metricas ?? []).indexOf(m)
-    );
+    // Cada métrica se junta como diga la plantilla y NO siempre sumando: las
+    // dos columnas de promedio ("Precio promedio", "Venta promedio por tienda")
+    // ya vienen promediadas por fila y sumarlas daba cifras absurdas.
+    const metricasBundle = bundle?.metricas ?? [];
+    const agregados = (plantilla?.producto?.metricas ?? []).map((campo) => ({
+      campo,
+      agregado: columnas.find((c) => c.campo === campo)?.agregado,
+    }));
     const texto = busqueda.trim().toLowerCase();
     const filas = grupos
       // Se busca en TODAS las columnas de identidad: con el UPC y la marca a la
@@ -306,17 +321,22 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
         (g) =>
           [
             ...g.valores,
-            ...indices.map((i) => (i < 0 ? null : (g.suma[i] ?? 0))),
+            ...agregados.map((m) =>
+              valorMetricaAgregada(g, metricasBundle, m.campo, m.agregado)
+            ),
           ] as CeldaCruda[]
       );
 
-    filas.sort((a, b) =>
-      ordenNumerico
-        ? Number(b[iOrden] ?? 0) - Number(a[iOrden] ?? 0)
-        : String(a[iOrden] ?? "").localeCompare(String(b[iOrden] ?? ""), "es")
+    const signo = direccionEfectiva === "asc" ? 1 : -1;
+    filas.sort(
+      (a, b) =>
+        signo *
+        (ordenNumerico
+          ? Number(a[iOrden] ?? 0) - Number(b[iOrden] ?? 0)
+          : String(a[iOrden] ?? "").localeCompare(String(b[iOrden] ?? ""), "es"))
     );
     return filas;
-  }, [bundle, plantilla, busqueda, iOrden, ordenNumerico]);
+  }, [bundle, plantilla, columnas, busqueda, iOrden, ordenNumerico, direccionEfectiva]);
 
   const paginasProductos = Math.max(
     1,
@@ -436,6 +456,8 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   valor={ordenEfectivo ?? ""}
                   onCambio={(v) => {
                     setOrden(v);
+                    // El sentido vuelve al que le toca al campo nuevo.
+                    setDireccion(null);
                     // Otro orden es otra página 1: quedarse en la 7 mostraría
                     // un tramo arbitrario de la lista recién reordenada.
                     setPaginaProductos(1);
@@ -446,6 +468,24 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                       {columnasProductos[i]?.nombre ?? campo}
                     </option>
                   ))}
+                </Selector>
+
+                <Selector
+                  etiqueta="Sentido"
+                  valor={direccionEfectiva}
+                  onCambio={(v) => {
+                    setDireccion(v as Direccion);
+                    setPaginaProductos(1);
+                  }}
+                >
+                  {/* Las etiquetas hablan el idioma del campo: "mayor a menor"
+                      de un texto o "A → Z" de un importe no se entienden. */}
+                  <option value={ordenNumerico ? "desc" : "asc"}>
+                    {ordenNumerico ? "Mayor a menor" : "A → Z"}
+                  </option>
+                  <option value={ordenNumerico ? "asc" : "desc"}>
+                    {ordenNumerico ? "Menor a mayor" : "Z → A"}
+                  </option>
                 </Selector>
               </div>
             ) : vista === "reportes" ? null : (
@@ -554,16 +594,11 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                 totalFilas={bundle.producto?.grupos.length ?? 0}
                 totalFiltradas={filasProductos.length}
                 totalColumnas={columnasProductos.length}
-                // La cabecera cuenta artículos por código y esta tabla agrupa
-                // por (nombre, UPC, marca), así que los dos números pueden no
-                // coincidir. Se dice en pantalla en vez de dejar que parezca un
-                // descuadre.
                 detalles={[
-                  "una fila por producto",
-                  `acumulado de ${fmtNum(bundle.archivo.total)} filas`,
-                  `ordenado por ${columnasProductos[iOrden]?.nombre ?? "—"} ${
-                    ordenNumerico ? "(mayor a menor)" : "(A→Z)"
-                  }`,
+                  `ordenado por ${columnasProductos[iOrden]?.nombre ?? "—"} ${etiquetaSentido(
+                    ordenNumerico,
+                    direccionEfectiva
+                  )}`,
                 ]}
                 busqueda={busqueda}
                 busquedaAplicada={busqueda}

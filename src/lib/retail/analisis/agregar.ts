@@ -6,6 +6,7 @@
 import { valorFecha, valorNumerico } from "./inferir-tipos";
 import type {
   Agregacion,
+  AgregadoMetrica,
   FilaCruda,
   Granularidad,
   Kpis,
@@ -167,6 +168,46 @@ export function acumuladoresDeGrupos(
     }
   }
   return mapa;
+}
+
+/**
+ * Valor de UNA métrica en un grupo, respetando cómo declara la plantilla que se
+ * junta esa columna (ver `AgregadoMetrica`).
+ *
+ * `metricas` dice en qué posición de `suma` y `n` viene cada campo, igual que
+ * en `acumuladoresDeGrupos`.
+ *
+ * Devuelve null —y no 0— cuando no hay con qué calcular: sin unidades vendidas
+ * no hay precio promedio, y un 0 se leería como "este producto vale cero" en
+ * vez de "no aplica".
+ */
+export function valorMetricaAgregada(
+  grupo: { suma: number[]; n: number[] },
+  metricas: string[],
+  campo: string,
+  agregado: AgregadoMetrica = { tipo: "suma" }
+): number | null {
+  if (agregado.tipo === "razon") {
+    const a = metricas.indexOf(agregado.numerador);
+    const b = metricas.indexOf(agregado.divisor);
+    // Una razón que apunta a columnas que el servidor no mandó no se rellena
+    // con la suma: sería justo el número equivocado que esto viene a evitar.
+    if (a < 0 || b < 0) return null;
+    const divisor = grupo.suma[b] ?? 0;
+    return divisor === 0 ? null : (grupo.suma[a] ?? 0) / divisor;
+  }
+
+  const i = metricas.indexOf(campo);
+  if (i < 0) return null;
+
+  if (agregado.tipo === "promedio") {
+    // `n` cuenta las filas que traían la columna como número, que es entre
+    // cuántas hay que dividir; `conteo` incluiría las que no la traían.
+    const n = grupo.n[i] ?? 0;
+    return n === 0 ? null : (grupo.suma[i] ?? 0) / n;
+  }
+
+  return grupo.suma[i] ?? 0;
 }
 
 /**

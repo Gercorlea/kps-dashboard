@@ -1014,6 +1014,8 @@ export function AnalisisExcel() {
           />
 
           <AnalisisTable
+            // Volcado crudo del Excel: 14 columnas que sólo entran apretadas.
+            densa
             titulo={esHistorico ? "Último reporte guardado" : "Datos"}
             columnas={columnasTabla}
             filasVisibles={filasVista}

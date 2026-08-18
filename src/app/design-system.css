@@ -184,7 +184,11 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-table tbody tr:hover td { background: #fafaf9; }
 .cr-table .num { font-family: var(--cr-font-mono); font-size: 12px;
   text-align: right; font-variant-numeric: tabular-nums; }
-.cr-table thead th.num { text-align: right; }
+/* `.cr-table .num` (0,2,0) le ganaba a `.cr-table thead th` (0,1,2), así que
+   un encabezado numérico salía a 12px junto a los de texto a 9px. Se restituye
+   aquí, que es más específico (0,2,1): del .num en el encabezado sólo se quiere
+   la alineación a la derecha. */
+.cr-table thead th.num { text-align: right; font-size: 9px; }
 
 /* Columnas sticky (SKU + descripción) — solo desktop */
 @media (min-width: 1024px) {

@@ -16,7 +16,13 @@ import {
   valorFecha,
   valorNumerico,
 } from "./inferir-tipos";
-import type { CeldaCruda, Dataset, FilaCruda, MetaColumna } from "./tipos";
+import type {
+  AgregadoMetrica,
+  CeldaCruda,
+  Dataset,
+  FilaCruda,
+  MetaColumna,
+} from "./tipos";
 
 export type RolColumna =
   | "fecha" // el eje temporal del reporte
@@ -64,6 +70,13 @@ export interface ColumnaPlantilla {
    * anteponer el "$".
    */
   moneda?: boolean;
+  /**
+   * Cómo se junta la columna al agrupar filas. Ausente = se suma, que es lo
+   * correcto para unidades e importes. Se declara aquí por lo mismo que
+   * `moneda`: el dato no dice si un número es aditivo, y sumar una columna que
+   * ya viene promediada da un valor sin significado.
+   */
+  agregado?: AgregadoMetrica;
   /** Por qué se ignora; sólo para las de rol "ignorada". */
   motivo?: string;
 }
@@ -179,6 +192,10 @@ export const WALMART_MENSUAL: Plantilla = {
       rol: "metrica",
       tipoDato: "number",
       moneda: true,
+      // En el archivo real Avg Price es EXACTAMENTE POS Sales / POS Qty fila a
+      // fila (verificado al centésimo de millonésima), así que el precio
+      // promedio de un producto es el cociente de los dos totales.
+      agregado: { tipo: "razon", numerador: "posSales", divisor: "posQty" },
     },
     {
       header: "Avg Sales $ per Store",
@@ -187,6 +204,11 @@ export const WALMART_MENSUAL: Plantilla = {
       rol: "metrica",
       tipoDato: "number",
       moneda: true,
+      // Aquí no hay identidad que invertir: el número de tiendas no viene en el
+      // reporte y varía por día (de 1 a 287 en el archivo real), así que se
+      // promedia sobre las filas. Sale a menos de 2% de la media ponderada por
+      // tiendas, que costaría un acumulador derivado en el pipeline.
+      agregado: { tipo: "promedio" },
     },
     { header: "Item Qty Sold", campo: "itemQtySold", rol: "metrica", tipoDato: "number" },
     { header: "# of Basket Occurences", campo: "basketOccurrences", rol: "metrica", tipoDato: "number" },
@@ -205,12 +227,14 @@ export const WALMART_MENSUAL: Plantilla = {
   // agrupa varios artículos, así que con la descripción sola habría que enseñar
   // UN upc de los varios que caen en la fila, que sería mentira.
   //
-  // De las seis métricas guardadas se muestran cuatro: "Item Qty Sold" duplica
-  // a "POS Qty" y "# of Basket Occurences" es una medida de canasta que no dice
-  // nada leída por artículo.
+  // De las seis métricas guardadas se muestran tres: "Item Qty Sold" duplica a
+  // "POS Qty", "# of Basket Occurences" es una medida de canasta que no dice
+  // nada leída por artículo, y "Avg Sales $ per Store" es una lectura por
+  // tienda que no cabe junto a los totales del producto. Las tres siguen
+  // guardándose y se ven completas en /retail/analisis.
   producto: {
     claves: ["itemDesc", "upc", "brand"],
-    metricas: ["posQty", "posSales", "avgPrice", "avgSalesPerStore"],
+    metricas: ["posQty", "posSales", "avgPrice"],
   },
 };
 
@@ -254,6 +278,8 @@ export interface ColumnaResuelta extends MetaColumna {
   rol: RolColumna;
   campo: string;
   tipoDato: ColumnaPlantilla["tipoDato"];
+  /** Cómo se junta al agrupar; "suma" cuando la plantilla no dice otra cosa. */
+  agregado: AgregadoMetrica;
   /** En qué selector se ofrece; null = en ninguno. */
   filtro: FiltroColumna | null;
 }
@@ -307,7 +333,10 @@ export function aplicarPlantilla(
         : esDimensionable(col)
           ? "dimension"
           : null;
-      return { ...col, rol, campo: col.nombre, tipoDato, filtro };
+      // Una columna que Walmart agregue mañana se suma: es lo que hace la
+      // inferencia con cualquier número, y sin plantilla no hay de dónde saber
+      // que ya viene promediada.
+      return { ...col, rol, campo: col.nombre, tipoDato, filtro, agregado: { tipo: "suma" } };
     }
 
     return {
@@ -325,6 +354,7 @@ export function aplicarPlantilla(
       esIdentificador: def.rol === "codigo" || col.esIdentificador,
       esConstante: def.rol === "ignorada" ? true : col.esConstante,
       esMoneda: def.moneda ?? false,
+      agregado: def.agregado ?? { tipo: "suma" },
     };
   });
 }
@@ -416,6 +446,7 @@ export function columnasHistorico(plantilla: Plantilla): ColumnaResuelta[] {
       esIdentificador: c.rol === "codigo",
       esConstante: false,
       esMoneda: c.moneda ?? false,
+      agregado: c.agregado ?? { tipo: "suma" as const },
       magnitud: 0,
       // Mongo devuelve números como números y fechas ya en ISO, así que no hay
       // separador decimal ni orden dd/mm que resolver.
