@@ -4,7 +4,7 @@ import { handleApiError, ok, parseQuery } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { granularidadPorRango, SIN_VALOR } from "@/lib/retail/analisis/agregar";
-import type { GrupoAcumulado } from "@/lib/retail/analisis/agregar";
+import type { GrupoAcumulado, GrupoProducto } from "@/lib/retail/analisis/agregar";
 import { columnasMetrica } from "@/lib/retail/analisis/inferir-tipos";
 import {
   opcionesDeFiltro,
@@ -94,6 +94,40 @@ function aGrupos(docs: FilaGrupo[], metricas: string[]): GrupoAcumulado[] {
   return [...mapa.values()];
 }
 
+/**
+ * Igual que `aGrupos` pero para la rama de clave COMPUESTA de productos: el
+ * `_id` es un objeto y no un escalar, así que la clave de fusión es la tupla de
+ * valores ya normalizados. Se fusiona por la misma razón que allá: dos filas
+ * cuyo UPC sólo difiere en espacios son el mismo producto.
+ */
+function aProductos(
+  docs: FilaGrupo[],
+  claves: string[],
+  metricas: string[]
+): GrupoProducto[] {
+  const mapa = new Map<string, GrupoProducto>();
+  for (const d of docs) {
+    const id = (d._id ?? {}) as Record<string, unknown>;
+    const valores = claves.map((c) => claveDimension(id[c]));
+    // \u0000 no aparece en un valor de Excel, así que no puede haber dos tuplas
+    // distintas que produzcan la misma clave al unirlas.
+    const clave = valores.join("\u0000");
+    const suma = metricas.map((m) => (d[`s_${m}`] as number) ?? 0);
+    const n = metricas.map((m) => (d[`n_${m}`] as number) ?? 0);
+    const previo = mapa.get(clave);
+    if (previo) {
+      previo.conteo += d.conteo;
+      for (let i = 0; i < metricas.length; i++) {
+        previo.suma[i] += suma[i];
+        previo.n[i] += n[i];
+      }
+    } else {
+      mapa.set(clave, { valores, conteo: d.conteo, suma, n });
+    }
+  }
+  return [...mapa.values()];
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireModule("retail");
@@ -137,6 +171,12 @@ export async function GET(request: NextRequest) {
     // calcular de menos.
     const metricas = columnasMetrica(columnas).map((c) => c.campo);
     const dimensiones = opcionesDeFiltro(columnas, "dimension").map((c) => c.campo);
+    // El grano de la pestaña de productos. Sale de la plantilla y nunca de la
+    // query, igual que las dimensiones: nada que escriba el cliente entra a un
+    // $group. Los campos se filtran contra las columnas declaradas para que una
+    // plantilla mal escrita no agrupe por un campo que no existe.
+    const claveProducto =
+      plantilla.producto?.claves.filter((campo) => columnas.some((c) => c.campo === campo)) ?? [];
     // Con alcance de cuenta se agregan TODOS los reportes del retailer, que es
     // lo que mira su ficha; con alcance de archivo, sólo el que se está viendo
     // en /retail/analisis. El resto del pipeline no distingue.
@@ -174,6 +214,16 @@ export async function GET(request: NextRequest) {
     // sola pasada por la colección y un solo viaje de ida y vuelta.
     const ramas: Record<string, PipelineStage.FacetPipelineStage[]> = {};
     for (const d of dimensiones) ramas[`d_${d}`] = [{ $group: { _id: `$${d}`, ...acc } }];
+    if (claveProducto.length > 0) {
+      ramas.producto = [
+        {
+          $group: {
+            _id: Object.fromEntries(claveProducto.map((c) => [c, `$${c}`])),
+            ...acc,
+          },
+        },
+      ];
+    }
     if (fecha) {
       ramas.serie = [
         {
@@ -238,6 +288,16 @@ export async function GET(request: NextRequest) {
         dimensiones.map((d) => [d, aGrupos(facetado?.[`d_${d}`] ?? [], metricas)])
       ),
       serie: { granularidad: "mes" as Granularidad, grupos: aGrupos(facetado?.serie ?? [], metricas) },
+      // Una fila por producto para la pestaña homónima de la ficha. Va aparte
+      // de `dimensiones` porque su clave es compuesta y porque no llena ningún
+      // selector: no es una dimensión más, es el grano de una tabla.
+      producto:
+        claveProducto.length > 0
+          ? {
+              campos: claveProducto,
+              grupos: aProductos(facetado?.producto ?? [], claveProducto, metricas),
+            }
+          : null,
       totales,
       rangoFechas:
         desde && hasta

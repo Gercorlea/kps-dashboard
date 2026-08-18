@@ -120,6 +120,22 @@ export interface GrupoAcumulado {
 }
 
 /**
+ * Un grupo con clave COMPUESTA: la pestaña de productos de la ficha del
+ * retailer, donde una fila es una combinación de varios campos (nombre, UPC,
+ * marca) y no un solo valor de dimensión.
+ *
+ * `valores` va alineado al arreglo `campos` que acompaña a los grupos en la
+ * respuesta, igual que `suma` y `n` van alineados a `metricas`.
+ */
+export interface GrupoProducto {
+  valores: string[];
+  /** Filas del grupo, con métrica legible o sin ella. */
+  conteo: number;
+  suma: number[];
+  n: number[];
+}
+
+/**
  * Grupos del servidor → el mapa que comen `plegarTopN` y `rellenarSerie`.
  *
  * Es la pieza que hace instantáneo cambiar de métrica en el histórico: el

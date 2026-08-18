@@ -68,12 +68,29 @@ export interface ColumnaPlantilla {
   motivo?: string;
 }
 
+/**
+ * Cómo se arma la pestaña de productos de la ficha del retailer.
+ *
+ * Se declara aquí porque es una decisión de negocio y no algo deducible de los
+ * tipos: `claves` dice qué identifica y describe a un producto —y por tanto
+ * cuál es el GRANO de la tabla, una fila por combinación distinta— y `metricas`
+ * qué columnas de números se muestran, que son menos que las que se guardan.
+ */
+export interface PlantillaProducto {
+  /** Campos que identifican al producto; el primero encabeza la tabla. */
+  claves: string[];
+  /** Métricas que se muestran, en este orden. */
+  metricas: string[];
+}
+
 export interface Plantilla {
   id: string;
   nombre: string;
   /** Cuenta a la que pertenece el reporte, como en el resto de retail. */
   account: string;
   columnas: ColumnaPlantilla[];
+  /** Sin esto la ficha del retailer no arma su pestaña de productos. */
+  producto?: PlantillaProducto;
 }
 
 /**
@@ -155,9 +172,17 @@ export const WALMART_MENSUAL: Plantilla = {
       tipoDato: "number",
       moneda: true,
     },
-    { header: "Avg Price", campo: "avgPrice", rol: "metrica", tipoDato: "number", moneda: true },
+    {
+      header: "Avg Price",
+      etiqueta: "Precio promedio",
+      campo: "avgPrice",
+      rol: "metrica",
+      tipoDato: "number",
+      moneda: true,
+    },
     {
       header: "Avg Sales $ per Store",
+      etiqueta: "Venta promedio por tienda",
       campo: "avgSalesPerStore",
       rol: "metrica",
       tipoDato: "number",
@@ -176,6 +201,17 @@ export const WALMART_MENSUAL: Plantilla = {
     { header: "Item Nbr", campo: "itemNbr", rol: "codigo", tipoDato: "number" },
     { header: "Item Flags", campo: "itemFlags", rol: "ignorada", tipoDato: "string", motivo: "vacía" },
   ],
+  // El grano es (nombre, UPC, marca) y no sólo el nombre: un "Prime Item Desc"
+  // agrupa varios artículos, así que con la descripción sola habría que enseñar
+  // UN upc de los varios que caen en la fila, que sería mentira.
+  //
+  // De las seis métricas guardadas se muestran cuatro: "Item Qty Sold" duplica
+  // a "POS Qty" y "# of Basket Occurences" es una medida de canasta que no dice
+  // nada leída por artículo.
+  producto: {
+    claves: ["itemDesc", "upc", "brand"],
+    metricas: ["posQty", "posSales", "avgPrice", "avgSalesPerStore"],
+  },
 };
 
 export const PLANTILLAS: Plantilla[] = [WALMART_MENSUAL];

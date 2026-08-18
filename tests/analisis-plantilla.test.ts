@@ -177,9 +177,10 @@ describe("plantillas", () => {
     expect(nombre("itemDesc")).toBe("Nombre del producto");
     expect(nombre("posQty")).toBe("Unidades");
     expect(nombre("posSales")).toBe("Ventas netas");
+    expect(nombre("avgPrice")).toBe("Precio promedio");
+    expect(nombre("avgSalesPerStore")).toBe("Venta promedio por tienda");
     // Sin etiqueta declarada se conserva el encabezado del Excel.
     expect(nombre("upc")).toBe("UPC");
-    expect(nombre("avgPrice")).toBe("Avg Price");
   });
 
   it("el catálogo de filtros lo declara la plantilla, no la inferencia", async () => {
@@ -196,6 +197,35 @@ describe("plantillas", () => {
       "posQty",
       "posSales",
     ]);
+  });
+
+  it("el grano de la pestaña de productos apunta a columnas declaradas", async () => {
+    const ds = await plantillaWalmart();
+    const resueltas = aplicarPlantilla(ds.columnas, WALMART_MENSUAL);
+    const producto = WALMART_MENSUAL.producto!;
+    const campoDe = (campo: string) => resueltas.find((c) => c.campo === campo);
+
+    // Identidad del producto: el nombre solo agruparía varios UPC en una fila.
+    expect(producto.claves).toEqual(["itemDesc", "upc", "brand"]);
+    // Las métricas de canasta y la que duplica a POS Qty quedan fuera.
+    expect(producto.metricas).toEqual([
+      "posQty",
+      "posSales",
+      "avgPrice",
+      "avgSalesPerStore",
+    ]);
+    expect(producto.metricas).not.toContain("itemQtySold");
+    expect(producto.metricas).not.toContain("basketOccurrences");
+
+    // Un campo mal escrito aquí deja la tabla sin columna o agrupa por nada, y
+    // el servidor lo descartaría en silencio: se verifica que todos existan.
+    for (const campo of [...producto.claves, ...producto.metricas]) {
+      expect(campoDe(campo), `columna declarada: ${campo}`).toBeDefined();
+      expect(campoDe(campo)?.rol).not.toBe("ignorada");
+    }
+    // Y que cada mitad sea de la clase que le toca.
+    expect(producto.metricas.every((m) => campoDe(m)?.rol === "metrica")).toBe(true);
+    expect(producto.claves.every((c) => campoDe(c)?.tipo === "categoria")).toBe(true);
   });
 
   it("una columna que Walmart agregue sigue llegando a su filtro", async () => {

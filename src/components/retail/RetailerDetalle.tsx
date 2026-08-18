@@ -26,6 +26,7 @@ import {
   reagruparSerie,
   rellenarSerie,
   type GrupoAcumulado,
+  type GrupoProducto,
 } from "@/lib/retail/analisis/agregar";
 import { columnasHistorico, plantillaPorId } from "@/lib/retail/analisis/plantillas";
 import { colorRetailer } from "@/lib/retail/retailers";
@@ -68,6 +69,8 @@ interface Bundle {
   metricas?: string[];
   granularidad?: Granularidad;
   dimensiones?: Record<string, GrupoAcumulado[]>;
+  /** Grano de la pestaña de productos; null si la plantilla no lo declara. */
+  producto?: { campos: string[]; grupos: GrupoProducto[] } | null;
   serie?: SerieAcumulada;
   totales?: GrupoAcumulado;
   rangoFechas?: { desde: string; hasta: string } | null;
@@ -104,6 +107,9 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   const [agregacion, setAgregacion] = useState<Agregacion>("suma");
   const [granManual, setGranManual] = useState<Granularidad | null>(null);
   const [paginaProductos, setPaginaProductos] = useState(1);
+  // Campo por el que se ordena la tabla de productos. Vive aparte de la métrica
+  // de las gráficas: esa pestaña dejó de compartir los filtros de arriba.
+  const [orden, setOrden] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
   // Reporte abierto dentro de la pestaña de reportes; null = la lista.
   const [reporteAbierto, setReporteAbierto] = useState<string | null>(null);
@@ -138,10 +144,15 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
 
   // Columnas de la plantilla del retailer: dan los nombres para mostrar y qué
   // se puede elegir como dimensión o como métrica.
-  const columnas = useMemo(() => {
-    const p = bundle?.archivo ? plantillaPorId(bundle.archivo.template) : null;
-    return p ? columnasHistorico(p) : [];
-  }, [bundle]);
+  const plantilla = useMemo(
+    () => (bundle?.archivo ? plantillaPorId(bundle.archivo.template) : null),
+    [bundle]
+  );
+
+  const columnas = useMemo(
+    () => (plantilla ? columnasHistorico(plantilla) : []),
+    [plantilla]
+  );
 
   const nombreDe = useCallback(
     (campo: string | null) => columnas.find((c) => c.campo === campo)?.nombre ?? null,
@@ -222,44 +233,90 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   }, [bundle, campoMetrica, acum]);
 
   // --- Pestaña de productos ------------------------------------------------
-  // Una fila por artículo con TODAS sus métricas. Sale de los acumuladores de
-  // la dimensión de artículo, no de una consulta nueva.
-  const columnasProductos = useMemo<MetaColumna[]>(() => {
-    const desc = columnas.find((c) => c.campo === "itemDesc");
-    return [
-      { ...(desc ?? columnas[0]), indice: 0, nombre: desc?.nombre ?? "Artículo" },
-      ...(bundle?.metricas ?? []).map((campo, i) => {
+  // Una fila por producto —(nombre, UPC, marca), el grano que declara la
+  // plantilla— con las métricas que esa misma plantilla elige mostrar. Sale de
+  // la rama `producto` del bundle, no de una consulta nueva.
+  //
+  // Las columnas de identidad van primero y las de números después, que es como
+  // se lee un catálogo: qué es el producto y luego cuánto vendió.
+  const camposProductos = useMemo(
+    () => [...(bundle?.producto?.campos ?? []), ...(plantilla?.producto?.metricas ?? [])],
+    [bundle, plantilla]
+  );
+
+  const columnasProductos = useMemo<MetaColumna[]>(
+    () =>
+      camposProductos.map((campo, indice) => {
         const col = columnas.find((c) => c.campo === campo);
         return {
-          indice: i + 1,
+          indice,
           nombre: col?.nombre ?? campo,
-          tipo: "numero" as const,
+          tipo: col?.tipo ?? "categoria",
+          // El UPC es un código: sin separadores de miles y en mono.
+          esIdentificador: col?.esIdentificador ?? false,
           // Importes con "$" en su columna: aquí conviven "Unidades" y "Ventas
           // netas", y sin el símbolo las dos se leen igual.
           esMoneda: col?.esMoneda ?? false,
           noVacias: 0,
           cardinalidad: 0,
-          esIdentificador: false,
           esConstante: false,
           magnitud: 0,
           formatoNumerico: "nativo" as const,
           ordenFecha: null,
         };
       }),
-    ].filter(Boolean) as MetaColumna[];
-  }, [columnas, bundle]);
+    [camposProductos, columnas]
+  );
+
+  /** Columnas de identidad: las que se buscan y las que ordenan alfabéticamente. */
+  const nClavesProducto = bundle?.producto?.campos.length ?? 0;
+
+  // Orden por omisión: la métrica preferida de la plantilla (Ventas netas), que
+  // es por la que ya se ordenaba antes de que existiera el selector.
+  const ordenEfectivo = useMemo(() => {
+    if (orden && camposProductos.includes(orden)) return orden;
+    const metricas = plantilla?.producto?.metricas ?? [];
+    const preferida = bundle?.seleccion?.metrica;
+    if (preferida && metricas.includes(preferida)) return preferida;
+    return metricas[0] ?? camposProductos[0] ?? null;
+  }, [orden, camposProductos, plantilla, bundle]);
+
+  const iOrden = Math.max(0, camposProductos.indexOf(ordenEfectivo ?? ""));
+  // Los números de mayor a menor —lo que se quiere de "ventas netas"— y el
+  // texto de la A a la Z. Es implícito a propósito: un segundo selector de
+  // dirección para responder "¿el producto que menos vendió?" no vale la pena.
+  const ordenNumerico = iOrden >= nClavesProducto;
 
   const filasProductos = useMemo<CeldaCruda[][]>(() => {
-    const grupos = bundle?.dimensiones?.itemDesc;
+    const grupos = bundle?.producto?.grupos;
     if (!grupos) return [];
-    const i = campoMetrica ? (bundle?.metricas ?? []).indexOf(campoMetrica) : -1;
+    // Las métricas que se muestran son un subconjunto de las que suma el
+    // servidor, así que hay que traducir posición de columna → posición en
+    // `suma`. Un -1 (métrica declarada que el servidor no mandó) deja la celda
+    // vacía en vez de indexar fuera del arreglo.
+    const indices = (plantilla?.producto?.metricas ?? []).map((m) =>
+      (bundle?.metricas ?? []).indexOf(m)
+    );
     const texto = busqueda.trim().toLowerCase();
-    return grupos
-      .filter((g) => !texto || g.clave.toLowerCase().includes(texto))
-      .slice()
-      .sort((a, b) => (i < 0 ? b.conteo - a.conteo : (b.suma[i] ?? 0) - (a.suma[i] ?? 0)))
-      .map((g) => [g.clave, ...g.suma] as CeldaCruda[]);
-  }, [bundle, campoMetrica, busqueda]);
+    const filas = grupos
+      // Se busca en TODAS las columnas de identidad: con el UPC y la marca a la
+      // vista, teclear cualquiera de los dos y no encontrar nada sorprendería.
+      .filter((g) => !texto || g.valores.some((v) => v.toLowerCase().includes(texto)))
+      .map(
+        (g) =>
+          [
+            ...g.valores,
+            ...indices.map((i) => (i < 0 ? null : (g.suma[i] ?? 0))),
+          ] as CeldaCruda[]
+      );
+
+    filas.sort((a, b) =>
+      ordenNumerico
+        ? Number(b[iOrden] ?? 0) - Number(a[iOrden] ?? 0)
+        : String(a[iOrden] ?? "").localeCompare(String(b[iOrden] ?? ""), "es")
+    );
+    return filas;
+  }, [bundle, plantilla, busqueda, iOrden, ordenNumerico]);
 
   const paginasProductos = Math.max(
     1,
@@ -366,10 +423,32 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
           </Panel>
         ) : (
           <>
-            {/* Los filtros viven fuera de las pestañas: los mismos mandan sobre
-                Resumen, Ventas y Productos, así que los números concuerdan al
-                cambiar de sección. */}
-            {vista === "reportes" ? null : (
+            {/* Productos tiene su propio filtro: su tabla no depende de la
+                dimensión ni de la métrica —muestra TODAS las columnas del
+                producto a la vez—, así que lo único que queda por elegir ahí es
+                el orden. Los de abajo mandan sobre Resumen y Ventas, que sí
+                miran una métrica a la vez, y por eso los números de las dos
+                concuerdan al cambiar de sección. */}
+            {vista === "productos" ? (
+              <div className="flex flex-wrap items-end gap-3">
+                <Selector
+                  etiqueta="Ordenar por"
+                  valor={ordenEfectivo ?? ""}
+                  onCambio={(v) => {
+                    setOrden(v);
+                    // Otro orden es otra página 1: quedarse en la 7 mostraría
+                    // un tramo arbitrario de la lista recién reordenada.
+                    setPaginaProductos(1);
+                  }}
+                >
+                  {camposProductos.map((campo, i) => (
+                    <option key={campo} value={campo}>
+                      {columnasProductos[i]?.nombre ?? campo}
+                    </option>
+                  ))}
+                </Selector>
+              </div>
+            ) : vista === "reportes" ? null : (
               <div className="flex flex-wrap items-end gap-3">
                 {opcionesDimension.length > 0 ? (
                   <Selector
@@ -472,17 +551,19 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                 titulo="Artículos"
                 columnas={columnasProductos}
                 filasVisibles={productosVisibles}
-                totalFilas={bundle.dimensiones?.itemDesc?.length ?? 0}
+                totalFilas={bundle.producto?.grupos.length ?? 0}
                 totalFiltradas={filasProductos.length}
                 totalColumnas={columnasProductos.length}
                 // La cabecera cuenta artículos por código y esta tabla agrupa
-                // por descripción, así que los dos números pueden no coincidir
-                // (dos códigos con la misma descripción son una sola fila). Se
-                // dice en pantalla en vez de dejar que parezca un descuadre.
+                // por (nombre, UPC, marca), así que los dos números pueden no
+                // coincidir. Se dice en pantalla en vez de dejar que parezca un
+                // descuadre.
                 detalles={[
-                  "agrupado por descripción",
+                  "una fila por producto",
                   `acumulado de ${fmtNum(bundle.archivo.total)} filas`,
-                  `ordenado por ${nombreMetrica}`,
+                  `ordenado por ${columnasProductos[iOrden]?.nombre ?? "—"} ${
+                    ordenNumerico ? "(mayor a menor)" : "(A→Z)"
+                  }`,
                 ]}
                 busqueda={busqueda}
                 busquedaAplicada={busqueda}
@@ -490,7 +571,9 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   setBusqueda(v);
                   setPaginaProductos(1);
                 }}
-                columnasBuscadas={[columnasProductos[0]?.nombre ?? "Artículo"]}
+                columnasBuscadas={columnasProductos
+                  .slice(0, nClavesProducto)
+                  .map((c) => c.nombre)}
                 pagina={paginaActual}
                 paginas={paginasProductos}
                 porPagina={PRODUCTOS_POR_PAGINA}
