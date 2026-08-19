@@ -146,9 +146,9 @@ export function RetailerContenidoSkeleton() {
     <div className="cr-pulse flex flex-col gap-6" aria-busy="true">
       <span className="sr-only">Cargando la ficha del retailer…</span>
 
-      {/* Los selectores de dimensión, métrica y agregación. */}
+      {/* Los selectores de dimensión y métrica. */}
       <div className="flex flex-wrap items-end gap-3">
-        {[132, 148, 116].map((ancho) => (
+        {[132, 148].map((ancho) => (
           <div key={ancho} className="cr-field">
             <Bloque ancho={Math.round(ancho * 0.55)} alto={9} />
             <Bloque ancho={ancho} alto={37} />

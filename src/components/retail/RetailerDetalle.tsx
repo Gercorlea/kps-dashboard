@@ -4,8 +4,8 @@
 // panel por sección.
 //
 // Las cuatro pestañas se sirven del MISMO bundle de acumuladores, así que
-// cambiar de sección —y de métrica, dimensión o granularidad dentro de ella— no
-// vuelve a pedir nada. Es el mismo trato que /retail/analisis: Mongo agrega una
+// cambiar de sección —y de métrica o dimensión dentro de ella— no vuelve a
+// pedir nada. Es el mismo trato que /retail/analisis: Mongo agrega una
 // vez y el navegador pliega, porque el enlace a la base es lento.
 
 import Link from "next/link";
@@ -28,7 +28,6 @@ import {
   acumuladoresDeGrupos,
   compararAnios,
   plegarTopN,
-  reagruparSerie,
   rellenarSerie,
   valorMetricaAgregada,
   type GrupoAcumulado,
@@ -127,8 +126,6 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   // para los selectores, campos de la plantilla para leer los acumuladores.
   const [campoDimension, setCampoDimension] = useState<string | null>(null);
   const [campoMetrica, setCampoMetrica] = useState<string | null>(null);
-  const [agregacion, setAgregacion] = useState<Agregacion>("suma");
-  const [granManual, setGranManual] = useState<Granularidad | null>(null);
   const [paginaProductos, setPaginaProductos] = useState(1);
   // Campo por el que se ordena la tabla de productos, y en qué sentido. Viven
   // aparte de la métrica de las gráficas: esa pestaña dejó de compartir los
@@ -151,7 +148,6 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
       setArchivos(h.archivos);
       setCampoDimension(b.seleccion?.dimension ?? null);
       setCampoMetrica(b.seleccion?.metrica ?? null);
-      setAgregacion(b.seleccion?.metrica ? "suma" : "conteo");
     } catch {
       // Que no cargue no rompe la ficha: la cabecera ya tiene lo suyo del
       // servidor y las pestañas caen a su estado vacío.
@@ -199,13 +195,17 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
     [columnas, bundle]
   );
 
-  const agregacionEfectiva: Agregacion = campoMetrica ? agregacion : "conteo";
+  // Sin selector: las métricas se suman siempre. Sin métrica elegida no hay
+  // nada que sumar y lo único que queda es contar filas.
+  const agregacionEfectiva: Agregacion = campoMetrica ? "suma" : "conteo";
   const nombreMetrica = nombreDe(campoMetrica) ?? "Cantidad de filas";
   // Contar filas nunca es dinero, así que sin métrica elegida esto es false
   // solo: `columnas.find` no encuentra el campo null.
   const metricaMoneda =
     columnas.find((c) => c.campo === campoMetrica)?.esMoneda ?? false;
-  const granEfectiva: Granularidad = granManual ?? bundle?.granularidad ?? "mes";
+  // La serie va siempre por mes: el bundle la trae con ese grano y el año
+  // dejaba un puñado de barras que ya dicen los KPIs.
+  const granEfectiva: Granularidad = "mes";
 
   // Acumuladores de la dimensión y la métrica elegidas. Todo lo de abajo sale
   // de aquí sin tocar la red.
@@ -232,18 +232,12 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
       bundle.metricas ?? [],
       campoMetrica
     );
-    // El bundle trae la serie mensual; el año se obtiene recortando la clave.
-    // El día necesitaría otra petición y aquí no se ofrece.
-    return rellenarSerie(
-      granEfectiva === "anio" ? reagruparSerie(mensual, 4) : mensual,
-      agregacionEfectiva,
-      granEfectiva === "anio" ? "anio" : "mes"
-    );
-  }, [bundle, campoMetrica, agregacionEfectiva, granEfectiva]);
+    // El bundle ya trae la serie mensual; el día necesitaría otra petición y
+    // aquí no se ofrece.
+    return rellenarSerie(mensual, agregacionEfectiva, "mes");
+  }, [bundle, campoMetrica, agregacionEfectiva]);
 
-  // Comparativa año contra año. Siempre por MES, sin importar el selector de
-  // granularidad: comparar dos años bucket a bucket con granularidad de año
-  // dejaría una barra por año, que es la misma cifra que ya dice el subtítulo.
+  // Comparativa año contra año, mes a mes.
   const datosAnual = useMemo(() => {
     if (!bundle?.serie) return null;
     const mensual = acumuladoresDeGrupos(
@@ -533,11 +527,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                 <Selector
                   etiqueta="Métrica"
                   valor={campoMetrica ?? ""}
-                  onCambio={(v) => {
-                    setCampoMetrica(v || null);
-                    // Elegir una métrica saca de "Conteo", que ya no se ofrece.
-                    if (v) setAgregacion((a) => (a === "conteo" ? "suma" : a));
-                  }}
+                  onCambio={(v) => setCampoMetrica(v || null)}
                 >
                   {/* "Cantidad de filas" sólo como rescate: si la plantilla
                       declara métricas, el selector habla de ventas y unidades y
@@ -551,30 +541,6 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                     </option>
                   ))}
                 </Selector>
-
-                {campoMetrica ? (
-                  <Selector
-                    etiqueta="Agregación"
-                    valor={agregacion}
-                    onCambio={(v) => setAgregacion(v as Agregacion)}
-                  >
-                    {/* Sin "Conteo": contaba filas del reporte y no ventas.
-                        Mismo criterio que en /retail/analisis. */}
-                    <option value="suma">Suma</option>
-                    <option value="promedio">Promedio</option>
-                  </Selector>
-                ) : null}
-
-                {vista === "ventas" ? (
-                  <Selector
-                    etiqueta="Granularidad"
-                    valor={granEfectiva}
-                    onCambio={(v) => setGranManual(v as Granularidad)}
-                  >
-                    <option value="mes">Mes</option>
-                    <option value="anio">Año</option>
-                  </Selector>
-                ) : null}
               </div>
             )}
 

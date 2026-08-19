@@ -378,10 +378,61 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
 .cr-viz-leyenda__item--apagado { opacity: .38; }
 .cr-viz-leyenda__nombre { font-size: 12px; color: var(--cr-ink-2); }
 .cr-viz-leyenda__item--activo .cr-viz-leyenda__nombre { color: var(--cr-ink); font-weight: 500; }
+.cr-viz-leyenda__cifra,
 .cr-viz-leyenda__nota {
   font-family: var(--cr-font-mono); font-size: 11px; color: var(--cr-ink-3);
   font-variant-numeric: tabular-nums;
 }
+
+/* Leyenda al costado de la gráfica —la de la dona—: una fila por serie a ancho
+   completo, el nombre recortado con elipsis y las cifras en columna a la
+   derecha. Aquí la cifra principal sube a tinta 2: es la lectura de la tarjeta,
+   no una nota al margen. */
+.cr-viz-leyenda--lista { flex-direction: column; flex-wrap: nowrap; gap: 0; margin-top: 0; }
+.cr-viz-leyenda--lista > li { width: 100%; }
+.cr-viz-leyenda--lista .cr-viz-leyenda__item { display: flex; width: 100%; padding: 5px 8px; }
+.cr-viz-leyenda--lista .cr-viz-leyenda__nombre {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-viz-leyenda--lista .cr-viz-leyenda__cifra {
+  color: var(--cr-ink-2); text-align: right; min-width: 46px;
+}
+.cr-viz-leyenda--lista .cr-viz-leyenda__nota { text-align: right; min-width: 54px; }
+
+/* ─── Dona de participación ───
+   El anillo va en una caja cuadrada de tamaño fijo (recharts necesita medidas
+   para resolver los radios) y la leyenda ocupa el resto. Con `flex-wrap`, en una
+   tarjeta angosta la leyenda baja debajo del anillo en vez de estrujarse. */
+.cr-viz-dona { display: flex; flex-wrap: wrap; align-items: center; gap: var(--cr-s4); }
+.cr-viz-dona__anillo { position: relative; flex: 0 0 auto; }
+/* El centro es HTML y no un <text> del SVG: así usa los tokens de tipografía.
+   Sin eventos de puntero para no robarle el hover a los gajos de abajo. */
+.cr-viz-dona__centro {
+  position: absolute; inset: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  text-align: center;
+  /* El acolchado deja el texto dentro del agujero (2 × innerRadius): un nombre
+     largo no debe montarse sobre los gajos. */
+  padding: 0 46px;
+}
+.cr-viz-dona__etiqueta {
+  font-family: var(--cr-font-mono); font-size: 9px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .1em; color: var(--cr-ink-3);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-viz-dona__cifra {
+  font-family: var(--cr-font-mono); font-size: 15px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--cr-ink); line-height: 1.2;
+}
+/* Importe exacto del gajo con foco, bajo el porcentaje. En tinta 3: es el
+   respaldo del dato, no la lectura principal. */
+.cr-viz-dona__exacto {
+  font-family: var(--cr-font-mono); font-size: 11px; color: var(--cr-ink-3);
+  font-variant-numeric: tabular-nums;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-viz-dona__leyenda { flex: 1 1 190px; min-width: 0; }
 
 /* Subtítulo de una gráfica: qué se está mirando. Más apagado que .cr-small
    porque es cromo, no dato. */

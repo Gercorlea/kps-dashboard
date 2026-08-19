@@ -11,15 +11,18 @@
 // El cromo (ejes, tooltip, leyenda, degradados) vive en ./viz, compartido con
 // la gráfica de /retail para que las dos rutas se vean iguales.
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import {
   Area,
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
   LabelList,
   Line,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -79,6 +82,15 @@ const SLOTS = [
 ];
 const SLOT_OTROS = SLOTS[5];
 
+/**
+ * Color de un segmento de la participación. Por POSICIÓN en el top, salvo
+ * "Otros", que tiene slot propio: no es un puesto del ranking sino lo que quedó
+ * fuera, y así conserva su color aunque cambie cuántos grupos se plegaron.
+ */
+function colorSegmento(clave: string, i: number): string {
+  return clave === OTROS ? SLOT_OTROS : SLOTS[i];
+}
+
 // Ids de los degradados. Fijos y con prefijo: conviven en el mismo documento
 // con los de la gráfica de /retail.
 const GRAD_SERIE = "cr-grad-serie";
@@ -137,6 +149,127 @@ function variacionUltimo(serie: PuntoSerie[]): number | null {
   return (serie[serie.length - 1].valor - previo) / Math.abs(previo);
 }
 
+/** Lado del cuadro del anillo. Fijo: recharts necesita medidas para resolver
+ *  los radios, y un anillo cuadrado no gana nada con estirarse. */
+const DONA_LADO = 208;
+
+/**
+ * Participación sobre el total, como anillo con leyenda al costado.
+ *
+ * Era una barra 100% apilada de 52px. La dona dice lo mismo —el reparto de un
+ * total entre pocas categorías— y de un golpe, que es justo el caso donde una
+ * dona funciona: nunca hay más de seis gajos (los llamadores piden top 5 y
+ * `plegarTopN` mete el resto en "Otros"), el centro no se desperdicia porque
+ * ancla el total, y las cifras exactas siguen a la vista en la leyenda. Comparar
+ * valores parecidos con precisión es trabajo de la tarjeta de al lado, el
+ * ranking del top N.
+ *
+ * El estado del foco vive aquí y no en el componente de arriba para que asomar
+ * un gajo no vuelva a dibujar las otras tres gráficas.
+ */
+function ParticipacionDona({
+  puntos,
+  total,
+  fmtValor,
+  fmtValorCompacto,
+}: {
+  puntos: PuntoAgrupado[];
+  total: number;
+  fmtValor: (n: number) => string;
+  fmtValorCompacto: (n: number) => string;
+}) {
+  // Igual que en la gráfica de /retail: el clic FIJA el gajo y el puntero sólo
+  // lo asoma, así que pasar por otro y salir devuelve al fijado.
+  const [fijo, setFijo] = useState<string | null>(null);
+  const [asomado, setAsomado] = useState<string | null>(null);
+  const foco = asomado ?? fijo;
+
+  const enfocado = foco === null ? null : puntos.find((p) => p.clave === foco) ?? null;
+
+  const leyenda: FilaViz[] = puntos.map((p, i) => ({
+    clave: p.clave,
+    etiqueta:
+      p.gruposPlegados !== undefined
+        ? `${p.clave} (${formatearEntero(p.gruposPlegados)} grupos)`
+        : p.clave,
+    color: colorSegmento(p.clave, i),
+    valor: formatearPorcentaje(p.valor / total),
+    nota: fmtValorCompacto(p.valor),
+  }));
+
+  return (
+    <div className="cr-viz-dona">
+      <div className="cr-viz-dona__anillo" style={{ width: DONA_LADO, height: DONA_LADO }}>
+        {/* Sin <Tooltip>: la caja aparecía bajo el puntero, es decir ENCIMA del
+            anillo y del agujero, tapando justo la cifra del gajo que se está
+            señalando. El centro y la leyenda ya dicen nombre, porcentaje e
+            importe del gajo con foco, y con más tamaño que un tooltip. */}
+        <PieChart width={DONA_LADO} height={DONA_LADO}>
+          {/* Arranca a las 12 y gira con el reloj (endAngle negativo), que es
+              como se lee un reparto. El trazo va del color de la superficie: el
+              hueco entre gajos es aire, no un borde de dato. */}
+          <Pie
+            data={puntos}
+            dataKey="valor"
+            nameKey="clave"
+            startAngle={90}
+            endAngle={-270}
+            innerRadius={58}
+            outerRadius={84}
+            paddingAngle={1.2}
+            cornerRadius={2}
+            stroke={VIZ_SUPERFICIE}
+            strokeWidth={2}
+            animationDuration={VIZ_ANIM}
+            // El mismo estado que la leyenda: asomar un gajo ilumina su fila y
+            // asomar una fila resalta su gajo.
+            onMouseEnter={(_, i) => setAsomado(puntos[i]?.clave ?? null)}
+            onMouseLeave={() => setAsomado(null)}
+            onClick={(_, i) => {
+              const clave = puntos[i]?.clave ?? null;
+              setFijo((actual) => (actual === clave ? null : clave));
+            }}
+          >
+            {puntos.map((p, i) => (
+              <Cell
+                key={p.clave}
+                fill={colorSegmento(p.clave, i)}
+                fillOpacity={foco === null || foco === p.clave ? 1 : 0.22}
+                style={{ cursor: "pointer" }}
+              />
+            ))}
+          </Pie>
+        </PieChart>
+        {/* El agujero lleva el total, y el gajo con foco lo cambia por su
+            porcentaje y su importe exacto: la cifra que se está mirando queda en
+            el centro de la gráfica y no en una caja flotante. */}
+        <div className="cr-viz-dona__centro">
+          <span className="cr-viz-dona__etiqueta">
+            {enfocado ? acortar(enfocado.clave, 14) : "Total"}
+          </span>
+          <span className="cr-viz-dona__cifra">
+            {enfocado
+              ? formatearPorcentaje(enfocado.valor / total)
+              : fmtValorCompacto(total)}
+          </span>
+          {enfocado ? (
+            <span className="cr-viz-dona__exacto">{fmtValor(enfocado.valor)}</span>
+          ) : null}
+        </div>
+      </div>
+      <div className="cr-viz-dona__leyenda">
+        <Leyenda
+          items={leyenda}
+          foco={foco}
+          lista
+          onFijar={setFijo}
+          onAsomar={setAsomado}
+        />
+      </div>
+    </div>
+  );
+}
+
 function AnalisisChartsBase({
   datosBarra,
   datosSerie,
@@ -160,30 +293,12 @@ function AnalisisChartsBase({
   const fmtEje = metricaMoneda ? formatearEjeMoneda : formatearEje;
 
   // Participación sólo tiene sentido con magnitudes aditivas y positivas: con
-  // valores negativos un 100% apilado miente. En ese caso no se dibuja.
+  // valores negativos un reparto sobre el total miente. En ese caso no se dibuja.
   const totalComposicion = datosComposicion.reduce((s, p) => s + p.valor, 0);
   const composicionValida =
     datosComposicion.length > 1 &&
     totalComposicion > 0 &&
     datosComposicion.every((p) => p.valor >= 0);
-
-  const filaComposicion: Record<string, number | string> = { etiqueta: "total" };
-  if (composicionValida) {
-    for (const p of datosComposicion) filaComposicion[p.clave] = p.valor;
-  }
-
-  const colorSegmento = (clave: string, i: number) =>
-    clave === OTROS ? SLOT_OTROS : SLOTS[i];
-
-  const leyendaComposicion: FilaViz[] = datosComposicion.map((p, i) => ({
-    clave: p.clave,
-    etiqueta:
-      p.gruposPlegados !== undefined
-        ? `${p.clave} (${formatearEntero(p.gruposPlegados)} grupos)`
-        : acortar(p.clave, 28),
-    color: colorSegmento(p.clave, i),
-    valor: totalComposicion > 0 ? formatearPorcentaje(p.valor / totalComposicion) : "",
-  }));
 
   // "Otros" no es un puesto del top: es lo que quedó fuera.
   const nTop = datosBarra.filter((p) => p.clave !== OTROS).length;
@@ -478,71 +593,24 @@ function AnalisisChartsBase({
         </Panel>
 
         {composicionValida ? (
-          <Panel title={`Participación por ${nombreDimension}`}>
+          <Panel
+            title={`Participación por ${nombreDimension}`}
+            acciones={
+              <div className="cr-viz-head">
+                <span className="cr-viz-head__valor">{fmtValor(totalComposicion)}</span>
+              </div>
+            }
+          >
             <p className="cr-viz-sub">
               Top {nTopComposicion} sobre el total
               {agregacion === "promedio" ? " (siempre suma: un promedio no es aditivo)" : ""}
             </p>
-            <div style={{ height: 52 }}>
-              <ResponsiveContainer debounce={50}>
-                <BarChart
-                  data={[filaComposicion]}
-                  layout="vertical"
-                  margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
-                >
-                  <XAxis type="number" hide domain={[0, totalComposicion]} />
-                  <YAxis type="category" dataKey="etiqueta" hide />
-                  <Tooltip
-                    cursor={false}
-                    content={({ active, payload }) => {
-                      if (!active) return null;
-                      // El apilado manda una entrada por segmento; se enumeran en
-                      // el orden de la leyenda, no en el del payload.
-                      const fila = payload?.[0]?.payload as Record<string, number> | undefined;
-                      if (!fila) return null;
-                      return (
-                        <CajaTooltip
-                          titulo={nombreDimension ?? undefined}
-                          filas={datosComposicion.map((p, i) => ({
-                            clave: p.clave,
-                            etiqueta: acortar(p.clave, 24),
-                            color: colorSegmento(p.clave, i),
-                            nota: formatearPorcentaje(fila[p.clave] / totalComposicion),
-                            valor: fmtValor(fila[p.clave]),
-                          }))}
-                          total={{
-                            clave: "total",
-                            etiqueta: "Total",
-                            valor: fmtValor(totalComposicion),
-                          }}
-                        />
-                      );
-                    }}
-                  />
-                  {/* El trazo va del color de la superficie: se lee como espacio
-                      negativo entre segmentos, no como tinta de dato. */}
-                  {datosComposicion.map((p, i) => (
-                    <Bar
-                      key={p.clave}
-                      dataKey={p.clave}
-                      stackId="s"
-                      fill={colorSegmento(p.clave, i)}
-                      stroke={VIZ_SUPERFICIE}
-                      strokeWidth={2}
-                      isAnimationActive={false}
-                      radius={
-                        i === 0
-                          ? [3, 0, 0, 3]
-                          : i === datosComposicion.length - 1
-                            ? [0, 3, 3, 0]
-                            : undefined
-                      }
-                    />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <Leyenda items={leyendaComposicion} />
+            <ParticipacionDona
+              puntos={datosComposicion}
+              total={totalComposicion}
+              fmtValor={fmtValor}
+              fmtValorCompacto={fmtValorCompacto}
+            />
           </Panel>
         ) : null}
       </div>

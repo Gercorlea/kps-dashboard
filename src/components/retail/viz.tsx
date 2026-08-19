@@ -143,18 +143,25 @@ export function CajaTooltip({
 export function Leyenda({
   items,
   foco = null,
+  lista = false,
   onFijar,
   onAsomar,
 }: {
   items: FilaViz[];
   /** Clave aislada; el resto se apaga. */
   foco?: string | null;
+  /**
+   * En columna y a ancho completo, con las cifras alineadas a la derecha. Es la
+   * forma que pide una leyenda al COSTADO de la gráfica —la de la dona— donde
+   * hay alto de sobra y poco ancho; los chips en fila son para debajo del eje.
+   */
+  lista?: boolean;
   /** Si se pasa, cada ítem se vuelve botón. */
   onFijar?: (clave: string | null) => void;
   onAsomar?: (clave: string | null) => void;
 }) {
   return (
-    <ul className="cr-viz-leyenda">
+    <ul className={`cr-viz-leyenda${lista ? " cr-viz-leyenda--lista" : ""}`}>
       {items.map((item) => {
         const activo = foco === item.clave;
         const apagado = foco !== null && !activo;
@@ -165,7 +172,7 @@ export function Leyenda({
           <>
             <Punto color={item.color} />
             <span className="cr-viz-leyenda__nombre">{item.etiqueta}</span>
-            {item.valor ? <span className="cr-viz-leyenda__nota">{item.valor}</span> : null}
+            {item.valor ? <span className="cr-viz-leyenda__cifra">{item.valor}</span> : null}
             {item.nota ? <span className="cr-viz-leyenda__nota">{item.nota}</span> : null}
           </>
         );
