@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { handleApiError, ok, parseJson, parseQuery } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
+import { invalidarRetail } from "@/lib/retail/cache";
 import { PRIMERA_ESCRITURA, ULTIMA_ACTUALIZACION } from "@/lib/retail/importaciones";
 import { usuariosPorId } from "@/lib/usuarios";
 import { guardarAnalisisSchema, historicoAnalisisQuerySchema } from "@/lib/validation/retail";
@@ -97,6 +98,10 @@ export async function POST(request: NextRequest) {
     });
 
     const res = await SalesReport.bulkWrite(ops, { ordered: false });
+    // El histórico cambió: los agregados guardados en memoria ya no lo
+    // describen. Se tiran aquí y no en el siguiente GET porque una carga se
+    // sube en lotes y el usuario abre su ficha en cuanto termina el último.
+    invalidarRetail();
 
     return ok({
       recibidas: filas.length,

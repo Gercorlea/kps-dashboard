@@ -5,6 +5,7 @@ import { PharmacyStock } from "@/models/PharmacyStock";
 import { SalesReport } from "@/models/SalesReport";
 import { Upload } from "@/models/Upload";
 import { DailySale } from "@/models/DailySale";
+import { memoRetail } from "./cache";
 import { RETAILERS, nombreRetailer } from "./retailers";
 import { fechaISO } from "./normalize";
 
@@ -303,7 +304,22 @@ interface AgregadoCuenta {
  * Sale sólo de SalesReport —la colección del analizador, la única con datos—
  * y los cuatro de RETAILERS aparecen siempre, tengan reportes o no.
  */
+/**
+ * Ficha de cada retailer para la portada de /retail y para la cabecera de
+ * /retail/[retailer].
+ *
+ * Va por `memoRetail` porque es lo primero que espera la navegación a la ficha:
+ * el $group con dos $addToSet sobre la colección entera se midió en 2.9 s, 1.5 s
+ * y 0.2 s en tres corridas seguidas, y hasta que contesta el navegador ni
+ * siquiera ha empezado a pedir los datos de las gráficas. Es el mismo dato para
+ * todo el mundo y sólo cambia al guardar o borrar un reporte, que es cuando se
+ * invalida.
+ */
 export async function detalleRetailers(): Promise<DetalleRetailer[]> {
+  return memoRetail("detalleRetailers", calcularDetalleRetailers);
+}
+
+async function calcularDetalleRetailers(): Promise<DetalleRetailer[]> {
   await connectDB();
 
   const filas = await SalesReport.aggregate<AgregadoCuenta>([

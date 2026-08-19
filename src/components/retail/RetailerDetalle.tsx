@@ -11,7 +11,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet } from "lucide-react";
 import { api } from "@/components/lib/api-client";
 import { fmtFecha, fmtFechaHora, fmtNum, fmtPct } from "@/components/lib/fmt";
@@ -138,6 +138,13 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   // Reporte abierto dentro de la pestaña de reportes; null = la lista.
   const [reporteAbierto, setReporteAbierto] = useState<string | null>(null);
 
+  // Retailer cuyo bundle ya se pidió. Mismo patrón que las claves servidas de
+  // AnalisisExcel, y aquí hace falta por el doble montaje de React en
+  // desarrollo: sin esto el efecto se ejecuta dos veces sobre la misma ficha y
+  // salían DOS peticiones idénticas y simultáneas al resumen, que es la más
+  // cara de la ruta.
+  const fichaPedida = useRef<string | null>(null);
+
   const cargar = useCallback(async () => {
     if (ficha.reportes === 0) return;
     try {
@@ -160,10 +167,11 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   }, [ficha.id, ficha.reportes]);
 
   useEffect(() => {
-    // fetch-on-mount: el flag de carga arranca activo
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // Cambiar de retailer sí vuelve a pedir; volver a montar el mismo, no.
+    if (fichaPedida.current === ficha.id) return;
+    fichaPedida.current = ficha.id;
     void cargar();
-  }, [cargar]);
+  }, [cargar, ficha.id]);
 
   // Columnas de la plantilla del retailer: dan los nombres para mostrar y qué
   // se puede elegir como dimensión o como métrica.
