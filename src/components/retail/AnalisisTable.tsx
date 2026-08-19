@@ -40,16 +40,17 @@ const CELDA_DENSA: React.CSSProperties = {
 };
 
 // El padding lo pone el design system; el tamaño no, porque sus 9px son
-// ilegibles en una tabla de pocas columnas. A 12px se recorta el tracking: el
-// .08em del design system está calibrado para 9px y a este tamaño estira los
-// encabezados a lo ancho sin necesidad.
+// ilegibles en una tabla de pocas columnas. Aquí van a 13px —los mismos que el
+// dato— para que el nombre de la columna se lea de un vistazo, y con el
+// tracking recortado: el .08em del design system está calibrado para 9px y a
+// este tamaño estira los encabezados a lo ancho sin necesidad.
 // Se parte en varias líneas: con el ancho ya repartido, un encabezado largo no
 // puede ensanchar su columna, así que en una ventana angosta o baja de renglón
 // o se derrama sobre la de al lado. Alineados abajo, la fila queda pareja
 // aunque unos ocupen dos líneas y otros una.
 const ENCABEZADO_NORMAL: React.CSSProperties = {
-  fontSize: "12px",
-  letterSpacing: ".03em",
+  fontSize: "13px",
+  letterSpacing: ".02em",
   whiteSpace: "normal",
   lineHeight: 1.3,
   verticalAlign: "bottom",
@@ -85,9 +86,10 @@ function anchosProporcionales(
   filas: FilaCruda[]
 ): string[] {
   const largos = columnas.map((col) => {
-    // El encabezado va en versalitas con tracking, así que ocupa más por
-    // carácter que el dato; el 1.1 lo compensa a ojo.
-    let largo = col.nombre.length * 1.1;
+    // El encabezado va en versalitas mono con tracking, así que ocupa más por
+    // carácter que el dato aunque ahora midan los mismos 13px; el 1.2 lo
+    // compensa a ojo.
+    let largo = col.nombre.length * 1.2;
     for (const fila of filas) {
       largo = Math.max(largo, formatearCeldaNormalizada(fila[col.indice], col).length);
     }

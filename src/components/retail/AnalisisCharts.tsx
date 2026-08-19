@@ -58,6 +58,7 @@ import {
   formatearMonedaCompacta,
   formatearNumero,
   formatearPorcentaje,
+  formatearPorcentajeConSigno,
 } from "@/lib/retail/analisis/formato";
 import type {
   Agregacion,
@@ -130,12 +131,6 @@ const ETIQUETA_AGREGACION: Record<Agregacion, string> = {
   promedio: "Promedio",
   conteo: "Cantidad",
 };
-
-/** Variación con signo explícito: un "+5%" se distingue de un "5%" a secas. */
-function formatearPorcentajeConSigno(fraccion: number): string {
-  const texto = formatearPorcentaje(fraccion);
-  return fraccion > 0 ? `+${texto}` : texto;
-}
 
 /**
  * Variación del último punto de la serie contra el anterior. Null cuando no hay
@@ -509,15 +504,37 @@ function AnalisisChartsBase({
         </Panel>
       ) : null}
 
-      {/* Las dos lecturas de la dimensión van pareadas: el ranking dice
-          cuánto vende cada una y la barra apilada cómo se reparten el total.
-          Se leen juntas, así que comparten fila; arriba quedan las dos
-          lecturas de tiempo, que sí necesitan el ancho completo. */}
+      {/* Las dos lecturas de la dimensión van pareadas: la dona dice cómo se
+          reparte el total y el ranking cuánto vende cada categoría. El reparto
+          va primero —es la lectura de un golpe— y el detalle a su derecha.
+          Arriba quedan las dos lecturas de tiempo, que sí piden todo el ancho. */}
       <div
         className={`grid grid-cols-1 items-start gap-4${
           composicionValida ? " xl:grid-cols-2" : ""
         }`}
       >
+        {composicionValida ? (
+          <Panel
+            title={`Participación por ${nombreDimension}`}
+            acciones={
+              <div className="cr-viz-head">
+                <span className="cr-viz-head__valor">{fmtValor(totalComposicion)}</span>
+              </div>
+            }
+          >
+            <p className="cr-viz-sub">
+              Top {nTopComposicion} sobre el total
+              {agregacion === "promedio" ? " (siempre suma: un promedio no es aditivo)" : ""}
+            </p>
+            <ParticipacionDona
+              puntos={datosComposicion}
+              total={totalComposicion}
+              fmtValor={fmtValor}
+              fmtValorCompacto={fmtValorCompacto}
+            />
+          </Panel>
+        ) : null}
+
         <Panel title={`Top ${nTop} por ${nombreDimension}`}>
           <p className="cr-viz-sub">
             {ETIQUETA_AGREGACION[agregacion]} de {nombreMetrica}
@@ -591,28 +608,6 @@ function AnalisisChartsBase({
             </ResponsiveContainer>
           </div>
         </Panel>
-
-        {composicionValida ? (
-          <Panel
-            title={`Participación por ${nombreDimension}`}
-            acciones={
-              <div className="cr-viz-head">
-                <span className="cr-viz-head__valor">{fmtValor(totalComposicion)}</span>
-              </div>
-            }
-          >
-            <p className="cr-viz-sub">
-              Top {nTopComposicion} sobre el total
-              {agregacion === "promedio" ? " (siempre suma: un promedio no es aditivo)" : ""}
-            </p>
-            <ParticipacionDona
-              puntos={datosComposicion}
-              total={totalComposicion}
-              fmtValor={fmtValor}
-              fmtValorCompacto={fmtValorCompacto}
-            />
-          </Panel>
-        ) : null}
       </div>
     </div>
   );

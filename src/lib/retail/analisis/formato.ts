@@ -116,6 +116,18 @@ export function formatearPorcentaje(fraccion: number): string {
 }
 
 /**
+ * Variación con signo explícito: un "+5%" se distingue de un "5%" a secas.
+ *
+ * Vive aquí y no en la gráfica porque el KPI de la ficha y la cabecera de la
+ * comparativa anual muestran LA MISMA cifra: con dos formateadores, uno de los
+ * dos acabaría redondeando distinto.
+ */
+export function formatearPorcentajeConSigno(fraccion: number): string {
+  const texto = formatearPorcentaje(fraccion);
+  return fraccion > 0 ? `+${texto}` : texto;
+}
+
+/**
  * Valor de celda cruda → texto para la tabla.
  *
  * `esCodigo` apaga los separadores de miles: un "Item Nbr" 101252325 es un

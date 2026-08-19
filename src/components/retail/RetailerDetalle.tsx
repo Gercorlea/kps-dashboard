@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileSpreadsheet } from "lucide-react";
 import { api } from "@/components/lib/api-client";
 import { fmtFecha, fmtFechaHora, fmtNum, fmtPct } from "@/components/lib/fmt";
-import { AnalisisKpis } from "@/components/retail/AnalisisKpis";
+import { AnalisisKpis, type EvolucionKpis } from "@/components/retail/AnalisisKpis";
 import { AnalisisTable } from "@/components/retail/AnalisisTable";
 import { AutorReporte, type UsuarioReporte } from "@/components/retail/AutorReporte";
 import { ReporteDetalle } from "@/components/retail/ReporteDetalle";
@@ -74,7 +74,9 @@ function etiquetaSentido(numerico: boolean, direccion: Direccion): string {
 }
 
 const VISTAS: { id: Vista; etiqueta: string }[] = [
-  { id: "resumen", etiqueta: "Resumen" },
+  // El id se queda en "resumen": es interno y lo usan el estado y los
+  // condicionales de abajo. Lo que se lee en la barra es la etiqueta.
+  { id: "resumen", etiqueta: "Overview" },
   { id: "ventas", etiqueta: "Ventas" },
   { id: "productos", etiqueta: "Productos" },
   { id: "reportes", etiqueta: "Reportes" },
@@ -263,6 +265,34 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
         : null,
     };
   }, [bundle, campoMetrica, acum]);
+
+  // Los dos KPIs de la derecha miran el DESEMPEÑO del retailer y no el archivo
+  // que lo trajo: cómo va el año contra el anterior y cuánto vale un mes
+  // típico. Salen de lo que ya está calculado para las gráficas, así que
+  // cambiar de métrica los mueve al mismo tiempo que ellas.
+  const evolucion: EvolucionKpis = useMemo(() => {
+    // Sólo el último año, no toda la historia: un promedio que arrastra los
+    // años viejos deja de decir cómo va el retailer hoy. La serie llega
+    // ordenada, así que el año es el del último punto.
+    const serie = datosSerie ?? [];
+    const anio = serie.length > 0 ? serie[serie.length - 1].clave.slice(0, 4) : null;
+    const ultimoAnio = anio ? serie.filter((p) => p.clave.startsWith(anio)) : [];
+    // Sumar los puntos vale porque la agregación fija es "suma" (o "conteo",
+    // que también es aditivo): con "promedio" el promedio de los promedios
+    // mensuales no sería el promedio del año.
+    const total = ultimoAnio.reduce((acc, p) => acc + p.valor, 0);
+    return {
+      anual: datosAnual,
+      // Los meses son los del año en curso hasta donde llega el reporte —no
+      // doce fijos ni sólo los que vendieron—: la serie viene rellena, así que
+      // un mes sin reportar ya cuenta como cero en la gráfica y tiene que
+      // contar igual en el promedio.
+      promedioMensual:
+        anio && ultimoAnio.length > 0
+          ? { valor: total / ultimoAnio.length, meses: ultimoAnio.length, anio: Number(anio) }
+          : null,
+    };
+  }, [datosSerie, datosAnual]);
 
   // --- Pestaña de productos ------------------------------------------------
   // Una fila por producto —(nombre, UPC, marca), el grano que declara la
@@ -466,7 +496,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
             {/* Productos tiene su propio filtro: su tabla no depende de la
                 dimensión ni de la métrica —muestra TODAS las columnas del
                 producto a la vez—, así que lo único que queda por elegir ahí es
-                el orden. Los de abajo mandan sobre Resumen y Ventas, que sí
+                el orden. Los de abajo mandan sobre Overview y Ventas, que sí
                 miran una métrica a la vez, y por eso los números de las dos
                 concuerdan al cambiar de sección. */}
             {vista === "productos" ? (
@@ -551,6 +581,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   nombreMetrica={nombreMetrica}
                   nombreDimension={nombreDe(campoDimension)}
                   metricaMoneda={metricaMoneda}
+                  evolucion={evolucion}
                 />
                 <AnalisisCharts
                   datosBarra={datosBarra}

@@ -158,12 +158,23 @@ export function RetailerContenidoSkeleton() {
 
       {/* Misma rejilla que AnalisisKpis. Las tarjetas son .cr-card y no .cr-kpi
           a propósito: la cinta de tinta de 2px del KPI se leería como un dato
-          que ya llegó. */}
+          que ya llegó.
+
+          El segundo y el tercero llevan un renglón más: son los de evolución (el
+          año contra el anterior y el promedio mensual), que van con una línea
+          de detalle debajo de la cifra. Sin ella la fila crecía al llegar los
+          datos y empujaba las gráficas hacia abajo. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[104, 88, 120, 96].map((ancho) => (
+        {[
+          { ancho: 104, detalle: false },
+          { ancho: 120, detalle: true },
+          { ancho: 96, detalle: true },
+          { ancho: 88, detalle: false },
+        ].map(({ ancho, detalle }) => (
           <div key={ancho} className="cr-card" style={{ padding: "18px 20px" }}>
             <Bloque ancho={ancho} alto={10} />
             <Bloque ancho={144} alto={30} className="mt-2.5" />
+            {detalle ? <Bloque ancho={112} alto={11} className="mt-1" /> : null}
           </div>
         ))}
       </div>
