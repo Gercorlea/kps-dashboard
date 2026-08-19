@@ -19,6 +19,10 @@ import { AnalisisKpis } from "@/components/retail/AnalisisKpis";
 import { AnalisisTable } from "@/components/retail/AnalisisTable";
 import { AutorReporte, type UsuarioReporte } from "@/components/retail/AutorReporte";
 import { ReporteDetalle } from "@/components/retail/ReporteDetalle";
+import {
+  RetailerContenidoSkeleton,
+  RetailerGraficasSkeleton,
+} from "@/components/retail/RetailerSkeleton";
 import { Badge, EstadoVacio, Meter, Panel } from "@/components/ui/basicos";
 import {
   acumuladoresDeGrupos,
@@ -42,9 +46,17 @@ import type {
 
 // Mismo motivo que en el analizador: recharts es lo más pesado de la ruta y no
 // sirve de nada hasta que hay datos que dibujar.
+//
+// El fallback es el mismo esqueleto de las gráficas que se ve mientras cargan
+// los datos: si el módulo llega después que ellos, los paneles ya están en su
+// sitio y sólo se rellenan.
 const AnalisisCharts = dynamic(() => import("@/components/retail/AnalisisCharts"), {
   ssr: false,
-  loading: () => <div className="cr-panel cr-pulse" style={{ height: 420 }} />,
+  loading: () => (
+    <div className="cr-pulse">
+      <RetailerGraficasSkeleton />
+    </div>
+  ),
 });
 
 const TOP_BARRA = 8;
@@ -444,10 +456,10 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
             </EstadoVacio>
           </Panel>
         ) : cargando ? (
-          <div className="flex flex-col gap-6" aria-busy="true">
-            <div className="cr-panel cr-pulse" style={{ height: 96 }} />
-            <div className="cr-panel cr-pulse" style={{ height: 320 }} />
-          </div>
+          // El mismo esqueleto que sirvió de fallback a la ruta: la cabecera ya
+          // es la de verdad —viene con la página— y debajo sigue la silueta del
+          // contenido hasta que contestan los dos endpoints.
+          <RetailerContenidoSkeleton />
         ) : !bundle?.archivo ? (
           <Panel>
             <p className="cr-body py-8 text-center">

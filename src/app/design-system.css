@@ -960,6 +960,12 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
 .cr-pulse { animation: cr-pulse 1.6s ease-in-out infinite; }
 @keyframes cr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
+/* Bloque de esqueleto: el hueco del dato que todavía no llega. Gris terciario y
+   cuadrado, como los wells. La animación NO va aquí sino en un .cr-pulse en la
+   raíz del esqueleto, para que todos los bloques laten a la vez y no cada uno
+   por su cuenta. Los tamaños los pone el componente: dependen de qué dato es. */
+.cr-skel { background: var(--cr-surface-3); border-radius: var(--cr-r-xs); }
+
 .cr-link { color: var(--cr-ink); text-decoration: underline; text-underline-offset: 2px; }
 .cr-link:hover { color: var(--cr-ink-2); }
 /* Enlace sin destino todavía: va como <button> para que sea clicable y
