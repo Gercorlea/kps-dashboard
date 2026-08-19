@@ -205,10 +205,123 @@ function AnalisisChartsBase({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* La evolución encabeza: es la lectura con la que se entra a la ficha
-          —cómo va el retailer— y la que necesita todo el ancho. El desglose por
-          categoría y la comparativa anual van pareados debajo, que caben en
-          media columna y se leen mejor juntos. */}
+      {/* El orden es el de la lectura de la ficha: primero cómo va el año
+          contra el anterior, luego la evolución mes a mes, después qué
+          categorías la explican y al final cómo se reparten el total. Cada
+          gráfica ocupa el ancho completo: son cuatro lecturas distintas y
+          ninguna se compara con la de al lado. */}
+      {datosAnual ? (
+        <Panel
+          title={`${nombreMetrica}: ${datosAnual.anioActual} vs ${datosAnual.anioPrevio}`}
+          acciones={
+            datosAnual.variacion === null ? null : (
+              <Delta
+                fraccion={datosAnual.variacion}
+                texto={formatearPorcentajeConSigno(datosAnual.variacion)}
+              />
+            )
+          }
+        >
+          <p className="cr-viz-sub">
+            {datosAnual.mesesComparables > 0
+              ? `${fmtValor(datosAnual.totalActual)} vs ${fmtValor(
+                  datosAnual.totalPrevio
+                )} sobre los ${datosAnual.mesesComparables} ${
+                  datosAnual.mesesComparables === 1 ? "mes" : "meses"
+                } que tienen los dos años`
+              : "Los dos años no comparten ningún mes, así que no hay total que comparar"}
+          </p>
+          <div style={{ height: 248 }}>
+            <ResponsiveContainer debounce={50}>
+              <BarChart
+                data={datosAnual.puntos}
+                margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
+                barGap={2}
+                barCategoryGap="22%"
+              >
+                <defs>
+                  <DegradadoBarra id={GRAD_ACTUAL} color={SLOTS[0]} />
+                  <DegradadoBarra id={GRAD_PREVIO} color={SLOTS[1]} />
+                </defs>
+                <CartesianGrid stroke={VIZ_GRID} vertical={false} />
+                <XAxis dataKey="mes" tickFormatter={formatearMesCorto} {...ejeValor} />
+                <YAxis width={48} tickFormatter={fmtEje} {...ejeValor} />
+                <Tooltip
+                  cursor={CURSOR_BANDA}
+                  content={({ active, payload }) => {
+                    const punto = payload?.[0]?.payload as
+                      | ComparativaAnual["puntos"][number]
+                      | undefined;
+                    if (!active || !punto) return null;
+                    // Un mes que todavía no llega no tiene barra ni fila: el
+                    // tooltip no inventa un cero.
+                    const filas: FilaViz[] = [];
+                    if (typeof punto.previo === "number") {
+                      filas.push({
+                        clave: "previo",
+                        etiqueta: String(datosAnual.anioPrevio),
+                        color: SLOTS[1],
+                        valor: fmtValor(punto.previo),
+                      });
+                    }
+                    if (typeof punto.actual === "number") {
+                      filas.push({
+                        clave: "actual",
+                        etiqueta: String(datosAnual.anioActual),
+                        color: SLOTS[0],
+                        valor: fmtValor(punto.actual),
+                      });
+                    }
+                    return (
+                      <CajaTooltip
+                        titulo={formatearMesCorto(punto.mes)}
+                        filas={filas}
+                      />
+                    );
+                  }}
+                />
+                {/* El año previo va primero para que quede a la IZQUIERDA de
+                    cada par: se lee de atrás hacia adelante, como el tiempo.
+                    Un mes en null no dibuja barra —recharts lo salta— y así un
+                    mes que todavía no llega no parece una venta en cero. */}
+                <Bar
+                  dataKey="previo"
+                  name={String(datosAnual.anioPrevio)}
+                  fill={`url(#${GRAD_PREVIO})`}
+                  maxBarSize={20}
+                  radius={[3, 3, 0, 0]}
+                  animationDuration={VIZ_ANIM}
+                />
+                <Bar
+                  dataKey="actual"
+                  name={String(datosAnual.anioActual)}
+                  fill={`url(#${GRAD_ACTUAL})`}
+                  maxBarSize={20}
+                  radius={[3, 3, 0, 0]}
+                  animationDuration={VIZ_ANIM}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <Leyenda
+            items={[
+              {
+                clave: "previo",
+                etiqueta: String(datosAnual.anioPrevio),
+                color: SLOTS[1],
+                valor: fmtValorCompacto(datosAnual.totalPrevio),
+              },
+              {
+                clave: "actual",
+                etiqueta: String(datosAnual.anioActual),
+                color: SLOTS[0],
+                valor: fmtValorCompacto(datosAnual.totalActual),
+              },
+            ]}
+          />
+        </Panel>
+      ) : null}
+
       {haySerie && ultimoPunto ? (
         <Panel
           title={`${nombreMetrica} por ${ETIQUETA_PERIODO[granularidad]}`}
@@ -281,7 +394,15 @@ function AnalisisChartsBase({
         </Panel>
       ) : null}
 
-      <div className={`grid grid-cols-1 gap-4${datosAnual ? " xl:grid-cols-2" : ""}`}>
+      {/* Las dos lecturas de la dimensión van pareadas: el ranking dice
+          cuánto vende cada una y la barra apilada cómo se reparten el total.
+          Se leen juntas, así que comparten fila; arriba quedan las dos
+          lecturas de tiempo, que sí necesitan el ancho completo. */}
+      <div
+        className={`grid grid-cols-1 items-start gap-4${
+          composicionValida ? " xl:grid-cols-2" : ""
+        }`}
+      >
         <Panel title={`Top ${nTop} por ${nombreDimension}`}>
           <p className="cr-viz-sub">
             {ETIQUETA_AGREGACION[agregacion]} de {nombreMetrica}
@@ -356,187 +477,75 @@ function AnalisisChartsBase({
           </div>
         </Panel>
 
-        {datosAnual ? (
-          <Panel
-            title={`${nombreMetrica}: ${datosAnual.anioActual} vs ${datosAnual.anioPrevio}`}
-            acciones={
-              datosAnual.variacion === null ? null : (
-                <Delta
-                  fraccion={datosAnual.variacion}
-                  texto={formatearPorcentajeConSigno(datosAnual.variacion)}
-                />
-              )
-            }
-          >
+        {composicionValida ? (
+          <Panel title={`Participación por ${nombreDimension}`}>
             <p className="cr-viz-sub">
-              {datosAnual.mesesComparables > 0
-                ? `${fmtValor(datosAnual.totalActual)} vs ${fmtValor(
-                    datosAnual.totalPrevio
-                  )} sobre los ${datosAnual.mesesComparables} ${
-                    datosAnual.mesesComparables === 1 ? "mes" : "meses"
-                  } que tienen los dos años`
-                : "Los dos años no comparten ningún mes, así que no hay total que comparar"}
+              Top {nTopComposicion} sobre el total
+              {agregacion === "promedio" ? " (siempre suma: un promedio no es aditivo)" : ""}
             </p>
-            <div style={{ height: 248 }}>
+            <div style={{ height: 52 }}>
               <ResponsiveContainer debounce={50}>
                 <BarChart
-                  data={datosAnual.puntos}
-                  margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
-                  barGap={2}
-                  barCategoryGap="22%"
+                  data={[filaComposicion]}
+                  layout="vertical"
+                  margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
                 >
-                  <defs>
-                    <DegradadoBarra id={GRAD_ACTUAL} color={SLOTS[0]} />
-                    <DegradadoBarra id={GRAD_PREVIO} color={SLOTS[1]} />
-                  </defs>
-                  <CartesianGrid stroke={VIZ_GRID} vertical={false} />
-                  <XAxis dataKey="mes" tickFormatter={formatearMesCorto} {...ejeValor} />
-                  <YAxis width={48} tickFormatter={fmtEje} {...ejeValor} />
+                  <XAxis type="number" hide domain={[0, totalComposicion]} />
+                  <YAxis type="category" dataKey="etiqueta" hide />
                   <Tooltip
-                    cursor={CURSOR_BANDA}
+                    cursor={false}
                     content={({ active, payload }) => {
-                      const punto = payload?.[0]?.payload as
-                        | ComparativaAnual["puntos"][number]
-                        | undefined;
-                      if (!active || !punto) return null;
-                      // Un mes que todavía no llega no tiene barra ni fila: el
-                      // tooltip no inventa un cero.
-                      const filas: FilaViz[] = [];
-                      if (typeof punto.previo === "number") {
-                        filas.push({
-                          clave: "previo",
-                          etiqueta: String(datosAnual.anioPrevio),
-                          color: SLOTS[1],
-                          valor: fmtValor(punto.previo),
-                        });
-                      }
-                      if (typeof punto.actual === "number") {
-                        filas.push({
-                          clave: "actual",
-                          etiqueta: String(datosAnual.anioActual),
-                          color: SLOTS[0],
-                          valor: fmtValor(punto.actual),
-                        });
-                      }
+                      if (!active) return null;
+                      // El apilado manda una entrada por segmento; se enumeran en
+                      // el orden de la leyenda, no en el del payload.
+                      const fila = payload?.[0]?.payload as Record<string, number> | undefined;
+                      if (!fila) return null;
                       return (
                         <CajaTooltip
-                          titulo={formatearMesCorto(punto.mes)}
-                          filas={filas}
+                          titulo={nombreDimension ?? undefined}
+                          filas={datosComposicion.map((p, i) => ({
+                            clave: p.clave,
+                            etiqueta: acortar(p.clave, 24),
+                            color: colorSegmento(p.clave, i),
+                            nota: formatearPorcentaje(fila[p.clave] / totalComposicion),
+                            valor: fmtValor(fila[p.clave]),
+                          }))}
+                          total={{
+                            clave: "total",
+                            etiqueta: "Total",
+                            valor: fmtValor(totalComposicion),
+                          }}
                         />
                       );
                     }}
                   />
-                  {/* El año previo va primero para que quede a la IZQUIERDA de
-                      cada par: se lee de atrás hacia adelante, como el tiempo.
-                      Un mes en null no dibuja barra —recharts lo salta— y así un
-                      mes que todavía no llega no parece una venta en cero. */}
-                  <Bar
-                    dataKey="previo"
-                    name={String(datosAnual.anioPrevio)}
-                    fill={`url(#${GRAD_PREVIO})`}
-                    maxBarSize={20}
-                    radius={[3, 3, 0, 0]}
-                    animationDuration={VIZ_ANIM}
-                  />
-                  <Bar
-                    dataKey="actual"
-                    name={String(datosAnual.anioActual)}
-                    fill={`url(#${GRAD_ACTUAL})`}
-                    maxBarSize={20}
-                    radius={[3, 3, 0, 0]}
-                    animationDuration={VIZ_ANIM}
-                  />
+                  {/* El trazo va del color de la superficie: se lee como espacio
+                      negativo entre segmentos, no como tinta de dato. */}
+                  {datosComposicion.map((p, i) => (
+                    <Bar
+                      key={p.clave}
+                      dataKey={p.clave}
+                      stackId="s"
+                      fill={colorSegmento(p.clave, i)}
+                      stroke={VIZ_SUPERFICIE}
+                      strokeWidth={2}
+                      isAnimationActive={false}
+                      radius={
+                        i === 0
+                          ? [3, 0, 0, 3]
+                          : i === datosComposicion.length - 1
+                            ? [0, 3, 3, 0]
+                            : undefined
+                      }
+                    />
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <Leyenda
-              items={[
-                {
-                  clave: "previo",
-                  etiqueta: String(datosAnual.anioPrevio),
-                  color: SLOTS[1],
-                  valor: fmtValorCompacto(datosAnual.totalPrevio),
-                },
-                {
-                  clave: "actual",
-                  etiqueta: String(datosAnual.anioActual),
-                  color: SLOTS[0],
-                  valor: fmtValorCompacto(datosAnual.totalActual),
-                },
-              ]}
-            />
+            <Leyenda items={leyendaComposicion} />
           </Panel>
         ) : null}
       </div>
-
-      {composicionValida ? (
-        <Panel title={`Participación por ${nombreDimension}`}>
-          <p className="cr-viz-sub">
-            Top {nTopComposicion} sobre el total
-            {agregacion === "promedio" ? " (siempre suma: un promedio no es aditivo)" : ""}
-          </p>
-          <div style={{ height: 52 }}>
-            <ResponsiveContainer debounce={50}>
-              <BarChart
-                data={[filaComposicion]}
-                layout="vertical"
-                margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
-              >
-                <XAxis type="number" hide domain={[0, totalComposicion]} />
-                <YAxis type="category" dataKey="etiqueta" hide />
-                <Tooltip
-                  cursor={false}
-                  content={({ active, payload }) => {
-                    if (!active) return null;
-                    // El apilado manda una entrada por segmento; se enumeran en
-                    // el orden de la leyenda, no en el del payload.
-                    const fila = payload?.[0]?.payload as Record<string, number> | undefined;
-                    if (!fila) return null;
-                    return (
-                      <CajaTooltip
-                        titulo={nombreDimension ?? undefined}
-                        filas={datosComposicion.map((p, i) => ({
-                          clave: p.clave,
-                          etiqueta: acortar(p.clave, 24),
-                          color: colorSegmento(p.clave, i),
-                          nota: formatearPorcentaje(fila[p.clave] / totalComposicion),
-                          valor: fmtValor(fila[p.clave]),
-                        }))}
-                        total={{
-                          clave: "total",
-                          etiqueta: "Total",
-                          valor: fmtValor(totalComposicion),
-                        }}
-                      />
-                    );
-                  }}
-                />
-                {/* El trazo va del color de la superficie: se lee como espacio
-                    negativo entre segmentos, no como tinta de dato. */}
-                {datosComposicion.map((p, i) => (
-                  <Bar
-                    key={p.clave}
-                    dataKey={p.clave}
-                    stackId="s"
-                    fill={colorSegmento(p.clave, i)}
-                    stroke={VIZ_SUPERFICIE}
-                    strokeWidth={2}
-                    isAnimationActive={false}
-                    radius={
-                      i === 0
-                        ? [3, 0, 0, 3]
-                        : i === datosComposicion.length - 1
-                          ? [0, 3, 3, 0]
-                          : undefined
-                    }
-                  />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <Leyenda items={leyendaComposicion} />
-        </Panel>
-      ) : null}
     </div>
   );
 }
