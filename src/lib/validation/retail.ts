@@ -98,15 +98,28 @@ export const FILAS_POR_PAGINA = 100;
 // `parte=serie&granularidad=dia` la primera vez que alguien la elige.
 export const METRICA_CONTEO_ID = "__conteo__";
 
-export const resumenAnalisisQuerySchema = z.object({
-  account: z.enum(RETAILER_IDS).optional(),
-  sourceFile: z.string().min(1).max(300).optional(),
-  parte: z.enum(["bundle", "serie"]).default("bundle"),
-  granularidad: z.enum(["dia", "mes", "anio"]).optional(),
-  // "archivo" agrega un solo reporte —lo que mira /retail/analisis— y "cuenta"
-  // agrega todos los del retailer, que es lo que necesita su ficha.
-  alcance: z.enum(["archivo", "cuenta"]).default("archivo"),
-});
+export const resumenAnalisisQuerySchema = z
+  .object({
+    account: z.enum(RETAILER_IDS).optional(),
+    sourceFile: z.string().min(1).max(300).optional(),
+    parte: z.enum(["bundle", "serie"]).default("bundle"),
+    granularidad: z.enum(["dia", "mes", "anio"]).optional(),
+    // "archivo" agrega un solo reporte —lo que mira /retail/analisis— y "cuenta"
+    // agrega todos los del retailer, que es lo que necesita su ficha.
+    alcance: z.enum(["archivo", "cuenta"]).default("archivo"),
+    // Periodo que mira la pestaña de Ventas de la ficha del retailer. Ausentes
+    // significa TODO el histórico, que es lo que pide la carga inicial: así el
+    // primer viaje sigue compartiendo entrada de caché con la de antes.
+    desde: fechaISO.optional(),
+    hasta: fechaISO.optional(),
+  })
+  // Se comparan como TEXTO y no como Date: la clave ISO con ceros a la
+  // izquierda ordena alfabéticamente igual que cronológicamente, y así no entra
+  // una zona horaria a decidir si el rango es válido.
+  .refine((q) => !q.desde || !q.hasta || q.desde <= q.hasta, {
+    message: "El inicio del periodo no puede ser posterior al fin",
+    path: ["desde"],
+  });
 
 export const filasAnalisisQuerySchema = z.object({
   account: z.enum(RETAILER_IDS).optional(),

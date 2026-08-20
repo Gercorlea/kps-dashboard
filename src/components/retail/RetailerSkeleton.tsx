@@ -136,6 +136,30 @@ export function RetailerGraficasSkeleton() {
 }
 
 /**
+ * Tabla de artículos. La pinta la pestaña de Productos mientras llega el bundle
+ * de un periodo recién elegido: la tabla de verdad con cero filas diría "0
+ * artículos", que es un dato y no una espera.
+ *
+ * Sin animación propia, por lo mismo que las gráficas: la pone quien lo monta.
+ */
+export function RetailerTablaSkeleton() {
+  return (
+    <section className="cr-panel">
+      <header className="cr-panel__head">
+        <Bloque ancho={96} alto={12} />
+        <Bloque ancho={208} alto={30} />
+      </header>
+      <div className="cr-panel__body flex flex-col gap-2">
+        <Bloque alto={32} />
+        {Array.from({ length: 8 }, (_, i) => (
+          <Bloque key={i} alto={24} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
  * Contenido de la ficha: los filtros, los KPIs y las gráficas.
  *
  * El `gap-6` de la raíz es el del .cr-page-content de la ficha, así que sirve

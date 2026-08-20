@@ -144,6 +144,11 @@ async function calcularResumen(q: QueryResumen) {
 
   // Qué archivo se está viendo. El más reciente por importedAt cuando no se
   // pide uno, igual que la ruta de filas, para que las dos coincidan.
+  //
+  // Esta búsqueda NO mira `desde`/`hasta` a propósito: identifica el archivo y
+  // su plantilla, no el periodo. Acotarla por fechas dejaría un trimestre sin
+  // reportes sin plantilla, y con ella se va la pestaña entera en vez de
+  // quedarse en un periodo vacío, que es lo que de verdad pasó.
   const ultimo = await SalesReport.findOne(
     q.sourceFile
       ? { sourceFile: q.sourceFile, ...(q.account ? { account: q.account } : {}) }
@@ -185,13 +190,27 @@ async function calcularResumen(q: QueryResumen) {
   // plantilla mal escrita no agrupe por un campo que no existe.
   const claveProducto =
     plantilla.producto?.claves.filter((campo) => columnas.some((c) => c.campo === campo)) ?? [];
+  // El periodo pedido, si lo hay. `date` se guarda a medianoche UTC
+  // (SalesReport.ts:36), así que un $lte con la fecha desnuda incluye ese día
+  // completo. Mismo criterio que serieHistorica en stats.ts.
+  const filtroFecha: Record<string, Date> = {};
+  if (q.desde) filtroFecha.$gte = new Date(`${q.desde}T00:00:00.000Z`);
+  if (q.hasta) filtroFecha.$lte = new Date(`${q.hasta}T00:00:00.000Z`);
+
   // Con alcance de cuenta se agregan TODOS los reportes del retailer, que es
   // lo que mira su ficha; con alcance de archivo, sólo el que se está viendo
   // en /retail/analisis. El resto del pipeline no distingue.
-  const base =
-    q.alcance === "cuenta"
+  //
+  // El rango se mete AQUÍ y en un solo sitio: `base` alimenta tanto la rama
+  // `parte=serie` como el $facet, así que las dos lo respetan sin que ninguna
+  // etapa de abajo tenga que saber que existe. El campo de fecha sale de la
+  // plantilla y nunca de la query, igual que las dimensiones.
+  const base = {
+    ...(q.alcance === "cuenta"
       ? { account: ultimo.account }
-      : { account: ultimo.account, sourceFile: ultimo.sourceFile };
+      : { account: ultimo.account, sourceFile: ultimo.sourceFile }),
+    ...(fecha && Object.keys(filtroFecha).length > 0 ? { [fecha]: filtroFecha } : {}),
+  };
   const acc = acumuladores(metricas);
 
   // Sólo la serie, en la granularidad pedida. Es la petición diferida de
@@ -328,6 +347,10 @@ export async function GET(request: NextRequest) {
       q.alcance,
       q.parte,
       q.granularidad ?? "",
+      // Sin el periodo en la clave, pedir un trimestre devolvería el agregado
+      // del histórico completo que dejó ahí la carga inicial.
+      q.desde ?? "",
+      q.hasta ?? "",
     ].join("|");
     return ok(await memoRetail(clave, () => calcularResumen(q)));
   } catch (e) {

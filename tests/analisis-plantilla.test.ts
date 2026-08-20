@@ -490,4 +490,52 @@ describe("comparativa año contra año", () => {
     expect(c.totalPrevio).toBe(0);
     expect(c.variacion).toBeNull();
   });
+
+  // Con el filtro de periodo de la ficha, "el año pasado" deja de deducirse: si
+  // alguien pidió T1 2026, la comparativa es contra el T1 de 2025 y no contra
+  // los dos años que más aparezcan en el mapa.
+  it("con ventana compara sólo esos meses contra el año inmediatamente anterior", () => {
+    const c = compararAnios(
+      serie({
+        "2024-02": 1,
+        "2025-01": 100,
+        "2025-02": 200,
+        "2025-03": 300,
+        "2025-07": 999,
+        "2026-01": 110,
+        "2026-02": 190,
+        "2026-03": 330,
+        "2026-07": 888,
+      }),
+      "suma",
+      { anio: 2026, meses: [1, 2, 3] }
+    )!;
+
+    expect(c.anioActual).toBe(2026);
+    expect(c.anioPrevio).toBe(2025);
+    // Julio está en los dos años y NO entra: queda fuera del trimestre pedido.
+    expect(c.puntos).toEqual([
+      { mes: 1, actual: 110, previo: 100 },
+      { mes: 2, actual: 190, previo: 200 },
+      { mes: 3, actual: 330, previo: 300 },
+    ]);
+    expect(c.totalActual).toBe(630);
+    expect(c.totalPrevio).toBe(600);
+    expect(c.mesesComparables).toBe(3);
+  });
+
+  it("con ventana y sin ningún mes con datos no hay comparativa", () => {
+    // El primer trimestre del primer año reportado: no hay año anterior.
+    expect(
+      compararAnios(serie({ "2026-01": 100, "2026-02": 200 }), "suma", {
+        anio: 2025,
+        meses: [1, 2, 3],
+      })
+    ).toBeNull();
+  });
+
+  it("sin ventana sigue tomando los dos años presentes aunque no sean seguidos", () => {
+    const c = compararAnios(serie({ "2024-01": 100, "2026-01": 120 }), "suma")!;
+    expect([c.anioActual, c.anioPrevio]).toEqual([2026, 2024]);
+  });
 });

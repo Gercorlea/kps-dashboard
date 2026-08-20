@@ -22,11 +22,16 @@
 const TTL_MS = 10 * 60_000;
 
 /**
- * Tope de entradas. Las claves reales son un puñado (cuatro retailers × dos
- * alcances × las partes del bundle), pero `sourceFile` viene de la query y sin
+ * Tope de entradas. `sourceFile` y el periodo vienen de la query, así que sin
  * un límite un cliente en bucle podría hacer crecer el mapa sin fin.
+ *
+ * Eran 64 cuando la clave sólo combinaba retailer × alcance × parte. Con el
+ * filtro de periodo de la ficha entran los rangos (cuatro trimestres y el año
+ * por cada año con datos, más los personalizados), y la expulsión de abajo es
+ * por orden de INSERCIÓN y no por uso: con el tope viejo, pasear por los
+ * trimestres de un retailer echaba las entradas calientes de los otros.
  */
-const MAX_ENTRADAS = 64;
+const MAX_ENTRADAS = 256;
 
 interface Entrada {
   valor: Promise<unknown>;

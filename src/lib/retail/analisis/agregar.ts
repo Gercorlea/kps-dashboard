@@ -241,32 +241,60 @@ function juntar(a: Acumulador, b: Acumulador): Acumulador {
 }
 
 /**
+ * Ventana de comparación: qué año se toma como "actual" y qué meses entran.
+ *
+ * La usa el filtro de periodo de la ficha del retailer: con "T1 2026" elegido,
+ * la comparativa tiene que ser contra el T1 de 2025 —los mismos tres meses— y
+ * no contra el trimestre anterior ni contra el año completo.
+ */
+export interface VentanaAnual {
+  anio: number;
+  /** Meses 1-12 que se comparan. */
+  meses: number[];
+}
+
+/**
  * Serie mensual ("YYYY-MM" → acumulador) → comparativa de los dos años más
  * recientes que aparezcan. Null si sólo hay uno: no hay nada que comparar.
  *
  * Se toman los dos años PRESENTES y no `anio` y `anio - 1` para que un hueco en
  * medio (2024 y 2026, sin 2025) siga produciendo una comparativa; las etiquetas
  * llevan el año de verdad, así que no se puede leer mal.
+ *
+ * Con `ventana` el par de años deja de deducirse: es `ventana.anio` contra el
+ * inmediatamente anterior, y sólo por los meses que diga. Ahí sí van años
+ * consecutivos y no "los dos presentes", porque quien filtró un trimestre pidió
+ * ESE trimestre del año pasado; el mapa que se pasa tiene que ser el del
+ * histórico completo, que es el único que trae el año previo.
  */
 export function compararAnios(
   mapa: Map<string, Acumulador>,
-  agregacion: Agregacion
+  agregacion: Agregacion,
+  ventana?: VentanaAnual
 ): ComparativaAnual | null {
-  const anios = new Set<number>();
-  for (const clave of mapa.keys()) {
-    const anio = Number(clave.slice(0, 4));
-    if (Number.isInteger(anio)) anios.add(anio);
-  }
-  if (anios.size < 2) return null;
+  let anioActual: number;
+  let anioPrevio: number;
 
-  const [anioActual, anioPrevio] = [...anios].sort((a, b) => b - a);
+  if (ventana) {
+    anioActual = ventana.anio;
+    anioPrevio = ventana.anio - 1;
+  } else {
+    const anios = new Set<number>();
+    for (const clave of mapa.keys()) {
+      const anio = Number(clave.slice(0, 4));
+      if (Number.isInteger(anio)) anios.add(anio);
+    }
+    if (anios.size < 2) return null;
+    [anioActual, anioPrevio] = [...anios].sort((a, b) => b - a);
+  }
 
   const puntos: ComparativaAnual["puntos"] = [];
   let accActual: Acumulador = { suma: 0, conteo: 0 };
   let accPrevio: Acumulador = { suma: 0, conteo: 0 };
   let mesesComparables = 0;
 
-  for (let mes = 1; mes <= 12; mes++) {
+  const meses = ventana ? ventana.meses : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  for (const mes of meses) {
     const mm = mes < 10 ? `0${mes}` : String(mes);
     const a = mapa.get(`${anioActual}-${mm}`);
     const p = mapa.get(`${anioPrevio}-${mm}`);
@@ -285,6 +313,11 @@ export function compararAnios(
       mesesComparables++;
     }
   }
+
+  // Con ventana los dos años vienen dados y pueden no tener ni un mes con
+  // datos (un trimestre del primer año reportado no tiene año anterior): no hay
+  // comparativa que pintar, igual que cuando sólo se detecta un año.
+  if (puntos.length === 0) return null;
 
   // Se resuelve el acumulador junto y no se suman los valores mes a mes: con
   // agregación "promedio" la suma de doce promedios no es el promedio del año.
@@ -406,11 +439,23 @@ export function granularidadAuto(filas: FilaCruda[], colFecha: MetaColumna): Gra
   return rango ? granularidadPorRango(rango.desde, rango.hasta) : "mes";
 }
 
-/** Igual que `granularidadAuto` pero desde un rango ya calculado: en el
- *  histórico el mínimo y el máximo salen de un `$group`, sin recorrer filas. */
-export function granularidadPorRango(desde: Date, hasta: Date): Granularidad {
+/**
+ * Igual que `granularidadAuto` pero desde un rango ya calculado: en el
+ * histórico el mínimo y el máximo salen de un `$group`, sin recorrer filas.
+ *
+ * `umbralDia` es el corte a día en días. Los 60 por omisión son para el rango
+ * COMPLETO de un reporte, donde bajar a día casi nunca aplica. La ficha del
+ * retailer pasa un umbral más generoso porque ahí el rango lo elige la persona:
+ * con 60, un trimestre filtrado caía en "mes" y dejaba una serie de tres
+ * puntos, que es justo lo que no se quiere ver tras pedir un trimestre.
+ */
+export function granularidadPorRango(
+  desde: Date,
+  hasta: Date,
+  umbralDia = 60
+): Granularidad {
   const dias = (hasta.getTime() - desde.getTime()) / 86_400_000;
-  if (dias < 60) return "dia";
+  if (dias < umbralDia) return "dia";
   if (dias < 1825) return "mes";
   return "anio";
 }
