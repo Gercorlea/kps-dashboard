@@ -3,7 +3,7 @@
 // Ficha de un retailer: cabecera con estado y métricas, barra de pestañas y un
 // panel por sección.
 //
-// Las cuatro pestañas se sirven del MISMO bundle de acumuladores, así que
+// Las pestañas con datos se sirven del MISMO bundle de acumuladores, así que
 // cambiar de sección —y de métrica o dimensión dentro de ella— no vuelve a
 // pedir nada. Es el mismo trato que /retail/analisis: Mongo agrega una
 // vez y el navegador pliega, porque el enlace a la base es lento.
@@ -73,7 +73,7 @@ const TOP_BARRA = 8;
 const TOP_COMPOSICION = 5;
 const PRODUCTOS_POR_PAGINA = 100;
 
-type Vista = "resumen" | "ventas" | "productos" | "reportes";
+type Vista = "resumen" | "ventas" | "inventario" | "productos" | "reportes";
 
 /** Sentido del orden de la tabla de productos. */
 type Direccion = "asc" | "desc";
@@ -89,6 +89,9 @@ const VISTAS: { id: Vista; etiqueta: string }[] = [
   // condicionales de abajo. Lo que se lee en la barra es la etiqueta.
   { id: "resumen", etiqueta: "Overview" },
   { id: "ventas", etiqueta: "Ventas" },
+  // Inventario todavía no tiene plantilla XLSX: la pestaña existe para fijar su
+  // sitio —entre Ventas y Productos— y de momento sólo dice que está pendiente.
+  { id: "inventario", etiqueta: "Inventario" },
   { id: "productos", etiqueta: "Productos" },
   { id: "reportes", etiqueta: "Reportes" },
 ];
@@ -878,7 +881,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
 
                 {filtroPeriodo}
               </div>
-            ) : vista === "reportes" ? null : (
+            ) : vista === "reportes" || vista === "inventario" ? null : (
               <div className="flex flex-wrap items-end gap-3">
                 {filtrosGrafica}
                 {vista === "ventas" ? filtroPeriodo : null}
@@ -928,6 +931,21 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   metricaMoneda={metricaMoneda}
                 />
               )
+            ) : null}
+
+            {vista === "inventario" ? (
+              <Panel>
+                <EstadoVacio
+                  title="Inventario todavía no disponible"
+                  detalle={`Falta la plantilla XLSX de inventarios de ${ficha.nombre}. En cuanto exista, sus existencias se leerán aquí igual que las ventas.`}
+                >
+                  <FileSpreadsheet
+                    strokeWidth={1.25}
+                    size={28}
+                    style={{ color: "var(--cr-ink-3)" }}
+                  />
+                </EstadoVacio>
+              </Panel>
             ) : null}
 
             {vista === "productos" ? (

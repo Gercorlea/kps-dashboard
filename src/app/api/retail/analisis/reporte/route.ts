@@ -20,9 +20,6 @@ import { SalesReport } from "@/models/SalesReport";
 // Todo en un solo viaje ($facet): el resumen del contenido y las escrituras por
 // usuario recorren las mismas filas.
 
-/** Marcas que se mandan para la ficha; se informa además cuántas hay en total. */
-const MAX_MARCAS = 12;
-
 interface Resumen {
   filas: number;
   importado: Date | null;
@@ -149,7 +146,10 @@ export async function GET(request: NextRequest) {
     const ultimoAutor = resumen.actualizado ? facetado?.ultimoAutor?.[0]?._id : null;
     const usuarios = await usuariosPorId([resumen.subidoPor, ultimoAutor]);
 
-    const marcas = (resumen.marcas ?? []).filter((m) => m.trim() !== "").sort();
+    // Sólo el conteo: la ficha muestra cuántas marcas trae el reporte, no
+    // cuáles. El $addToSet de arriba sigue siendo la única forma de contarlas
+    // sin traer una fila por marca.
+    const marcas = (resumen.marcas ?? []).filter((m) => m.trim() !== "");
 
     return ok({
       sourceFile,
@@ -158,7 +158,6 @@ export async function GET(request: NextRequest) {
       plantilla: plantilla?.nombre ?? null,
       filas: resumen.filas,
       articulos: resumen.articulos,
-      marcas: marcas.slice(0, MAX_MARCAS),
       marcasTotal: marcas.length,
       // Periodo que cubren los datos, no las fechas de carga.
       desde: resumen.desde ? fechaISO(new Date(resumen.desde)) : null,
