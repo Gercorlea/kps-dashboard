@@ -204,7 +204,7 @@ function RetailerCard({ r, serie }: { r: DetalleRetailer; serie: PuntoVentas[] }
       ) : (
         <div className="cr-rcard__vacio">
           <p>Todavía no hay reportes guardados.</p>
-          <p>Ábrelo para subir su Excel desde Análisis.</p>
+          <p>Ábrelo y carga su Excel con «Cargar un Excel».</p>
         </div>
       )}
     </article>

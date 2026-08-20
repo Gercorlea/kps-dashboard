@@ -102,6 +102,8 @@
 .cr-btn--ghost:hover:not(:disabled) { background: #f4f4f1; color: #15171c; }
 .cr-btn--danger    { background: #fff; color: var(--cr-danger); border-color: rgba(207,71,51,.35); }
 .cr-btn--danger:hover:not(:disabled) { background: var(--cr-danger-tint); }
+.cr-btn--ok        { background: #fff; color: var(--cr-ok); border-color: rgba(31,148,104,.35); }
+.cr-btn--ok:hover:not(:disabled) { background: var(--cr-ok-tint); }
 .cr-btn--sm        { padding: 7px 12px; font-size: 11.5px; }
 /* Iconos dentro de botones: 14×14px */
 .cr-btn svg { width: 14px; height: 14px; }

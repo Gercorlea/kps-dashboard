@@ -758,10 +758,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
               {sinDatos ? "Sin reportes" : "Con datos"}
             </Badge>
           </div>
-          <Link href="/retail/analisis" className="cr-btn cr-btn--secondary cr-btn--sm">
-            <FileSpreadsheet strokeWidth={1.75} />
-            Cargar un Excel
-          </Link>
+          <BotonCargarExcel retailer={ficha.id} />
         </div>
 
         {sinDatos ? null : (
@@ -813,7 +810,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
           <Panel>
             <EstadoVacio
               title={`Todavía no hay reportes de ${ficha.nombre}`}
-              detalle="Sube su Excel desde Análisis y elige este retailer al guardarlo. Aparecerá aquí con sus ventas, sus productos y su histórico."
+              detalle={`Carga su Excel con el botón de arriba: se guarda solo en el histórico de ${ficha.nombre} y aparecerá aquí con sus ventas, sus productos y su histórico.`}
             >
               <FileSpreadsheet strokeWidth={1.25} size={28} style={{ color: "var(--cr-ink-3)" }} />
             </EstadoVacio>
@@ -995,7 +992,11 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   }}
                 />
               ) : (
-                <Panel title="Reportes guardados" sinPadding>
+                <Panel
+                  title="Reportes guardados"
+                  acciones={<BotonCargarExcel retailer={ficha.id} />}
+                  sinPadding
+                >
                   <div className="cr-table-scroll">
                     <table className="cr-table">
                       <thead>
@@ -1053,6 +1054,24 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * Entrada a /retail/analisis. Lleva el retailer en la URL porque esa ruta ya no
+ * pregunta a qué cuenta guardar: guarda a la del panel desde el que se entró.
+ * Es el ÚNICO acceso a esa ruta —no tiene entrada en el menú—, así que aparece
+ * tanto en la cabecera como en la lista de reportes.
+ */
+function BotonCargarExcel({ retailer }: { retailer: string }) {
+  return (
+    <Link
+      href={`/retail/analisis?retailer=${encodeURIComponent(retailer)}`}
+      className="cr-btn cr-btn--ok cr-btn--sm"
+    >
+      <FileSpreadsheet strokeWidth={1.75} />
+      Cargar un Excel
+    </Link>
   );
 }
 
