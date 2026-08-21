@@ -15,6 +15,41 @@ function fechaUTC(iso: string): Date {
   return new Date(Date.UTC(a, m - 1, d));
 }
 
+/**
+ * Cuántas órdenes de escritura salen en paralelo por cada lote recibido.
+ *
+ * Medido contra el clúster real con las 15,344 filas del reporte de Walmart,
+ * mandando los mismos lotes de 2000 filas que manda el cliente:
+ *
+ *   1 orden de 2000 …… 114 s      8 órdenes de 250 …… 19 s
+ *   4 órdenes de 500 …  33 s     16 órdenes de 125 …… 13 s
+ *
+ * El cuello no son los bytes ni la replicación —comprimir el lote 19× con zlib
+ * dio 114 s igual, y `w: 1` también—: es la latencia de cada upsert contra un
+ * clúster compartido, y lo único que la tapa es tener varias órdenes en vuelo.
+ *
+ * Se queda en 8 y no en 16 porque de ahí en adelante la curva se aplana (32
+ * órdenes dieron 12 s) y cada orden es una conexión más al clúster, con varias
+ * cargas simultáneas y varias instancias del servidor de por medio.
+ */
+const ORDENES_EN_PARALELO = 8;
+
+/**
+ * Filas del lote sin claves repetidas, quedándose con la ÚLTIMA.
+ *
+ * Es lo que hacía una sola orden con las 2000 filas: aplicaba las operaciones
+ * en fila y la última ganaba. Al repartir el lote en órdenes paralelas, dos
+ * filas con la misma clave natural podrían intentar insertarse a la vez y una
+ * moriría con E11000, así que se resuelve antes de escribir. El reporte no
+ * debería traerlas —(itemNbr, date) es única en su grano—, pero el guardado no
+ * puede depender de eso.
+ */
+function sinClavesRepetidas<T extends { itemNbr: number; date: string }>(filas: T[]): T[] {
+  const porClave = new Map<string, T>();
+  for (const f of filas) porClave.set(`${f.itemNbr}|${f.date}`, f);
+  return [...porClave.values()];
+}
+
 /** Una fila por reporte guardado: el $group de abajo, antes de resolver autores. */
 interface ArchivoAgrupado {
   _id: string;
@@ -66,7 +101,7 @@ export async function POST(request: NextRequest) {
       { updatePipeline: true }
     );
 
-    const ops = filas.map((f) => {
+    const operacion = (f: (typeof filas)[number]) => {
       const { date, ...resto } = f;
       const fecha = fechaUTC(date);
       return {
@@ -95,9 +130,23 @@ export async function POST(request: NextRequest) {
           upsert: true,
         },
       };
-    });
+    };
 
-    const res = await SalesReport.bulkWrite(ops, { ordered: false });
+    // El lote se reparte en varias órdenes que viajan a la vez (ver
+    // ORDENES_EN_PARALELO). Son disjuntas por construcción —cada fila cae en
+    // una sola— así que el resultado es el mismo que escribirlas en fila.
+    const unicas = sinClavesRepetidas(filas);
+    const porOrden = Math.ceil(unicas.length / ORDENES_EN_PARALELO);
+    const ordenes: (typeof filas)[] = [];
+    for (let i = 0; i < unicas.length; i += porOrden) {
+      ordenes.push(unicas.slice(i, i + porOrden));
+    }
+
+    const res = await Promise.all(
+      ordenes.map((orden) =>
+        SalesReport.bulkWrite(orden.map(operacion), { ordered: false })
+      )
+    );
     // El histórico cambió: los agregados guardados en memoria ya no lo
     // describen. Se tiran aquí y no en el siguiente GET porque una carga se
     // sube en lotes y el usuario abre su ficha en cuanto termina el último.
@@ -105,8 +154,8 @@ export async function POST(request: NextRequest) {
 
     return ok({
       recibidas: filas.length,
-      insertadas: res.upsertedCount,
-      actualizadas: res.modifiedCount,
+      insertadas: res.reduce((n, r) => n + r.upsertedCount, 0),
+      actualizadas: res.reduce((n, r) => n + r.modifiedCount, 0),
     });
   } catch (e) {
     return handleApiError(e);
