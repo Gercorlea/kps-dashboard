@@ -133,6 +133,34 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-segment__item--active { background: #15171c; color: #fff; font-weight: 500; }
 .cr-segment__item--active:hover { background: #15171c; }
 
+/* Variante con indicador deslizante: la pastilla tinta viaja hasta la pestaña
+   nueva en vez de saltar. El fondo deja de pintarlo el propio item y pasa a ser
+   un elemento aparte que se mueve; los items van por encima para que su texto
+   no quede tapado.
+
+   La pista interna existe por el scroll horizontal: en móvil .cr-segment lleva
+   overflow-x auto, y un absoluto dentro de un contenedor con scroll se coloca
+   contra su padding box —no contra el contenido desplazado—, así que el
+   indicador se quedaría quieto mientras las pestañas se mueven. */
+.cr-segment--desliza .cr-segment__pista { position: relative; display: inline-flex; }
+.cr-segment--desliza .cr-segment__item { position: relative; z-index: 1; }
+.cr-segment__indicador {
+  position: absolute; inset-block: 0; left: 0; z-index: 0;
+  background: #15171c; opacity: 0; pointer-events: none;
+}
+/* Hasta que hay medidas el marcado es el de siempre —el item activo pinta su
+   propio fondo— para que el servidor y la primera pintura no muestren la
+   pastilla en el borde izquierdo ni con ancho cero. El relevo ocurre en el
+   mismo commit en que el indicador ya tiene su sitio. */
+.cr-segment--medido .cr-segment__indicador { opacity: 1; }
+.cr-segment--medido .cr-segment__item--active,
+.cr-segment--medido .cr-segment__item--active:hover { background: transparent; }
+/* El movimiento se habilita un frame después de la primera medida: si no, el
+   salto de 0 a la posición real se vería como un deslizamiento al cargar. */
+.cr-segment--anima .cr-segment__indicador {
+  transition: transform .18s cubic-bezier(.2,.6,.2,1), width .18s cubic-bezier(.2,.6,.2,1);
+}
+
 /* ============================ Cards y paneles ============================ */
 
 .cr-card, .cr-panel { background: #fff; border: 1px solid rgba(10,12,18,.10);
@@ -529,6 +557,22 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
 .cr-detalle-head__tabs > .cr-segment { overflow-x: auto; max-width: 100%; }
 
 .cr-page-content { flex: 1; padding: 16px; background: var(--cr-bg); }
+
+/* Cambio de sección en una ficha con pestañas: el contenido nuevo entra en vez
+   de aparecer de golpe. Sólo entrada —no hay salida— para no retrasar la
+   respuesta al clic: el ojo lee el movimiento, la mano no espera.
+
+   El flex y el gap no son decoración: este div pasa a ser el único hijo de
+   .cr-page-content, así que tiene que reproducir la separación entre paneles
+   que antes daba el contenedor. */
+.cr-vista {
+  display: flex; flex-direction: column; gap: 24px; flex: 1;
+  animation: cr-vista-entra .16s cubic-bezier(.2,.6,.2,1) both;
+}
+@keyframes cr-vista-entra {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
 @media (min-width: 768px)  { .cr-page-head, .cr-detalle-head { padding: 18px 24px; } .cr-page-content { padding: 24px; } }
 @media (min-width: 1280px) { .cr-page-head, .cr-detalle-head { padding: 20px 40px; } .cr-page-content { padding: 40px; } }
 
@@ -1078,3 +1122,13 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
 .cr-consumo__detalle { opacity: 0.75; }
 .cr-consumo__costo { color: var(--cr-ink-2); font-weight: 500; }
 .cr-consumo__total { font-family: var(--cr-font-mono); color: var(--cr-ink-2); }
+
+/* ====================== Movimiento reducido ====================== */
+
+/* Quien pide menos movimiento en el sistema sigue viendo los estados live
+   —spinner y pulse dicen que algo está pasando—, pero el cambio de sección
+   vuelve a ser instantáneo: ahí la animación sólo acompaña, no informa. */
+@media (prefers-reduced-motion: reduce) {
+  .cr-vista { animation: none; }
+  .cr-segment--anima .cr-segment__indicador { transition: none; }
+}

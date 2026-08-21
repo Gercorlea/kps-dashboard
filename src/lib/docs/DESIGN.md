@@ -22,7 +22,10 @@ este documento.**
    alineados a la derecha, headers de tabla y labels en **mono uppercase
    9–10px gris**.
 6. **Sombras mínimas**: `border + fondo plano`; elevación solo `--cr-shadow-1`.
-7. **Transiciones de 120ms**; animación solo para estados live (spinner, pulse).
+7. **Transiciones de 120ms**; animación solo para estados live (spinner,
+   pulse) y para el cambio de sección en fichas con pestañas: `.cr-vista`
+   entra en 160ms y el indicador de `.cr-segment--desliza` viaja en 180ms.
+   Todo lo que se mueva por gusto va bajo `prefers-reduced-motion: reduce`.
 
 ## Tipografía
 
