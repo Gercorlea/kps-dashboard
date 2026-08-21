@@ -42,7 +42,9 @@ Clases `.cr-*` en `design-system.css`: `cr-btn` (primary/secondary/ai/ghost/sm),
 `cr-kpi` (línea superior de 2px; roja si alerta), `cr-badge` (ok/warn/danger/ai),
 `cr-table` (+ `.num`, columnas sticky de SKU/descripción en desktop),
 `cr-meter`, shell (`cr-sidebar`, `cr-navlink`, `cr-page-head`,
-`cr-page-content`), chat (`cr-msg-user`, `cr-msg-assistant`, `cr-chat-send`).
+`cr-page-content` + `--pegado` cuando lo primero del contenido es aquello a lo
+que el título se refiere y debe leerse junto a la cabecera), chat
+(`cr-msg-user`, `cr-msg-assistant`, `cr-chat-send`).
 
 Toda tabla va envuelta en un `.cr-panel` con scroll interno (`cr-table-scroll`).
 
