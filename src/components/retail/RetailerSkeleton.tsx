@@ -6,7 +6,7 @@
 // que desde el clic hasta que entran los datos la pantalla no cambia de forma:
 // sólo se van llenando los huecos.
 //
-// Copia la vista `resumen` de RetailerDetalle —la que se pinta al entrar— con el
+// Copia la vista `ventas` de RetailerDetalle —la que se pinta al entrar— con el
 // cromo real (.cr-detalle-head, .cr-panel, la rejilla de KPIs) y bloques grises
 // donde van los datos. Si esa vista cambia de estructura, este archivo también.
 //
@@ -91,12 +91,6 @@ export function RetailerCabeceraSkeleton() {
 
       <div className="cr-detalle-head__fila">
         <Bloque ancho={152} alto={14} />
-        <div className="flex min-w-48 flex-1 items-center gap-3">
-          <div className="min-w-24 flex-1">
-            <Bloque alto={5} />
-          </div>
-          <Bloque ancho={132} alto={14} />
-        </div>
       </div>
 
       <div className="cr-detalle-head__tabs">
@@ -115,7 +109,7 @@ export function RetailerCabeceraSkeleton() {
 }
 
 /**
- * Las cuatro gráficas del resumen, con los altos reales de AnalisisCharts: el
+ * Las cuatro gráficas de Ventas, con los altos reales de AnalisisCharts: el
  * año contra el anterior, la serie por periodo y —pareadas— el ranking de la
  * dimensión y su composición.
  *
@@ -170,17 +164,8 @@ export function RetailerContenidoSkeleton() {
     <div className="cr-pulse flex flex-col gap-6" aria-busy="true">
       <span className="sr-only">Cargando la ficha del retailer…</span>
 
-      {/* Los selectores de dimensión y métrica. */}
-      <div className="flex flex-wrap items-end gap-3">
-        {[132, 148].map((ancho) => (
-          <div key={ancho} className="cr-field">
-            <Bloque ancho={Math.round(ancho * 0.55)} alto={9} />
-            <Bloque ancho={ancho} alto={37} />
-          </div>
-        ))}
-      </div>
-
-      {/* Misma rejilla que AnalisisKpis. Las tarjetas son .cr-card y no .cr-kpi
+      {/* Misma rejilla que AnalisisKpis. Van primero porque en Ventas encabezan
+          la página, por encima de la fila de filtros. Las tarjetas son .cr-card y no .cr-kpi
           a propósito: la cinta de tinta de 2px del KPI se leería como un dato
           que ya llegó.
 
@@ -199,6 +184,16 @@ export function RetailerContenidoSkeleton() {
             <Bloque ancho={ancho} alto={10} />
             <Bloque ancho={144} alto={30} className="mt-2.5" />
             {detalle ? <Bloque ancho={112} alto={11} className="mt-1" /> : null}
+          </div>
+        ))}
+      </div>
+
+      {/* Los selectores de dimensión y métrica, más el de periodo. */}
+      <div className="flex flex-wrap items-end gap-3">
+        {[132, 148].map((ancho) => (
+          <div key={ancho} className="cr-field">
+            <Bloque ancho={Math.round(ancho * 0.55)} alto={9} />
+            <Bloque ancho={ancho} alto={37} />
           </div>
         ))}
       </div>

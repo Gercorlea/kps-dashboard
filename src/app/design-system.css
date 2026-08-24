@@ -576,16 +576,6 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
 @media (min-width: 768px)  { .cr-page-head, .cr-detalle-head { padding: 18px 24px; } .cr-page-content { padding: 24px; } }
 @media (min-width: 1280px) { .cr-page-head, .cr-detalle-head { padding: 20px 40px; } .cr-page-content { padding: 40px; } }
 
-/* Contenido pegado a la cabecera: cuando lo primero que va debajo del título es
-   aquello a lo que el título se refiere —las cards de /retail—, los 40px de aire
-   de arriba lo separan de la cabecera en vez de agruparlo con ella. Baja sólo el
-   padding superior; los laterales y el de abajo se quedan para no romper la
-   alineación con la cabecera. Va después de las media queries de
-   .cr-page-content porque tienen la misma especificidad: gana la última. */
-.cr-page-content--pegado { padding-top: 12px; }
-@media (min-width: 768px)  { .cr-page-content--pegado { padding-top: 16px; } }
-@media (min-width: 1280px) { .cr-page-content--pegado { padding-top: 20px; } }
-
 @media (max-width: 1023.9px) {
   .cr-shell__main { padding-top: var(--cr-mobile-nav-height); }
 }
