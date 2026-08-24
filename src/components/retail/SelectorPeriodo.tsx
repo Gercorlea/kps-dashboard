@@ -5,9 +5,9 @@
 // selectores de la izquierda, que son de otra clase (esos eligen QUÉ se mira;
 // éste, DE CUÁNDO).
 //
-// Dos `<input type="date">` nativos, como en /retail/historico: no hay Radix ni
-// date-picker en el repo, y el nativo ya trae el calendario, el teclado y la
-// validación de min/max que habría que reimplementar.
+// Dos `<input type="date">` nativos: no hay Radix ni date-picker en el repo, y
+// el nativo ya trae el calendario, el teclado y la validación de min/max que
+// habría que reimplementar.
 //
 // Hacen falta las DOS fechas para que se aplique: elegir sólo la primera deja
 // el filtro a medias y no mueve nada. Los `min`/`max` cruzados evitan además que

@@ -67,12 +67,12 @@ import type {
   PuntoSerie,
 } from "@/lib/retail/analisis/tipos";
 
-// HistoricoCharts resuelve sus series con tinta/ok/danger porque cada gráfica
-// lleva una sola serie con significado propio. Aquí hace falta distinguir
-// CATEGORÍAS entre sí (la barra de participación), y para eso el design system
-// no tiene paleta: se usan los tokens --viz-* de globals.css, validados para
-// daltonismo. Se usan también en la gráfica de una sola serie para que las dos
-// tarjetas no hablen idiomas distintos.
+// Una gráfica de una sola serie se resuelve con tinta/ok/danger, porque la serie
+// lleva significado propio. Aquí hace falta distinguir CATEGORÍAS entre sí (la
+// barra de participación), y para eso el design system no tiene paleta: se usan
+// los tokens --viz-* de globals.css, validados para daltonismo. Se usan también
+// en la gráfica de una sola serie para que las dos tarjetas no hablen idiomas
+// distintos.
 const SLOTS = [
   "var(--viz-1)",
   "var(--viz-2)",

@@ -1,28 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { loginSchema } from "@/lib/validation/auth";
-import {
-  CUENTAS,
-  guardarAnalisisSchema,
-  historicoQuerySchema,
-  resumenAnalisisQuerySchema,
-} from "@/lib/validation/retail";
+import { guardarAnalisisSchema, resumenAnalisisQuerySchema } from "@/lib/validation/retail";
 import { nombreRetailer, RETAILER_IDS, RETAILERS } from "@/lib/retail/retailers";
 
 // Los esquemas de carga por hojas fijas se fueron con ese flujo: sus
 // colecciones estaban vacías y la vía real de entrada es el analizador, que
 // valida con `guardarAnalisisSchema`.
-
-describe("historicoQuerySchema", () => {
-  it("acepta fechas ISO y rechaza otros formatos", () => {
-    expect(historicoQuerySchema.safeParse({ desde: "2026-05-12" }).success).toBe(true);
-    expect(historicoQuerySchema.safeParse({ desde: "12/05/2026" }).success).toBe(false);
-  });
-
-  it("cae en san-pablo, la única cuenta que tuvo ingesta por hojas fijas", () => {
-    const r = historicoQuerySchema.safeParse({});
-    expect(r.success && r.data.account).toBe("san-pablo");
-  });
-});
 
 describe("resumenAnalisisQuerySchema", () => {
   it("sin periodo agrega todo el histórico, que es la carga inicial", () => {
@@ -115,12 +98,5 @@ describe("retailers del analizador", () => {
     expect(nombreRetailer("heb")).toBe("HEB");
     // Una cuenta vieja en la base debe verse, no desaparecer de la pantalla.
     expect(nombreRetailer("cuenta-vieja")).toBe("cuenta-vieja");
-  });
-
-  it("no toca CUENTAS, que sigue siendo la del histórico de San Pablo", () => {
-    // RETAILERS (analizador) y CUENTAS (histórico multi-corte) son listas
-    // distintas a propósito: confundirlas mostraría en /retail/historico
-    // cuentas de las que no hay cortes.
-    expect(CUENTAS).toEqual(["san-pablo"]);
   });
 });

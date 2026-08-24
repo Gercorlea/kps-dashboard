@@ -192,7 +192,7 @@ async function calcularResumen(q: QueryResumen) {
     plantilla.producto?.claves.filter((campo) => columnas.some((c) => c.campo === campo)) ?? [];
   // El periodo pedido, si lo hay. `date` se guarda a medianoche UTC
   // (SalesReport.ts:36), así que un $lte con la fecha desnuda incluye ese día
-  // completo. Mismo criterio que serieHistorica en stats.ts.
+  // completo.
   const filtroFecha: Record<string, Date> = {};
   if (q.desde) filtroFecha.$gte = new Date(`${q.desde}T00:00:00.000Z`);
   if (q.hasta) filtroFecha.$lte = new Date(`${q.hasta}T00:00:00.000Z`);

@@ -1,18 +1,7 @@
 import { z } from "zod";
 import { RETAILER_IDS } from "@/lib/retail/retailers";
 
-// El histórico multi-corte sigue siendo de San Pablo: es la única cuenta que
-// tuvo el flujo de ingesta por hojas fijas, hoy retirado.
-export const CUENTAS = ["san-pablo"] as const;
-export type Cuenta = (typeof CUENTAS)[number];
-
 const fechaISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha: YYYY-MM-DD");
-
-export const historicoQuerySchema = z.object({
-  account: z.enum(CUENTAS).default("san-pablo"),
-  desde: fechaISO.optional(),
-  hasta: fechaISO.optional(),
-});
 
 // --- Analizador ad-hoc (§7 bis) ---------------------------------------
 

@@ -2,9 +2,8 @@
 
 Dashboard **enterprise** para el histórico comercial de retail: ingesta de los
 Excel semanales de la comercializadora a **MongoDB** (formato largo), tablas
-densas por hoja, **Scorecard generado** de la cuenta San Pablo, serie
-histórica multi-corte y **KPS AI**, un chat independiente vía Vercel AI
-Gateway. Sin sitio público y sin pagos. (El repo también contiene la
+densas por hoja, **Scorecard generado** de la cuenta San Pablo y **KPS AI**,
+un chat independiente vía Vercel AI Gateway. Sin sitio público y sin pagos. (El repo también contiene la
 integración SAP Service Layer del equipo en `/api/sap`.)
 
 | Pestaña | Ruta | Qué hace |

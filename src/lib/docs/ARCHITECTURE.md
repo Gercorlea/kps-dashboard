@@ -19,7 +19,7 @@ Gateway · SheetJS en el servidor · Vitest.
 src/app/
   (app)/        dashboard autenticado — layout con Sidebar (verifica sesión)
     dashboard/  overview con KPIs, venta mensual por retailer y lista de retailers
-    retail/     lista de retailers, [retailer]/ (ficha), analisis/, historico/
+    retail/     lista de retailers, [retailer]/ (ficha), analisis/
     cronos-ia/  chat
     admin/      usuarios/, estadisticas/
   (auth)/       login/, recuperar/, restablecer/[token]/
@@ -71,8 +71,8 @@ reporte (`GET /api/retail/analisis/reporte`) cuenten lo mismo.
 > hoja y el scorecard) se retiró: sus colecciones llevaban tiempo vacías —0
 > documentos en ventas, inventarios, OC y pronósticos— y sólo sabía procesar San
 > Pablo, porque estampaba `account: "san-pablo"` fijo en cada carga. Los modelos
-> siguen declarados porque `/retail/historico` y la herramienta de consulta de
-> KPS AI aún los referencian.
+> siguen declarados porque la herramienta de consulta de KPS AI aún los
+> referencia.
 
 ## Lectura: agregar en Mongo, plegar en el navegador
 
