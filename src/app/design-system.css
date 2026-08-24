@@ -121,6 +121,28 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 
 .cr-field { display: flex; flex-direction: column; gap: 6px; }
 
+/* Grupo de radios en línea. Vive dentro de un .cr-field —misma etiqueta, mismo
+   alto— para que se alinee con los <select> de su misma fila de filtros. */
+.cr-radios { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; min-height: 37px; }
+.cr-radio {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--cr-ink-2); cursor: pointer; white-space: nowrap;
+  transition: color .12s;
+}
+/* El punto se pinta con un inset blanco sobre el fondo tinta: un ::before
+   aparte quedaría descentrado en cuanto cambiara el tamaño de la fuente. */
+.cr-radio input {
+  appearance: none; margin: 0; flex: none; width: 14px; height: 14px;
+  border: 1px solid rgba(10,12,18,.28); border-radius: 50%; background: #fff;
+  cursor: pointer; transition: background .12s, border-color .12s, box-shadow .12s;
+}
+.cr-radio:hover input:not(:checked) { border-color: rgba(10,12,18,.45); }
+.cr-radio input:checked {
+  background: #15171c; border-color: #15171c; box-shadow: inset 0 0 0 2.5px #fff;
+}
+.cr-radio input:focus-visible { outline: 2px solid #15171c; outline-offset: 2px; }
+.cr-radio:has(input:checked) { color: var(--cr-ink); font-weight: 500; }
+
 /* ============ Segmented control — lo usan las dos pestañas ============ */
 
 .cr-segment { display: inline-flex; border: 1px solid rgba(10,12,18,.10);

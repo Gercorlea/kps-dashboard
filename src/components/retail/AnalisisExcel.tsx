@@ -825,7 +825,7 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
         onArchivo={alArchivo}
         cargando={estado === "leyendo"}
         nombreArchivo={nombreArchivo}
-        nota={`Solo .xlsx · se lee en tu navegador y se guarda solo en el histórico de ${nombreRetailer(retailer)}`}
+        nota={`Solo archivos .xlsx · Se guarda en el histórico de ${nombreRetailer(retailer)}`}
       />
 
       {aviso ? <p className="cr-small">{aviso}</p> : null}
@@ -912,17 +912,6 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
                 <Badge tono="ok">Plantilla reconocida</Badge>
                 <span className="cr-body">{plantilla.nombre}</span>
               </div>
-              <span className="cr-small">
-                Se guarda solo en el histórico de {nombreRetailer(retailer)}:{" "}
-                {columnasResueltas?.filter((c) => c.rol !== "ignorada").length} columnas;
-                se omiten{" "}
-                {columnasResueltas
-                  ?.filter((c) => c.rol === "ignorada")
-                  .map((c) => c.nombre)
-                  .join(", ")}{" "}
-                por ser constantes o vacías. Volver a subir el mismo reporte actualiza en vez
-                de duplicar.
-              </span>
             </div>
           ) : (
             <div className="flex flex-col gap-1">
@@ -932,8 +921,7 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
               </div>
               <span className="cr-small">
                 El layout de este archivo no coincide con ninguna plantilla conocida, así
-                que NO se guardó en el histórico de {nombreRetailer(retailer)}. Se puede
-                explorar aquí abajo, pero no aparecerá en la ficha del retailer.
+                que NO se guardó en el histórico de {nombreRetailer(retailer)}.
               </span>
             </div>
           )}
@@ -950,7 +938,7 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
 
           {guardado ? (
             <p className="cr-small mt-3" style={{ color: "var(--cr-ok)" }} role="status">
-              Guardado en {nombreRetailer(retailer)} desde la hoja «{guardado.hoja}»:{" "}
+              Guardado correctamente en el histórico de {nombreRetailer(retailer)}.{" "}
               {formatearEntero(guardado.insertadas)} filas nuevas y{" "}
               {formatearEntero(guardado.actualizadas)} actualizadas
               {guardado.descartadas > 0

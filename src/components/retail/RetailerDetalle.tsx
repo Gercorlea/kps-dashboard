@@ -78,7 +78,7 @@ const AnalisisCharts = dynamic(() => import("@/components/retail/AnalisisCharts"
 
 const TOP_BARRA = 8;
 const TOP_COMPOSICION = 5;
-const PRODUCTOS_POR_PAGINA = 100;
+const PRODUCTOS_POR_PAGINA = 20;
 
 type Vista = "ventas" | "inventario" | "productos" | "reportes";
 
@@ -300,9 +300,14 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   const [paginaProductos, setPaginaProductos] = useState(1);
   // Campo por el que se ordena la tabla de productos, y en qué sentido. Viven
   // aparte de la métrica de las gráficas: esa pestaña dejó de compartir los
-  // filtros de arriba. La dirección en null es "la que corresponda al campo".
+  // filtros de arriba.
   const [orden, setOrden] = useState<string | null>(null);
-  const [direccion, setDireccion] = useState<Direccion | null>(null);
+  // El sentido se guarda como CUÁL DE LAS DOS OPCIONES está elegida, no como
+  // asc/desc: cuál de ellas es "asc" depende del tipo del campo —los números
+  // abren de mayor a menor y el texto de la A a la Z—, así que guardar la
+  // dirección movería el punto marcado al pasar de Marca a Unidades. Guardando
+  // la opción, el punto se queda donde está y la dirección se recalcula.
+  const [ordenInvertido, setOrdenInvertido] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   // Reporte abierto dentro de la pestaña de reportes; null = la lista.
   const [reporteAbierto, setReporteAbierto] = useState<string | null>(null);
@@ -681,11 +686,17 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
 
   const iOrden = Math.max(0, camposProductos.indexOf(ordenEfectivo ?? ""));
   const ordenNumerico = iOrden >= nClavesProducto;
-  // Por omisión, lo que se espera de cada tipo: los números de mayor a menor
-  // —lo que se quiere de "ventas netas"— y el texto de la A a la Z. `direccion`
-  // se limpia al cambiar de campo, así que pasar de Ventas netas a Marca abre
-  // en A→Z y no en Z→A por arrastrar el "descendente" anterior.
-  const direccionEfectiva: Direccion = direccion ?? (ordenNumerico ? "desc" : "asc");
+  // Primera opción: lo que se espera de cada tipo —los números de mayor a menor,
+  // que es lo que se quiere de "ventas netas", y el texto de la A a la Z—.
+  // Segunda: la contraria. Así "Mayor a menor" y "A → Z" comparten sitio (la
+  // izquierda) y "Menor a mayor" y "Z → A" comparten el otro, que es lo que
+  // permite conservar la elección sin mover el punto entre tipos de campo.
+  const direccionPorOmision: Direccion = ordenNumerico ? "desc" : "asc";
+  const direccionEfectiva: Direccion = ordenInvertido
+    ? direccionPorOmision === "desc"
+      ? "asc"
+      : "desc"
+    : direccionPorOmision;
 
   const filasProductos = useMemo<CeldaCruda[][]>(() => {
     // Del periodo si hay uno: la tabla de artículos responde al mismo filtro
@@ -930,8 +941,11 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   valor={ordenEfectivo ?? ""}
                   onCambio={(v) => {
                     setOrden(v);
-                    // El sentido vuelve al que le toca al campo nuevo.
-                    setDireccion(null);
+                    // El sentido NO se toca: si alguien puso "menor a mayor" en
+                    // ventas y pasa a unidades, quiere las unidades de menor a
+                    // mayor. Y entre tipos distintos se conserva la POSICIÓN,
+                    // no la dirección (ver `direccionEfectiva`).
+                    //
                     // Otro orden es otra página 1: quedarse en la 7 mostraría
                     // un tramo arbitrario de la lista recién reordenada.
                     setPaginaProductos(1);
@@ -944,23 +958,31 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   ))}
                 </Selector>
 
-                <Selector
-                  etiqueta="Sentido"
-                  valor={direccionEfectiva}
+                {/* Las etiquetas hablan el idioma del campo: "mayor a menor"
+                    de un texto o "A → Z" de un importe no se entienden. Lo que
+                    NO cambia es su sitio: a la izquierda el sentido natural del
+                    tipo y a la derecha el contrario, y el valor es la posición
+                    —no asc/desc—, así que pasar de Marca a Unidades reetiqueta
+                    los dos radios sin mover el punto. */}
+                <Radios
+                  etiqueta="Orden"
+                  nombre="orden-productos"
+                  valor={ordenInvertido ? "invertido" : "natural"}
+                  opciones={[
+                    {
+                      valor: "natural",
+                      etiqueta: ordenNumerico ? "Mayor a menor" : "A → Z",
+                    },
+                    {
+                      valor: "invertido",
+                      etiqueta: ordenNumerico ? "Menor a mayor" : "Z → A",
+                    },
+                  ]}
                   onCambio={(v) => {
-                    setDireccion(v as Direccion);
+                    setOrdenInvertido(v === "invertido");
                     setPaginaProductos(1);
                   }}
-                >
-                  {/* Las etiquetas hablan el idioma del campo: "mayor a menor"
-                      de un texto o "A → Z" de un importe no se entienden. */}
-                  <option value={ordenNumerico ? "desc" : "asc"}>
-                    {ordenNumerico ? "Mayor a menor" : "A → Z"}
-                  </option>
-                  <option value={ordenNumerico ? "asc" : "desc"}>
-                    {ordenNumerico ? "Menor a mayor" : "Z → A"}
-                  </option>
-                </Selector>
+                />
 
                 {filtroPeriodo}
               </div>
@@ -1158,6 +1180,56 @@ function Metrica({ etiqueta, valor }: { etiqueta: string; valor: string }) {
     <div className="text-right">
       <div className="cr-label">{etiqueta}</div>
       <div className="cr-mono">{valor}</div>
+    </div>
+  );
+}
+
+/**
+ * Grupo de radios con la etiqueta y el alto de un `Selector`, para que encaje en
+ * la misma fila de filtros.
+ *
+ * Con dos opciones cortas un desplegable esconde la mitad de la información:
+ * hay que abrirlo para saber qué alternativa existe. Aquí se ven las dos y
+ * cambiar cuesta un clic en vez de tres.
+ *
+ * `nombre` agrupa los inputs para el navegador: sin él no son una sola elección
+ * y las flechas del teclado no saltan de una opción a otra.
+ */
+function Radios({
+  etiqueta,
+  nombre,
+  valor,
+  opciones,
+  onCambio,
+}: {
+  etiqueta: string;
+  nombre: string;
+  valor: string;
+  opciones: { valor: string; etiqueta: string }[];
+  onCambio: (valor: string) => void;
+}) {
+  return (
+    // Un div con role y no un <fieldset><legend>: la leyenda de un fieldset se
+    // pinta metida en su borde y no es un item de flex normal, así que dentro
+    // de .cr-field —que es una columna flex— cada motor la coloca a su manera.
+    // Los radios comparten `name`, que es lo que de verdad los agrupa para el
+    // teclado; el role y la etiqueta sólo le ponen nombre al conjunto.
+    <div className="cr-field" role="radiogroup" aria-label={etiqueta}>
+      <span className="cr-label">{etiqueta}</span>
+      <div className="cr-radios">
+        {opciones.map((o) => (
+          <label key={o.valor} className="cr-radio">
+            <input
+              type="radio"
+              name={nombre}
+              value={o.valor}
+              checked={valor === o.valor}
+              onChange={() => onCambio(o.valor)}
+            />
+            {o.etiqueta}
+          </label>
+        ))}
+      </div>
     </div>
   );
 }
