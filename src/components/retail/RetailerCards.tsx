@@ -156,7 +156,7 @@ function RetailerCard({ r, serie }: { r: DetalleRetailer; serie: PuntoVentas[] }
               <span className="cr-rcard__label">Importe</span>
               <span className="cr-rcard__part">{fmtPct(r.participacion)} del total</span>
             </div>
-            <div className="cr-rcard__valor">{fmtNum(r.importe)}</div>
+            <div className="cr-rcard__valor">${fmtNum(r.importe)}</div>
             <div
               className="cr-rcard__barra"
               role="progressbar"

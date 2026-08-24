@@ -5,6 +5,7 @@
 // su propia directiva "use client" — entran al bundle de cliente por ser
 // importados desde aquí.
 
+import { Clock, TriangleAlert } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnalisisKpis } from "@/components/retail/AnalisisKpis";
@@ -12,7 +13,7 @@ import { AnalisisTable } from "@/components/retail/AnalisisTable";
 import { AnalisisUploader } from "@/components/retail/AnalisisUploader";
 import { api, ClientApiError } from "@/components/lib/api-client";
 import { useDiferido } from "@/components/lib/useDiferido";
-import { Badge, EstadoVacio, Meter, Panel } from "@/components/ui/basicos";
+import { Aviso, Badge, EstadoVacio, Meter, Panel } from "@/components/ui/basicos";
 import {
   acumuladoresDeGrupos,
   agrupar,
@@ -35,7 +36,6 @@ import {
 } from "@/lib/retail/analisis/inferir-tipos";
 import {
   construirDataset,
-  elegirHojaConDatos,
   ErrorExcel,
   LIMITE_AVISO_BYTES,
   leerLibro,
@@ -60,7 +60,6 @@ import type {
   CeldaCruda,
   Dataset,
   Granularidad,
-  HojaCruda,
 } from "@/lib/retail/analisis/tipos";
 
 // recharts (con redux y d3 detrás) es lo más pesado de la ruta y no sirve de
@@ -102,9 +101,18 @@ interface ResultadoGuardado {
   insertadas: number;
   actualizadas: number;
   descartadas: number;
-  /** Hoja de la que salieron las filas: se puede cambiar de hoja después de
-   *  guardar, y lo guardado sigue siendo lo de esta. */
-  hoja: string;
+}
+
+/**
+ * Error listo para pintar: el motivo y, debajo, qué hacer al respecto.
+ *
+ * Es un objeto y no un string porque la caja de aviso separa las dos cosas: el
+ * usuario que sube un .csv necesita leer primero que no se acepta y después
+ * cómo convertirlo, no las dos frases pegadas en una línea de texto rojo.
+ */
+interface ErrorVisible {
+  titulo: string;
+  detalle?: string;
 }
 
 /** Lo que devuelven tanto `seleccionDePlantilla` como `datasetDesdeHistorico`. */
@@ -186,15 +194,9 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
   // decidir si la pestaña está vacía.
   const [estado, setEstado] = useState<Estado>("cargando");
   const [procedencia, setProcedencia] = useState<Procedencia | null>(null);
-  const [mensajeError, setMensajeError] = useState<string | null>(null);
+  const [mensajeError, setMensajeError] = useState<ErrorVisible | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
-
-  // Las hojas crudas viven fuera del estado: cambiar de hoja no debe obligar a
-  // React a reconciliar un objeto de varios megabytes.
-  const hojasRef = useRef<HojaCruda[] | null>(null);
-  const [nombresHojas, setNombresHojas] = useState<string[]>([]);
-  const [hojaActual, setHojaActual] = useState("");
 
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [idxDimension, setIdxDimension] = useState(-1);
@@ -245,7 +247,6 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
     yaResuelto?: DatasetResuelto
   ): { dataset: Dataset; plantilla: Plantilla; columnas: ColumnaResuelta[] } | null => {
     setGuardado(null);
-    setHojaActual(ds.hoja);
     setMensajeError(null);
     setEstado("listo");
     // Otro archivo (u otra hoja) es otro conjunto de filas: conservar la
@@ -394,13 +395,15 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
         setProgreso(Math.min(1, (i + lote.length) / filas.length));
       }
 
-      setGuardado({ insertadas, actualizadas, descartadas, hoja: ds.hoja });
+      setGuardado({ insertadas, actualizadas, descartadas });
     } catch (error) {
-      setMensajeError(
-        error instanceof ClientApiError
-          ? `No se pudo guardar en el histórico: ${error.message}`
-          : "No se pudo guardar en el histórico."
-      );
+      setMensajeError({
+        titulo: "No se pudo guardar en el histórico",
+        detalle:
+          error instanceof ClientApiError
+            ? `${error.message} El análisis sigue en pantalla; vuelve a subir el archivo para reintentar.`
+            : "El análisis sigue en pantalla; vuelve a subir el archivo para reintentar.",
+      });
     } finally {
       setGuardando(false);
     }
@@ -439,9 +442,12 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
       try {
         const t0 = performance.now();
         const hojas = await leerLibro(file);
-        const ds = construirDataset(hojas, elegirHojaConDatos(hojas));
-        hojasRef.current = hojas;
-        setNombresHojas(hojas.map((h) => h.nombre));
+        // Sólo la PRIMERA hoja del libro. Antes se buscaba "la primera con
+        // datos" y un selector dejaba cambiar a cualquier otra, pero cambiar de
+        // hoja nunca escribía en el histórico: la vista prometía un análisis
+        // que no se podía conservar. Los reportes que se cargan aquí traen los
+        // datos en la hoja 1, así que la hoja deja de ser una decisión.
+        const ds = construirDataset(hojas, hojas[0].nombre);
         const resuelto = aplicarDataset(ds);
         if (process.env.NODE_ENV === "development") {
           console.debug(
@@ -461,40 +467,20 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
           );
         }
       } catch (error) {
-        hojasRef.current = null;
         setDataset(null);
-        setNombresHojas([]);
         setMensajeError(
           error instanceof ErrorExcel
-            ? error.message
-            : "Ocurrió un error inesperado al leer el archivo."
+            ? { titulo: error.message, detalle: error.sugerencia }
+            : {
+                titulo: "Ocurrió un error inesperado al leer el archivo.",
+                detalle:
+                  "Vuelve a intentarlo. Si sigue pasando, comprueba que el archivo abra bien en Excel.",
+              }
         );
         setEstado("error");
       }
     },
     [aplicarDataset, guardarEnHistorico]
-  );
-
-  const alCambiarHoja = useCallback(
-    (nombre: string) => {
-      const hojas = hojasRef.current;
-      if (!hojas) return;
-      setHojaActual(nombre);
-      try {
-        // Se re-deriva desde las hojas cacheadas; no se relee el archivo.
-        // Cambiar de hoja NO vuelve a guardar: lo guardado es la hoja con la
-        // que llegó el archivo, y escribir las dos mezclaría dos hojas bajo un
-        // mismo reporte. Mirar otra hoja es explorar, no cargar.
-        aplicarDataset(construirDataset(hojas, nombre));
-      } catch (error) {
-        setDataset(null);
-        setMensajeError(
-          error instanceof ErrorExcel ? error.message : "No se pudo usar esa hoja."
-        );
-        setEstado("error");
-      }
-    },
-    [aplicarDataset]
   );
 
   // Referencias estables mientras el dataset no cambie: sirven como deps.
@@ -820,7 +806,10 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
   }, [dataset, procedencia]);
 
   return (
-    <div className="flex flex-col gap-6">
+    // min-w-0: sin él la columna flex se niega a ser más angosta que su hijo
+    // más ancho, y la tabla de un Excel de muchas columnas estiraría la página
+    // en vez de sacar su propia barra horizontal.
+    <div className="flex min-w-0 flex-col gap-6">
       <AnalisisUploader
         onArchivo={alArchivo}
         cargando={estado === "leyendo"}
@@ -828,12 +817,27 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
         nota={`Solo archivos .xlsx · Se guarda en el histórico de ${nombreRetailer(retailer)}`}
       />
 
-      {aviso ? <p className="cr-small">{aviso}</p> : null}
+      {aviso ? (
+        <Aviso tono="warn" titulo={aviso} icono={<Clock size={18} strokeWidth={1.75} />} />
+      ) : null}
 
+      {/* El error de carga es lo primero que hay que poder leer, así que va en
+          caja propia y con el archivo que lo provocó: arrastrar un .csv dejaba
+          antes una línea de texto rojo perdida entre los paneles. */}
       {mensajeError ? (
-        <p className="cr-small" style={{ color: "var(--cr-danger)" }} role="alert">
-          {mensajeError}
-        </p>
+        <Aviso
+          tono="danger"
+          titulo={mensajeError.titulo}
+          icono={<TriangleAlert size={18} strokeWidth={1.75} />}
+        >
+          {nombreArchivo ? (
+            <>
+              <strong>{nombreArchivo}</strong>
+              {mensajeError.detalle ? " · " : null}
+            </>
+          ) : null}
+          {mensajeError.detalle}
+        </Aviso>
       ) : null}
 
       {estado === "cargando" ? (
@@ -850,52 +854,6 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
             detalle={`Sube un .xlsx para ver los datos y su análisis. Se detectan solas las columnas de fecha, numéricas y de categoría, y el reporte se guarda solo en el histórico de ${nombreRetailer(retailer)}: volverá a aparecer aquí la próxima vez que entres.`}
           />
         </Panel>
-      ) : null}
-
-      {/* Una sola fila de filtros arriba de todo: cada gráfica, la tabla y los
-          KPIs se recalculan contra la misma selección, así que los números
-          siempre concuerdan entre sí. */}
-      {dataset || nombresHojas.length > 1 ? (
-        <div className="flex flex-wrap items-end gap-3">
-          {nombresHojas.length > 1 ? (
-            <Selector etiqueta="Hoja" valor={hojaActual} onCambio={alCambiarHoja}>
-              {nombresHojas.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </Selector>
-          ) : null}
-
-          {dataset && opcionesDimension.length > 0 ? (
-            <Selector
-              etiqueta="Dimensión"
-              valor={String(idxDimension)}
-              onCambio={(v) => setIdxDimension(Number(v))}
-            >
-              {opcionesDimension.map((c) => (
-                <option key={c.indice} value={c.indice}>
-                  {c.nombre}
-                </option>
-              ))}
-            </Selector>
-          ) : null}
-
-          {dataset ? (
-            <Selector
-              etiqueta="Métrica"
-              valor={String(idxMetrica)}
-              onCambio={(v) => setIdxMetrica(Number(v))}
-            >
-              {ofrecerConteo ? <option value={METRICA_CONTEO}>Cantidad de filas</option> : null}
-              {opcionesMetrica.map((c) => (
-                <option key={c.indice} value={c.indice}>
-                  {c.nombre}
-                </option>
-              ))}
-            </Selector>
-          ) : null}
-        </div>
       ) : null}
 
       {/* El panel informa de un guardado que ya ocurrió: subir el archivo ES
@@ -950,13 +908,59 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
         </Panel>
       ) : null}
 
-      {dataset && kpisVista ? (
+      {/* Una sola fila de filtros: cada gráfica, la tabla y los KPIs se
+          recalculan contra la misma selección, así que los números siempre
+          concuerdan entre sí.
+
+          Van DEBAJO del panel de plantilla —y sólo si hay plantilla— porque
+          eligen entre columnas cuyo rol declara ella. Sin plantilla los roles
+          son una inferencia sobre encabezados desconocidos, y ofrecer ahí un
+          desplegable de "Métrica" invita a leer como ventas una columna que
+          nadie ha identificado. */}
+      {dataset && plantilla ? (
+        <div className="flex flex-wrap items-end gap-3">
+          {opcionesDimension.length > 0 ? (
+            <Selector
+              etiqueta="Dimensión"
+              valor={String(idxDimension)}
+              onCambio={(v) => setIdxDimension(Number(v))}
+            >
+              {opcionesDimension.map((c) => (
+                <option key={c.indice} value={c.indice}>
+                  {c.nombre}
+                </option>
+              ))}
+            </Selector>
+          ) : null}
+
+          <Selector
+            etiqueta="Métrica"
+            valor={String(idxMetrica)}
+            onCambio={(v) => setIdxMetrica(Number(v))}
+          >
+            {ofrecerConteo ? <option value={METRICA_CONTEO}>Cantidad de filas</option> : null}
+            {opcionesMetrica.map((c) => (
+              <option key={c.indice} value={c.indice}>
+                {c.nombre}
+              </option>
+            ))}
+          </Selector>
+        </div>
+      ) : null}
+
+      {dataset ? (
         <>
-          <AnalisisKpis
-            kpis={kpisVista}
-            nombreMetrica={nombreMetrica}
-            nombreDimension={colDimension?.nombre ?? null}
-          />
+          {/* Los KPIs son la misma inferencia que las gráficas, sólo que en
+              números grandes: "Total <columna adivinada>" se lee como un dato
+              del reporte y aquí nadie identificó esa columna. Sin plantilla se
+              van con ellas. */}
+          {plantilla && kpisVista ? (
+            <AnalisisKpis
+              kpis={kpisVista}
+              nombreMetrica={nombreMetrica}
+              nombreDimension={colDimension?.nombre ?? null}
+            />
+          ) : null}
 
           <AnalisisTable
             // Volcado crudo del Excel: 14 columnas que sólo entran apretadas.
@@ -981,15 +985,22 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
             onPagina={setPagina}
           />
 
-          <AnalisisCharts
-            datosBarra={barraVista}
-            datosSerie={serieVista}
-            datosComposicion={composicionVista}
-            nombreDimension={colDimension?.nombre ?? null}
-            nombreMetrica={nombreMetrica}
-            agregacion={agregacionEfectiva}
-            granularidad={granVista}
-          />
+          {/* Sin plantilla reconocida no hay gráficas. Lo que se dibujaría son
+              sumas de una columna que nadie identificó como métrica y cortes
+              por una dimensión adivinada: un gráfico con ejes rotulados da esos
+              números por buenos, y este archivo ni siquiera se guardó. La tabla
+              sí se queda: enseña el archivo tal cual, sin interpretarlo. */}
+          {plantilla && kpisVista ? (
+            <AnalisisCharts
+              datosBarra={barraVista}
+              datosSerie={serieVista}
+              datosComposicion={composicionVista}
+              nombreDimension={colDimension?.nombre ?? null}
+              nombreMetrica={nombreMetrica}
+              agregacion={agregacionEfectiva}
+              granularidad={granVista}
+            />
+          ) : null}
         </>
       ) : null}
     </div>

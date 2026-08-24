@@ -21,7 +21,7 @@ import {
   seleccionDePlantilla,
   WALMART_MENSUAL,
 } from "@/lib/retail/analisis/plantillas";
-import { construirDataset, elegirHojaConDatos, leerLibro } from "@/lib/retail/analisis/parsear";
+import { construirDataset, leerLibro } from "@/lib/retail/analisis/parsear";
 import type { Dataset } from "@/lib/retail/analisis/tipos";
 
 // Se prueba contra el archivo REAL que exporta Walmart Retail Link, no contra
@@ -39,7 +39,7 @@ async function plantillaWalmart(): Promise<Dataset> {
   const buf = readFileSync(RUTA);
   const file = new File([new Uint8Array(buf)], path.basename(RUTA));
   const hojas = await leerLibro(file);
-  cache = construirDataset(hojas, elegirHojaConDatos(hojas));
+  cache = construirDataset(hojas, hojas[0].nombre);
   return cache;
 }
 

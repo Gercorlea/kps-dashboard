@@ -10,9 +10,17 @@ import type { Dataset, FilaCruda, HojaCruda } from "./tipos";
 
 /** Error con mensaje ya redactado para mostrar al usuario. */
 export class ErrorExcel extends Error {
-  constructor(message: string) {
+  /**
+   * Qué puede hacer quien lo ve. Va bajo el mensaje, en la caja de aviso: el
+   * motivo por sí solo ("Solo se aceptan archivos .xlsx") deja al usuario sin
+   * saber cómo salir del paso.
+   */
+  readonly sugerencia?: string;
+
+  constructor(message: string, sugerencia?: string) {
     super(message);
     this.name = "ErrorExcel";
+    this.sugerencia = sugerencia;
   }
 }
 
@@ -35,9 +43,17 @@ const RE_XLSX = /\.xlsx$/i;
  * - Apagar cellText/cellHTML/cellFormula evita ~300k evaluaciones de formato.
  */
 export async function leerLibro(file: File): Promise<HojaCruda[]> {
-  if (file.size === 0) throw new ErrorExcel("El archivo está vacío.");
+  if (file.size === 0) {
+    throw new ErrorExcel(
+      "El archivo está vacío.",
+      "Pesa 0 bytes. Vuelve a exportarlo desde Excel y súbelo otra vez."
+    );
+  }
   if (!RE_XLSX.test(file.name)) {
-    throw new ErrorExcel("Solo se aceptan archivos .xlsx");
+    throw new ErrorExcel(
+      "Solo se aceptan archivos .xlsx",
+      "No se admiten .xls, .csv, .numbers ni PDF. Ábrelo en Excel o Google Sheets y guárdalo como «Libro de Excel (.xlsx)»."
+    );
   }
 
   const XLSX = await import("xlsx");
@@ -48,7 +64,10 @@ export async function leerLibro(file: File): Promise<HojaCruda[]> {
   // devolvería una hoja de una celda y el usuario vería una tabla sin sentido
   // en vez de un error. Se verifica la firma antes de entregárselo.
   if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
-    throw new ErrorExcel("No se pudo leer el archivo. ¿Está dañado o no es un Excel válido?");
+    throw new ErrorExcel(
+      "No se pudo leer el archivo. ¿Está dañado o no es un Excel válido?",
+      "El contenido no corresponde a un .xlsx aunque la extensión lo diga. Vuelve a exportarlo desde Excel y súbelo de nuevo."
+    );
   }
 
   let libro;
@@ -64,12 +83,23 @@ export async function leerLibro(file: File): Promise<HojaCruda[]> {
   } catch (error) {
     const mensaje = error instanceof Error ? error.message : "";
     if (/password|encrypt/i.test(mensaje)) {
-      throw new ErrorExcel("El archivo está protegido con contraseña.");
+      throw new ErrorExcel(
+        "El archivo está protegido con contraseña.",
+        "Quítale la protección en Excel (Archivo → Información → Proteger libro) y vuelve a subirlo."
+      );
     }
-    throw new ErrorExcel("No se pudo leer el archivo. ¿Está dañado o no es un Excel válido?");
+    throw new ErrorExcel(
+      "No se pudo leer el archivo. ¿Está dañado o no es un Excel válido?",
+      "El contenido no se pudo interpretar. Vuelve a exportarlo desde Excel y súbelo de nuevo."
+    );
   }
 
-  if (libro.SheetNames.length === 0) throw new ErrorExcel("El archivo no contiene hojas.");
+  if (libro.SheetNames.length === 0) {
+    throw new ErrorExcel(
+      "El archivo no contiene hojas.",
+      "El libro llegó sin ninguna hoja dentro."
+    );
+  }
 
   return libro.SheetNames.map((nombre) => {
     const hoja = libro.Sheets[nombre];
@@ -97,27 +127,34 @@ function filaTieneAlgo(fila: FilaCruda | undefined): boolean {
   return fila.some((v) => v !== null && v !== undefined && String(v).trim() !== "");
 }
 
-/** Primera hoja con al menos dos filas con contenido; salta las de sólo título. */
-export function elegirHojaConDatos(hojas: HojaCruda[]): string {
-  const conDatos = hojas.find((h) => h.datos.filter(filaTieneAlgo).length >= 2);
-  return (conDatos ?? hojas[0]).nombre;
-}
-
 export function construirDataset(hojas: HojaCruda[], nombreHoja: string): Dataset {
   const hoja = hojas.find((h) => h.nombre === nombreHoja);
   if (!hoja) throw new ErrorExcel(`No se encontró la hoja «${nombreHoja}».`);
 
+  // Sólo se lee la PRIMERA hoja del libro, así que una portada o una hoja de
+  // instrucciones delante de los datos es un error de carga y no algo que se
+  // pueda saltar: la sugerencia tiene que decirlo.
+  const sugerenciaHoja =
+    `Se analiza únicamente la primera hoja del libro, «${hoja.nombre}». ` +
+    "Si los datos están en otra, muévela al principio o súbela en un archivo aparte.";
+
   const datos = hoja.datos;
-  if (datos.length === 0) throw new ErrorExcel("El archivo no contiene filas de datos.");
+  if (datos.length === 0) {
+    throw new ErrorExcel("El archivo no contiene filas de datos.", sugerenciaHoja);
+  }
 
   const filaEncabezado = detectarEncabezado(datos);
   const filas = datos.slice(filaEncabezado + 1).filter(filaTieneAlgo);
-  if (filas.length === 0) throw new ErrorExcel("El archivo no contiene filas de datos.");
+  if (filas.length === 0) {
+    throw new ErrorExcel("El archivo no contiene filas de datos.", sugerenciaHoja);
+  }
 
   let ancho = 0;
   if (filaEncabezado >= 0) ancho = datos[filaEncabezado].length;
   for (const fila of filas) ancho = Math.max(ancho, fila.length);
-  if (ancho === 0) throw new ErrorExcel("El archivo no contiene columnas con datos.");
+  if (ancho === 0) {
+    throw new ErrorExcel("El archivo no contiene columnas con datos.", sugerenciaHoja);
+  }
 
   const columnas = construirColumnas(
     filas,

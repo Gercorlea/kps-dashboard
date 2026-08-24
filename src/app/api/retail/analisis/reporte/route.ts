@@ -5,7 +5,12 @@ import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { columnasHistorico, plantillaPorId } from "@/lib/retail/analisis/plantillas";
 import { invalidarRetail } from "@/lib/retail/cache";
-import { PRIMERA_ESCRITURA, ULTIMA_ACTUALIZACION } from "@/lib/retail/importaciones";
+import {
+  fechasDeCarga,
+  PRIMERA_ESCRITURA,
+  ramasDeUnReporte,
+  type FechasDeCarga,
+} from "@/lib/retail/importaciones";
 import { fechaISO } from "@/lib/retail/normalize";
 import { usuariosPorId } from "@/lib/usuarios";
 import { borrarReporteSchema, reporteAnalisisQuerySchema } from "@/lib/validation/retail";
@@ -19,23 +24,31 @@ import { SalesReport } from "@/models/SalesReport";
 //
 // Todo en un solo viaje ($facet): el resumen del contenido y las escrituras por
 // usuario recorren las mismas filas.
+//
+// "Las mismas filas" son dos conjuntos que casi siempre coinciden pero no
+// tienen por qué: las que el archivo TIENE hoy (`sourceFile`) describen su
+// contenido, y las que CREÓ (`firstSourceFile`) son las que lo fechan. Un
+// reporte que se solapa con otro se lleva filas ajenas y pierde propias, así
+// que el $match las trae todas y cada rama se queda con las suyas.
 
 interface Resumen {
   filas: number;
-  importado: Date | null;
-  /** Null si el reporte no se ha vuelto a subir desde que se importó. */
-  actualizado: Date | null;
-  subidoPor: Types.ObjectId | null;
   desde: Date | null;
   hasta: Date | null;
   articulos: number;
   marcas: string[];
+  /** Escritura más antigua que dejó el archivo; ver `fechasDeCarga`. */
+  respaldoImportado: Date | null;
+  respaldoAutor: Types.ObjectId | null;
   /** Un `s_<campo>` por métrica de la plantilla. */
   [suma: string]: unknown;
 }
 
 /**
- * Quién escribió más recientemente en el reporte: es quien lo actualizó.
+ * Quién escribió más recientemente sobre las filas que creó este reporte: es
+ * quien lo actualizó. Puede ser quien subió OTRO archivo que se solapa con
+ * éste y se llevó parte de sus filas — que es exactamente el cambio del que la
+ * ficha quiere dar cuenta.
  *
  * Se agrupa por usuario y no por carga porque "una carga" no es algo que las
  * filas puedan contar por sí solas —una sola viaja en lotes de 2000 filas, cada
@@ -44,6 +57,11 @@ interface Resumen {
 interface UltimoAutor {
   _id: Types.ObjectId | null;
   hasta: Date;
+}
+
+/** El $group por `primerArchivo`, que es el que fecha la carga. */
+interface Carga extends FechasDeCarga<Types.ObjectId> {
+  _id: null;
 }
 
 export async function GET(request: NextRequest) {
@@ -73,6 +91,9 @@ export async function GET(request: NextRequest) {
       brand: 1,
       importedAt: 1,
       importedBy: 1,
+      // Con qué rama del $match entró cada fila: `esSuya` son las que el
+      // archivo tiene hoy, `primerArchivo` dice cuál las creó.
+      esSuya: { $eq: ["$sourceFile", sourceFile] },
       ...PRIMERA_ESCRITURA,
     };
     const sumas: Record<string, unknown> = {};
@@ -84,17 +105,19 @@ export async function GET(request: NextRequest) {
     }
 
     const ramas: Record<string, PipelineStage.FacetPipelineStage[]> = {
+      // El contenido: sólo las filas que el archivo tiene HOY, que es lo que
+      // enseña la tabla y lo que se llevaría el botón de borrar.
       resumen: [
-        // Ordenar por la primera escritura es lo que le da sentido al $first:
-        // la fila más antigua del reporte es la de la carga original.
-        { $sort: { primerImport: 1 } },
+        { $match: { esSuya: true } },
+        // Por importedAt ascendente para que el $first sea la escritura más
+        // antigua que dejó el archivo, que es el respaldo de `fechasDeCarga`.
+        { $sort: { importedAt: 1 } },
         {
           $group: {
             _id: null,
             filas: { $sum: 1 },
-            importado: { $min: "$primerImport" },
-            actualizado: ULTIMA_ACTUALIZACION,
-            subidoPor: { $first: "$primerAutor" },
+            respaldoImportado: { $min: "$importedAt" },
+            respaldoAutor: { $first: "$importedBy" },
             desde: { $min: "$date" },
             hasta: { $max: "$date" },
             articulos: { $addToSet: "$itemNbr" },
@@ -105,9 +128,8 @@ export async function GET(request: NextRequest) {
         {
           $project: {
             filas: 1,
-            importado: 1,
-            actualizado: 1,
-            subidoPor: 1,
+            respaldoImportado: 1,
+            respaldoAutor: 1,
             desde: 1,
             hasta: 1,
             // El conteo se hace aquí y no en el cliente: son artículos
@@ -118,19 +140,23 @@ export async function GET(request: NextRequest) {
           },
         },
       ],
-      ultimoAutor: [
-        { $group: { _id: "$importedBy", hasta: { $max: "$importedAt" } } },
-        { $sort: { hasta: -1 } },
-        { $limit: 1 },
-      ],
+      // Las fechas y el último autor: sólo las filas que el archivo CREÓ, las
+      // tenga hoy o se las haya quedado una carga posterior.
+      ...ramasDeUnReporte(sourceFile),
     };
 
     const [facetado] = await SalesReport.aggregate<{
       resumen: Resumen[];
+      carga: Carga[];
       ultimoAutor: UltimoAutor[];
     }>([
-      { $match: filtro },
-      // Proyectar antes del $facet: las dos ramas ordenan en memoria y ninguna
+      {
+        $match: {
+          ...(account ? { account } : {}),
+          $or: [{ sourceFile }, { firstSourceFile: sourceFile }],
+        },
+      },
+      // Proyectar antes del $facet: las ramas ordenan en memoria y ninguna
       // necesita el resto de las columnas del reporte.
       { $project: proyeccion },
       { $facet: ramas },
@@ -140,11 +166,15 @@ export async function GET(request: NextRequest) {
     if (!resumen) {
       throw new ApiError(404, "NO_ENCONTRADO", "Ese reporte no está en el histórico");
     }
+    const fechas = fechasDeCarga(facetado?.carga?.[0], {
+      importado: resumen.respaldoImportado,
+      autor: resumen.respaldoAutor,
+    });
     // Quien escribió más recientemente es quien actualizó el reporte; sólo se
     // informa si hubo actualización, para no atribuirle a nadie un cambio que
     // no ocurrió.
-    const ultimoAutor = resumen.actualizado ? facetado?.ultimoAutor?.[0]?._id : null;
-    const usuarios = await usuariosPorId([resumen.subidoPor, ultimoAutor]);
+    const ultimoAutor = fechas.actualizado ? facetado?.ultimoAutor?.[0]?._id : null;
+    const usuarios = await usuariosPorId([fechas.subidoPor, ultimoAutor]);
 
     // Sólo el conteo: la ficha muestra cuántas marcas trae el reporte, no
     // cuáles. El $addToSet de arriba sigue siendo la única forma de contarlas
@@ -162,9 +192,9 @@ export async function GET(request: NextRequest) {
       // Periodo que cubren los datos, no las fechas de carga.
       desde: resumen.desde ? fechaISO(new Date(resumen.desde)) : null,
       hasta: resumen.hasta ? fechaISO(new Date(resumen.hasta)) : null,
-      importado: resumen.importado ? new Date(resumen.importado).toISOString() : null,
-      actualizado: resumen.actualizado ? new Date(resumen.actualizado).toISOString() : null,
-      subidoPor: usuarios.get(String(resumen.subidoPor)) ?? null,
+      importado: fechas.importado ? new Date(fechas.importado).toISOString() : null,
+      actualizado: fechas.actualizado ? new Date(fechas.actualizado).toISOString() : null,
+      subidoPor: usuarios.get(String(fechas.subidoPor)) ?? null,
       actualizadoPor: usuarios.get(String(ultimoAutor)) ?? null,
       metricas: metricas.map((m) => ({
         campo: m.campo,

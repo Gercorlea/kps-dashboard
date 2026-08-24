@@ -74,6 +74,39 @@ export function Meter({
   );
 }
 
+/**
+ * Caja de mensaje de estado: motivo arriba, qué hacer debajo.
+ *
+ * Con `tono="danger"` se anuncia como `role="alert"`; los otros tonos son
+ * informativos y no interrumpen a un lector de pantalla.
+ */
+export function Aviso({
+  tono = "neutro",
+  titulo,
+  icono,
+  children,
+}: {
+  tono?: "danger" | "warn" | "neutro";
+  titulo: ReactNode;
+  icono?: ReactNode;
+  children?: ReactNode;
+}) {
+  const mod = tono === "neutro" ? "" : ` cr-aviso--${tono}`;
+  return (
+    <div className={`cr-aviso${mod}`} role={tono === "danger" ? "alert" : undefined}>
+      {icono ? (
+        <span className="cr-aviso__icono" aria-hidden="true">
+          {icono}
+        </span>
+      ) : null}
+      <div className="cr-aviso__cuerpo">
+        <p className="cr-aviso__titulo">{titulo}</p>
+        {children ? <div className="cr-aviso__detalle">{children}</div> : null}
+      </div>
+    </div>
+  );
+}
+
 export function EstadoVacio({
   title,
   detalle,

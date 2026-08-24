@@ -330,6 +330,39 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-badge--danger { background: rgba(207,71,51,.10);   color: #cf4733; }
 .cr-badge--ai     { background: rgba(91,61,245,.08);   color: #5b3df5; }
 
+/* ============================ Avisos ============================ */
+
+/* Caja de mensaje de estado. Existe porque un error de carga se mostraba como
+   una línea de texto rojo entre dos paneles y se perdía: lo que falla al subir
+   un archivo tiene que leerse antes que nada, y necesita sitio para decir qué
+   hacer a continuación, no sólo qué salió mal. */
+.cr-aviso {
+  display: flex; align-items: flex-start; gap: var(--cr-s3);
+  padding: var(--cr-s3) var(--cr-s4);
+  border: 1px solid var(--cr-line);
+  border-radius: var(--cr-r-sm);
+  background: var(--cr-surface-2);
+}
+.cr-aviso__icono {
+  display: flex; flex-shrink: 0; margin-top: 1px; color: var(--cr-ink-3);
+}
+.cr-aviso__cuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cr-aviso__titulo { font-size: 13.5px; font-weight: 600; line-height: 1.35; color: var(--cr-ink); }
+.cr-aviso__detalle { font-size: 12.5px; line-height: 1.5; color: var(--cr-ink-2); }
+.cr-aviso__detalle strong { font-weight: 500; color: var(--cr-ink); }
+
+.cr-aviso--danger { border-color: rgba(207,71,51,.28); background: var(--cr-danger-tint); }
+.cr-aviso--danger .cr-aviso__icono,
+.cr-aviso--danger .cr-aviso__titulo { color: var(--cr-danger); }
+.cr-aviso--danger .cr-aviso__detalle,
+.cr-aviso--danger .cr-aviso__detalle strong { color: #8f3325; }
+
+.cr-aviso--warn { border-color: rgba(184,121,28,.28); background: var(--cr-warn-tint); }
+.cr-aviso--warn .cr-aviso__icono,
+.cr-aviso--warn .cr-aviso__titulo { color: var(--cr-warn); }
+.cr-aviso--warn .cr-aviso__detalle,
+.cr-aviso--warn .cr-aviso__detalle strong { color: #7c5312; }
+
 /* ============================ Tablas de datos ============================ */
 
 .cr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -363,7 +396,11 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 }
 
 /* Contenedor con scroll para toda tabla (envolver en .cr-panel) */
-.cr-table-scroll { overflow-x: auto; }
+/* El contenedor con scroll de cualquier tabla. `max-width: 100%` lo ata al
+   ancho del panel: sin él una tabla más ancha que la pantalla lo empuja en vez
+   de desbordarse dentro, y la barra horizontal acaba saliendo en el documento
+   en lugar de en la tabla. */
+.cr-table-scroll { overflow-x: auto; max-width: 100%; }
 
 /* ============================ Barras de progreso ============================ */
 
@@ -509,10 +546,26 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
 /* ============================ App shell ============================ */
 
 .cr-shell { min-height: 100dvh; background: var(--cr-canvas); }
-.cr-shell__main { min-height: 100dvh; display: flex; flex-direction: column; background: var(--cr-bg); }
+
+/* min-width: 0 no es cosmético: <main> es un ITEM DE GRID, y un item de grid
+   arranca con min-width: auto, o sea "nunca más angosto que mi contenido".
+   Basta con que dentro haya una tabla de sesenta columnas para que la columna
+   1fr crezca hasta caber entera: la página entera se ensancha, el body saca
+   barra horizontal y el header y el sidebar se van fuera de cuadro al hacer
+   scroll. Con el mínimo en 0 la columna se queda en el ancho de la ventana y
+   quien se desborda es el contenedor con scroll de la tabla, que es donde el
+   desbordamiento se ve y se entiende. */
+.cr-shell__main {
+  min-height: 100dvh; min-width: 0;
+  display: flex; flex-direction: column; background: var(--cr-bg);
+}
 
 @media (min-width: 1024px) {
-  .cr-shell { display: grid; grid-template-columns: var(--cr-sidebar-width) 1fr; }
+  /* minmax(0, 1fr) y no 1fr: por lo mismo de arriba, un track 1fr tiene mínimo
+     auto y se estira con el contenido. Los dos frenos se acompañan — el del
+     track y el del item — porque cualquiera de los dos por su cuenta se cae en
+     cuanto alguien mete otro contenedor en medio. */
+  .cr-shell { display: grid; grid-template-columns: var(--cr-sidebar-width) minmax(0, 1fr); }
 }
 
 .cr-sidebar {
@@ -578,7 +631,7 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
 .cr-detalle-head__tabs { display: flex; align-items: center; gap: 16px; justify-content: space-between; }
 .cr-detalle-head__tabs > .cr-segment { overflow-x: auto; max-width: 100%; }
 
-.cr-page-content { flex: 1; padding: 16px; background: var(--cr-bg); }
+.cr-page-content { flex: 1; min-width: 0; padding: 16px; background: var(--cr-bg); }
 
 /* Cambio de sección en una ficha con pestañas: el contenido nuevo entra en vez
    de aparecer de golpe. Sólo entrada —no hay salida— para no retrasar la

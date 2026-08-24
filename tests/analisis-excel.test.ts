@@ -25,7 +25,6 @@ import {
 } from "@/lib/retail/analisis/inferir-tipos";
 import {
   construirDataset,
-  elegirHojaConDatos,
   ErrorExcel,
   leerLibro,
 } from "@/lib/retail/analisis/parsear";
@@ -55,7 +54,7 @@ async function cargar(
   const buf = libro(hojas);
   const file = new File([new Uint8Array(buf)], nombreArchivo);
   const leidas = await leerLibro(file);
-  return construirDataset(leidas, nombreHoja ?? elegirHojaConDatos(leidas));
+  return construirDataset(leidas, nombreHoja ?? leidas[0].nombre);
 }
 
 function col(ds: Dataset, nombre: string): MetaColumna {
@@ -112,14 +111,15 @@ describe("leerLibro (frontera SheetJS)", () => {
     await expect(leerLibro(file)).rejects.toThrow(/No se pudo leer el archivo/);
   });
 
-  it("lee todas las hojas y elige la primera con datos, no la portada", async () => {
+  it("lee todas las hojas conservando su orden", async () => {
     const buf = libro({
       Portada: [["Reporte generado automáticamente"]],
       Ventas: hojaVentas(10),
     });
     const hojas = await leerLibro(new File([new Uint8Array(buf)], "x.xlsx"));
+    // El analizador se queda con hojas[0] y punto: ya no busca la primera con
+    // datos, así que el orden del libro es lo único que decide qué se analiza.
     expect(hojas.map((h) => h.nombre)).toEqual(["Portada", "Ventas"]);
-    expect(elegirHojaConDatos(hojas)).toBe("Ventas");
   });
 
   it("una hoja sin filas de datos da un error legible, no un crash", async () => {

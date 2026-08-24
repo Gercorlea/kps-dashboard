@@ -50,22 +50,44 @@ reporte actualiza en vez de duplicar.
 
 El Excel **no se almacena**: sólo viajan las filas ya mapeadas a campos.
 
-Ese upsert sobrescribe `importedAt`/`importedBy` de cada fila, así que la primera
-escritura se guarda aparte en `firstImportedAt`/`firstImportedBy` con
-`$setOnInsert`. Como eso sólo cubre las altas —y las filas guardadas antes de que
-el campo existiera se ACTUALIZAN, no se insertan—, cada POST arranca con un
-`updateMany` que le copia a esas filas el `importedAt` que traen antes de
-pisárselo. Va en una orden aparte y no dentro del upsert de cada fila porque se
+Ese upsert sobrescribe `importedAt`/`importedBy`/`sourceFile` de cada fila, así
+que la primera escritura se guarda aparte en
+`firstImportedAt`/`firstImportedBy`/`firstSourceFile` con `$setOnInsert`. Como eso
+sólo cubre las altas —y las filas guardadas antes de que los campos existieran se
+ACTUALIZAN, no se insertan—, cada POST arranca con un `updateMany` que le copia a
+esas filas la fecha y el autor que traen antes de pisárselos. Va en una orden aparte y no dentro del upsert de cada fila porque se
 midió: resolverlo con un update de pipeline por fila obliga a envolver cada valor
 en `$literal` (un texto que empieza por "$" se leería como referencia a un campo)
 e infla el comando un 46%, que sobre un enlace de ~110 KB/s son 80 → 150 s por
-carga. Con los dos pares, una fila con `importedAt > firstImportedAt` es
+carga. Con eso, una fila con `importedAt > firstImportedAt` es
 exactamente una fila que reescribió una carga posterior: de ahí salen el
 "Importado" y la "Última actualización" que muestra la ficha del retailer, sin
 que una carga partida en lotes de 2000 filas —cada uno con su marca de tiempo—
-parezca una actualización. Los acumuladores viven en
-`lib/retail/importaciones.ts` para que la lista de reportes y la ficha de un
-reporte (`GET /api/retail/analisis/reporte`) cuenten lo mismo.
+parezca una actualización.
+
+`firstSourceFile` está por un segundo efecto de que la clave natural no incluya
+el archivo: **dos reportes que se solapan comparten filas**. Si se sube feb-mar y
+luego mar-abr, las filas de marzo pasan a llevar el `sourceFile` del segundo pero
+conservan el `firstImportedAt` del primero. Agrupando por `sourceFile`, mar-abr
+heredaba con ellas la fecha de carga de feb-mar y salía "importado" el día del
+primero, con su fecha real abajo como si fuera una actualización. Por eso un
+reporte se fecha por las filas que CREÓ (`firstSourceFile`) y se mide por las que
+TIENE (`sourceFile`): "importado" es la primera escritura de lo que creó, y
+"última actualización" es la última vez que alguien reescribió algo creado por
+él —él mismo al volver a subirse, o la carga que se le llevó filas—.
+
+`firstSourceFile` es el único de los tres que no se rescata hacia atrás: de una
+fila anterior al campo que además ya reescribió otra carga, nadie guardó qué
+archivo la creó. En vez de atribuírsela al que la tiene hoy —que es justo el
+error— se deja sin atribuir y no fecha a nadie, así que el histórico que ya
+estaba guardado también deja de mostrar la fecha equivocada. Lo único que no se
+puede reconstruir de él es la "última actualización" del reporte al que le
+quitaron filas antes de este cambio.
+
+Los acumuladores y los dos pipelines viven en `lib/retail/importaciones.ts` para
+que la lista de reportes y la ficha de un reporte
+(`GET /api/retail/analisis/reporte`) cuenten lo mismo; `tests/importaciones.test.ts`
+los ejercita contra un Mongo en memoria.
 
 > El flujo anterior de ingesta por hojas fijas (`/retail/cargar`, el parser por
 > hoja y el scorecard) se retiró: sus colecciones llevaban tiempo vacías —0

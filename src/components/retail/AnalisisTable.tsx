@@ -24,6 +24,23 @@ export const MAX_COLUMNAS = 60;
 // separaciones salían desparejas de una columna a otra.
 const ANCHO_DENSA = "7rem";
 
+/**
+ * Suelo de ancho por columna, y a partir de cuántas columnas se aplica.
+ *
+ * Con `width: 100%` y layout automático el navegador mete como sea todas las
+ * columnas en el panel: con veinte o más las aplasta hasta su contenido mínimo
+ * y quedan tiras de dos caracteres con puntos suspensivos. Con un suelo la
+ * tabla ya no cabe, se desborda dentro de `.cr-table-scroll` y sale la barra
+ * horizontal — que es lo que se quiere: se lee moviéndose a la derecha, no
+ * entrecerrando los ojos.
+ *
+ * El umbral existe para no tocar el caso afinado: el reporte de Walmart son
+ * catorce columnas que entran justas y sin barra, y un suelo aplicado siempre
+ * se la sacaría en pantallas de 1280.
+ */
+const MINIMO_DENSA = "4.5rem";
+const COLUMNAS_APRETADAS = 20;
+
 const ENCABEZADO_DENSA: React.CSSProperties = {
   padding: "5px 7px",
   maxWidth: ANCHO_DENSA,
@@ -152,9 +169,13 @@ function AnalisisTableBase({
   cargando = false,
   densa = false,
 }: Props) {
-  const encabezado = densa ? ENCABEZADO_DENSA : ENCABEZADO_NORMAL;
-  const celda = densa ? CELDA_DENSA : CELDA_NORMAL;
   const visibles = columnas.slice(0, MAX_COLUMNAS);
+  // El suelo de ancho sólo entra con muchas columnas; ver MINIMO_DENSA.
+  const suelo = densa && visibles.length >= COLUMNAS_APRETADAS ? MINIMO_DENSA : undefined;
+  const encabezado = densa
+    ? { ...ENCABEZADO_DENSA, minWidth: suelo }
+    : ENCABEZADO_NORMAL;
+  const celda = densa ? { ...CELDA_DENSA, minWidth: suelo } : CELDA_NORMAL;
   // La densa no reparte nada: catorce columnas ya llenan el panel de sobra y
   // ahí el ancho lo tiene que marcar el contenido.
   const anchos = useMemo(

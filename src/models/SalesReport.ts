@@ -18,18 +18,27 @@ export interface ISalesReport {
   importedAt: Date;
   importedBy: Types.ObjectId;
 
-  // Primera escritura de la fila, y quién la hizo. Van aparte porque el upsert
-  // por la clave natural sobrescribe `importedAt`/`importedBy` cada vez que se
-  // vuelve a subir el mismo reporte: sin estos dos campos la fecha en que se
-  // importó por primera vez se perdía, y la ficha del retailer no podía
-  // distinguir "importado el" de "última actualización".
+  // Primera escritura de la fila: cuándo, quién y DESDE QUÉ ARCHIVO. Van aparte
+  // porque el upsert por la clave natural sobrescribe los tres campos de
+  // arriba cada vez que una carga toca la fila, y las dos preguntas que hace la
+  // ficha del retailer son sobre la primera escritura, no sobre la última:
+  //
+  // - Volver a subir el mismo reporte pisaba `importedAt`, y sin
+  //   `firstImportedAt` la fecha de importación original se perdía.
+  // - Subir un reporte que se solapa con otro —feb-mar y luego mar-abr— le
+  //   quita las filas compartidas al primero: pasan a llevar el `sourceFile`
+  //   del segundo. Sin `firstSourceFile` no había forma de saber que las creó
+  //   el primero, y el segundo salía fechado el día del primero (ver
+  //   lib/retail/importaciones.ts).
   //
   // Opcionales porque las filas guardadas antes de que existieran no los
-  // tienen; quien los lea cae a `importedAt`/`importedBy` con $ifNull, y la
-  // siguiente carga que toque la fila los rellena con lo que traía (ver el
-  // update de pipeline en POST /api/retail/analisis).
+  // tienen. Las fechas se rescatan en la siguiente carga que toque la cuenta
+  // (ver el update de pipeline en POST /api/retail/analisis); `firstSourceFile`
+  // no se puede rescatar —de una fila ya reescrita nadie guardó quién la creó—
+  // y se resuelve al leer, en `PRIMERA_ESCRITURA`.
   firstImportedAt?: Date;
   firstImportedBy?: Types.ObjectId;
+  firstSourceFile?: string;
 
   // Fecha y periodo. `wmMonth` es el mes FISCAL de Walmart y no siempre
   // coincide con el mes calendario de `date`, así que se guardan los dos.
@@ -65,6 +74,7 @@ const SalesReportSchema = new Schema<ISalesReport>(
     // le adelantaría en el upsert.
     firstImportedAt: { type: Date },
     firstImportedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    firstSourceFile: { type: String },
 
     date: { type: Date, required: true },
     wmMonth: { type: String, default: "" },
@@ -98,6 +108,9 @@ SalesReportSchema.index({ account: 1, brand: 1, date: -1 });
 SalesReportSchema.index({ sourceFile: 1, date: 1, itemNbr: 1 });
 // Resolver "el último Excel cargado" es un solo findOne ordenado por esto.
 SalesReportSchema.index({ importedAt: -1 });
+// La ficha de un reporte busca las filas que CREÓ además de las que tiene hoy
+// ($or con sourceFile), y sin este índice esa rama del $or es un COLLSCAN.
+SalesReportSchema.index({ firstSourceFile: 1 });
 
 export const SalesReport: Model<ISalesReport> =
   (models.SalesReport as Model<ISalesReport>) ??
