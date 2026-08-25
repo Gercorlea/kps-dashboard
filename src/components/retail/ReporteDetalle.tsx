@@ -24,6 +24,8 @@ interface Ficha {
   template: string;
   plantilla: string | null;
   filas: number;
+  /** Filas que no comparte con ningún otro reporte: las que se irían al borrarlo. */
+  exclusivas: number;
   articulos: number;
   marcasTotal: number;
   /** Periodo que cubren los datos, no las fechas de carga. */

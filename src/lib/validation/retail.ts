@@ -41,6 +41,11 @@ export const guardarAnalisisSchema = z.object({
   // un id mal escrito no cree una cuenta fantasma imposible de encontrar.
   account: z.enum(RETAILER_IDS, { error: "Selecciona un retailer válido" }),
   sourceFile: z.string().min(1).max(300),
+  // Identifica la CARGA, no el archivo: la misma subida troceada en lotes manda
+  // el mismo valor en todos. Es lo que separa "este es el segundo lote" de "el
+  // reporte se volvió a subir", que son la misma escritura vista desde el
+  // servidor y fechan el reporte de forma distinta (ver models/ReportImport.ts).
+  carga: z.string().min(1).max(64),
   filas: z.array(reporteVentaRowSchema).min(1).max(MAX_FILAS_LOTE),
 });
 

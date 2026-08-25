@@ -15,6 +15,8 @@ import {
 } from "@/lib/retail/analisis/plantillas";
 import type { Granularidad } from "@/lib/retail/analisis/tipos";
 import { resumenAnalisisQuerySchema } from "@/lib/validation/retail";
+import { filasDelArchivo } from "@/lib/retail/importaciones";
+import { ReportImport } from "@/models/ReportImport";
 import { SalesReport } from "@/models/SalesReport";
 
 // GET /api/retail/analisis/resumen — acumuladores del último reporte guardado.
@@ -142,22 +144,20 @@ type QueryResumen = z.infer<typeof resumenAnalisisQuerySchema>;
 async function calcularResumen(q: QueryResumen) {
   await connectDB();
 
-  // Qué archivo se está viendo. El más reciente por importedAt cuando no se
-  // pide uno, igual que la ruta de filas, para que las dos coincidan.
+  // Qué archivo se está viendo. Sale de la colección de reportes y no de una
+  // fila cualquiera: una fila puede pertenecer a dos archivos solapados, así que
+  // no sabe decir cuál se está mirando. El más reciente cuando no se pide uno,
+  // igual que la ruta de filas, para que las dos coincidan.
   //
   // Esta búsqueda NO mira `desde`/`hasta` a propósito: identifica el archivo y
   // su plantilla, no el periodo. Acotarla por fechas dejaría un trimestre sin
   // reportes sin plantilla, y con ella se va la pestaña entera en vez de
   // quedarse en un periodo vacío, que es lo que de verdad pasó.
-  const ultimo = await SalesReport.findOne(
-    q.sourceFile
-      ? { sourceFile: q.sourceFile, ...(q.account ? { account: q.account } : {}) }
-      : q.account
-        ? { account: q.account }
-        : {}
-  )
-    .sort(q.sourceFile ? { date: 1 } : { importedAt: -1 })
-    .select({ sourceFile: 1, template: 1, account: 1, importedAt: 1 })
+  const ultimo = await ReportImport.findOne({
+    ...(q.account ? { account: q.account } : {}),
+    ...(q.sourceFile ? { sourceFile: q.sourceFile } : {}),
+  })
+    .sort({ importedAt: -1 })
     .lean();
 
   const plantilla = ultimo ? plantillaPorId(ultimo.template) : null;
@@ -165,7 +165,7 @@ async function calcularResumen(q: QueryResumen) {
     // `cuentas` sólo hace falta en el bundle: es lo que llena el selector de
     // retailer, y la petición de la serie no lo repinta.
     const cuentas =
-      q.parte === "bundle" ? ((await SalesReport.distinct("account")) as string[]) : [];
+      q.parte === "bundle" ? ((await ReportImport.distinct("account")) as string[]) : [];
     return { archivo: null, cuentas, seleccion: null };
   }
 
@@ -208,7 +208,7 @@ async function calcularResumen(q: QueryResumen) {
   const base = {
     ...(q.alcance === "cuenta"
       ? { account: ultimo.account }
-      : { account: ultimo.account, sourceFile: ultimo.sourceFile }),
+      : filasDelArchivo(ultimo.account, ultimo.sourceFile)),
     ...(fecha && Object.keys(filtroFecha).length > 0 ? { [fecha]: filtroFecha } : {}),
   };
   const acc = acumuladores(metricas);
@@ -276,7 +276,7 @@ async function calcularResumen(q: QueryResumen) {
     // Retailers que TIENEN reportes guardados. Se mandan para que el selector
     // ofrezca sólo esos: listar los cuatro llevaría a elegir uno vacío y
     // toparse con un "sin datos" que no explica nada.
-    SalesReport.distinct("account") as Promise<string[]>,
+    ReportImport.distinct("account") as Promise<string[]>,
   ]);
 
   const totalesDoc = facetado?.totales?.[0];
@@ -298,7 +298,7 @@ async function calcularResumen(q: QueryResumen) {
       sourceFile: ultimo.sourceFile,
       template: ultimo.template,
       account: ultimo.account,
-      importedAt: ultimo.importedAt?.toISOString() ?? null,
+      importedAt: ultimo.lastWriteAt?.toISOString() ?? null,
       total: totales.conteo,
     },
     cuentas,

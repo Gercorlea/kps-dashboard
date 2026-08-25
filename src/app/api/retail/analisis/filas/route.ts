@@ -5,6 +5,8 @@ import { connectDB } from "@/lib/db";
 import { patronSinAcentos } from "@/lib/retail/analisis/filtrar";
 import { plantillaPorId, seleccionHistorico } from "@/lib/retail/analisis/plantillas";
 import { filasAnalisisQuerySchema } from "@/lib/validation/retail";
+import { filasDelArchivo } from "@/lib/retail/importaciones";
+import { ReportImport } from "@/models/ReportImport";
 import { SalesReport } from "@/models/SalesReport";
 
 /** Las fechas se guardan a medianoche UTC; se devuelven como "2024-07-06". */
@@ -29,17 +31,16 @@ export async function GET(request: NextRequest) {
     const q = parseQuery(request.url, filasAnalisisQuerySchema);
     await connectDB();
 
-    // Qué archivo se está viendo. El más reciente por importedAt cuando no se
-    // pide uno, para que "el último cargado" no dependa del orden de inserción.
-    const ultimo = await SalesReport.findOne(
-      q.sourceFile
-        ? { sourceFile: q.sourceFile, ...(q.account ? { account: q.account } : {}) }
-        : q.account
-          ? { account: q.account }
-          : {}
-    )
-      .sort(q.sourceFile ? { date: 1 } : { importedAt: -1 })
-      .select({ sourceFile: 1, template: 1, account: 1, importedAt: 1 })
+    // Qué archivo se está viendo. Sale de la colección de reportes y no de una
+    // fila cualquiera: una fila puede pertenecer a dos archivos solapados, así
+    // que no sabe decir cuál de ellos se está mirando. El más reciente cuando
+    // no se pide uno, para que "el último cargado" no dependa del orden de
+    // inserción.
+    const ultimo = await ReportImport.findOne({
+      ...(q.account ? { account: q.account } : {}),
+      ...(q.sourceFile ? { sourceFile: q.sourceFile } : {}),
+    })
+      .sort({ importedAt: -1 })
       .lean();
 
     const plantilla = ultimo ? plantillaPorId(ultimo.template) : null;
@@ -51,7 +52,9 @@ export async function GET(request: NextRequest) {
     // cliente saca las columnas: así las dos listas no se pueden desalinear.
     const campos = seleccionHistorico(plantilla).columnas.map((c) => c.campo);
 
-    const base = { account: ultimo.account, sourceFile: ultimo.sourceFile };
+    // Membresía, no propiedad: trae también las filas que este archivo comparte
+    // con otro reporte que se solapa con él.
+    const base = filasDelArchivo(ultimo.account, ultimo.sourceFile);
     const filtro: Record<string, unknown> = { ...base };
 
     // Buscador de producto: descripción, marca y códigos. Se incluye itemNbr
@@ -88,7 +91,7 @@ export async function GET(request: NextRequest) {
         sourceFile: ultimo.sourceFile,
         template: ultimo.template,
         account: ultimo.account,
-        importedAt: ultimo.importedAt?.toISOString() ?? null,
+        importedAt: ultimo.lastWriteAt?.toISOString() ?? null,
         total: q.buscar ? totalArchivo : total,
       },
       campos,

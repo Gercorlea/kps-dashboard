@@ -375,6 +375,11 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
       const { filas, descartadas } = filasParaHistorico(ds, columnas);
       let insertadas = 0;
       let actualizadas = 0;
+      // Un id por SUBIDA, compartido por todos sus lotes. El servidor no puede
+      // deducirlo: cada lote es un POST suelto, y sin esto el segundo lote de
+      // una primera subida marcaría el reporte como actualizado el mismo día en
+      // que se importó (ver models/ReportImport.ts).
+      const carga = crypto.randomUUID();
 
       for (let i = 0; i < filas.length; i += MAX_FILAS_LOTE) {
         const lote = filas.slice(i, i + MAX_FILAS_LOTE);
@@ -386,6 +391,7 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
               template: plt.id,
               account: retailer,
               sourceFile: archivo,
+              carga,
               filas: lote,
             }),
           }

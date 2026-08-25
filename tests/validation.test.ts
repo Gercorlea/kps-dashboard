@@ -66,8 +66,25 @@ describe("retailers del analizador", () => {
   const base = {
     template: "walmart-mensual",
     sourceFile: "reporte.xlsx",
+    carga: "8f1c2b3a-0000-4000-8000-000000000001",
     filas: [filaValida],
   };
+
+  it("exige el id de carga", () => {
+    // Sin él, el servidor no puede distinguir el segundo lote de una subida de
+    // una re-subida del mismo archivo, y fecharía como "actualizado" un reporte
+    // que se acaba de importar (ver models/ReportImport.ts).
+    const sinCarga = {
+      template: base.template,
+      sourceFile: base.sourceFile,
+      account: "walmart",
+      filas: base.filas,
+    };
+    expect(guardarAnalisisSchema.safeParse(sinCarga).success).toBe(false);
+    expect(guardarAnalisisSchema.safeParse({ ...base, account: "walmart", carga: "" }).success).toBe(
+      false
+    );
+  });
 
   it("acepta los cuatro retailers", () => {
     expect(RETAILERS).toHaveLength(4);

@@ -14,8 +14,7 @@
     "sap:contexto": "tsx scripts/generar-contexto-sap.ts",
     "predev": "npm run sap:contexto",
     "prebuild": "npm run sap:contexto",
-    "migrar:ingles": "tsx --env-file=.env.local scripts/migrar-esquemas-ingles.ts",
-    "reparar:primera-importacion": "tsx --env-file=.env.local scripts/reparar-primera-importacion.ts"
+    "migrar:ingles": "tsx --env-file=.env.local scripts/migrar-esquemas-ingles.ts"
   },
   "config": {
     "commitizen": {

@@ -5,13 +5,13 @@ import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { invalidarRetail } from "@/lib/retail/cache";
 import {
-  pipelineDeReportes,
-  reportesFechados,
-  type CargaAgrupada,
-  type TenenciaAgrupada,
+  operacionDeFila,
+  pipelineFilasPorArchivo,
+  reportesListados,
 } from "@/lib/retail/importaciones";
 import { usuariosPorId } from "@/lib/usuarios";
 import { guardarAnalisisSchema, historicoAnalisisQuerySchema } from "@/lib/validation/retail";
+import { ReportImport } from "@/models/ReportImport";
 import { SalesReport } from "@/models/SalesReport";
 
 /** "2024-07-06" → medianoche UTC, como el resto de retail (fechaISO). */
@@ -44,10 +44,7 @@ const ORDENES_EN_PARALELO = 8;
  *
  * Es lo que hacía una sola orden con las 2000 filas: aplicaba las operaciones
  * en fila y la última ganaba. Al repartir el lote en órdenes paralelas, dos
- * filas con la misma clave natural podrían intentar insertarse a la vez y una
- * moriría con E11000, así que se resuelve antes de escribir. El reporte no
- * debería traerlas —(itemNbr, date) es única en su grano—, pero el guardado no
- * puede depender de eso.
+ * filas con la misma clave podrían caer en órdenes distintas y chocar.
  */
 function sinClavesRepetidas<T extends { itemNbr: number; date: string }>(filas: T[]): T[] {
   const porClave = new Map<string, T>();
@@ -58,15 +55,26 @@ function sinClavesRepetidas<T extends { itemNbr: number; date: string }>(filas: 
 /** Cuántos reportes lista la ficha del retailer. */
 const MAX_REPORTES = 20;
 
+/** Índice único violado: el documento ya existe, que es lo que se quería. */
+function esClaveDuplicada(e: unknown): boolean {
+  return (e as { code?: number })?.code === 11000;
+}
+
 // POST /api/retail/analisis — guarda un lote de filas en el histórico.
 //
 // Upsert por la clave natural (account, itemNbr, date): volver a subir el mismo
 // reporte actualiza en vez de duplicar, que es lo que mantiene sano un
 // histórico al que se le carga el mismo mes dos veces.
+//
+// La clave NO incluye el archivo, así que dos reportes que se solapan comparten
+// filas. Eso no las duplica —el documento sigue siendo uno— y tampoco se las
+// quita a nadie: la procedencia se acumula en `sourceFiles` (ver
+// lib/retail/importaciones.ts). Las fechas de la carga van aparte, en su propio
+// documento, porque son del reporte y no de las filas.
 export async function POST(request: NextRequest) {
   try {
     const usuario = await requireModule("retail");
-    const { template, account, sourceFile, filas } = await parseJson(
+    const { template, account, sourceFile, carga, filas } = await parseJson(
       request,
       guardarAnalisisSchema
     );
@@ -75,75 +83,50 @@ export async function POST(request: NextRequest) {
     const importedAt = new Date();
     const importedBy = new Types.ObjectId(usuario.id);
 
-    // Rescate de las filas guardadas antes de que existiera `firstImportedAt`:
-    // se les copia el `importedAt` que traen ANTES de que el lote se lo pise,
-    // que es la única fecha de importación que quedaba de ellas.
+    // El reporte como entidad, en dos órdenes pequeñas y en este orden.
     //
-    // Va en una orden aparte y no dentro del upsert de cada fila a propósito.
-    // La primera versión resolvía esto con un update de pipeline por fila
-    // (`$ifNull: ["$firstImportedAt", "$importedAt", …]`), y se midió: el
-    // pipeline obliga a envolver cada valor en `$literal` —un texto que empieza
-    // por "$" se leería como referencia a un campo— y eso infla el comando un
-    // 46% (1,463 → 2,143 KB por lote de 2000 filas). Con el enlace a la base a
-    // ~110 KB/s eso son 8 segundos más POR LOTE: la carga de 15 mil filas pasó
-    // de 80 a 150 segundos. Así el lote vuelve a viajar con operadores y el
-    // rescate cuesta una sola orden pequeña (~200 ms, y cero filas tocadas en
-    // cuanto la cuenta está al día).
-    //
-    // `updatePipeline: true` es obligatorio en esta versión de Mongoose para
-    // pasar un pipeline a un update: avisa de que no va a castear los valores.
-    // Aquí no hay nada que castear —los dos campos se copian de la propia fila—.
-    //
-    // `firstSourceFile` NO se rescata aquí, y es a propósito: de una fila vieja
-    // que ya reescribió otra carga no se sabe qué archivo la creó —esa era la
-    // información que faltaba—, y ponerle el que la tiene hoy sería inventarla.
-    // Se resuelve al leer, en `PRIMERA_ESCRITURA`.
-    await SalesReport.updateMany(
-      { account, firstImportedAt: { $exists: false } },
-      [{ $set: { firstImportedAt: "$importedAt", firstImportedBy: "$importedBy" } }],
-      { updatePipeline: true }
+    // La primera da de alta lo que no cambia nunca (cuándo y quién lo subió por
+    // primera vez) y es idempotente entre los lotes de una misma carga: el
+    // índice único hace que sólo uno inserte.
+    try {
+      await ReportImport.updateOne(
+        { account, sourceFile },
+        {
+          $setOnInsert: {
+            template,
+            importedAt,
+            importedBy,
+            reimportedAt: null,
+            reimportedBy: null,
+            loadId: carga,
+          },
+          $set: { lastWriteAt: importedAt },
+        },
+        { upsert: true }
+      );
+    } catch (e) {
+      // Dos personas subiendo el mismo nombre a la vez: el upsert no es atómico
+      // entre buscar e insertar, y el perdedor se lleva un E11000. El documento
+      // existe, que es todo lo que esta orden quería.
+      if (!esClaveDuplicada(e)) throw e;
+    }
+    // La segunda sólo dispara si el documento lo dejó OTRA carga, o sea si el
+    // reporte se está volviendo a subir. Sin el filtro por `loadId`, el segundo
+    // lote de una primera subida vería el documento que dejó el primero y la
+    // marcaría como actualizada el mismo día en que se importó.
+    await ReportImport.updateOne(
+      { account, sourceFile, loadId: { $ne: carga } },
+      {
+        $set: {
+          template,
+          loadId: carga,
+          reimportedAt: importedAt,
+          reimportedBy: importedBy,
+        },
+      }
     );
 
-    const operacion = (f: (typeof filas)[number]) => {
-      const { date, ...resto } = f;
-      const fecha = fechaUTC(date);
-      return {
-        updateOne: {
-          filter: { account, itemNbr: f.itemNbr, date: fecha },
-          update: {
-            $set: {
-              ...resto,
-              date: fecha,
-              template,
-              account,
-              sourceFile,
-              importedAt,
-              importedBy,
-            },
-            // La primera escritura no se toca al volver a subir el reporte: es
-            // lo que separa "importado el" de "última actualización" en la
-            // ficha del retailer. Una fila con importedAt > firstImportedAt es,
-            // exactamente, una fila que reescribió una carga posterior.
-            //
-            // `firstSourceFile` es la otra mitad: el $set de arriba le pone a
-            // la fila el archivo de ESTA carga aunque la fila la haya creado
-            // otra —dos reportes que se solapan comparten filas—, y sin dejar
-            // constancia de quién la creó, el reporte que hereda filas ajenas
-            // hereda también su fecha de importación.
-            //
-            // Sólo cubre las ALTAS; de las filas viejas que no traen los campos
-            // se encarga el rescate de arriba, antes de que este $set les pise
-            // el importedAt.
-            $setOnInsert: {
-              firstImportedAt: importedAt,
-              firstImportedBy: importedBy,
-              firstSourceFile: sourceFile,
-            },
-          },
-          upsert: true,
-        },
-      };
-    };
+    const procedencia = { template, account, sourceFile, importedAt, importedBy };
 
     // El lote se reparte en varias órdenes que viajan a la vez (ver
     // ORDENES_EN_PARALELO). Son disjuntas por construcción —cada fila cae en
@@ -157,7 +140,10 @@ export async function POST(request: NextRequest) {
 
     const res = await Promise.all(
       ordenes.map((orden) =>
-        SalesReport.bulkWrite(orden.map(operacion), { ordered: false })
+        SalesReport.bulkWrite(
+          orden.map((f) => operacionDeFila(f, fechaUTC(f.date), procedencia)),
+          { ordered: false }
+        )
       )
     );
     // El histórico cambió: los agregados guardados en memoria ya no lo
@@ -184,20 +170,27 @@ export async function GET(request: NextRequest) {
 
     const filtro = account ? { account } : {};
     const total = await SalesReport.countDocuments(filtro);
-    if (total === 0) return ok({ total: 0, desde: null, hasta: null, archivos: [] });
 
-    const [rango] = await SalesReport.aggregate<{ desde: Date; hasta: Date }>([
-      { $match: filtro },
-      { $group: { _id: null, desde: { $min: "$date" }, hasta: { $max: "$date" } } },
+    // Los reportes salen de su propia colección: son unas decenas de documentos
+    // indexados, no una agregación sobre las 15 mil filas de la cuenta.
+    const reportes = await ReportImport.find(filtro)
+      .sort({ lastWriteAt: -1 })
+      .limit(MAX_REPORTES)
+      .lean();
+
+    if (total === 0 && reportes.length === 0) {
+      return ok({ total: 0, desde: null, hasta: null, archivos: [] });
+    }
+
+    const [[rango], conteos] = await Promise.all([
+      SalesReport.aggregate<{ desde: Date; hasta: Date }>([
+        { $match: filtro },
+        { $group: { _id: null, desde: { $min: "$date" }, hasta: { $max: "$date" } } },
+      ]),
+      SalesReport.aggregate<{ _id: string; filas: number }>(pipelineFilasPorArchivo(filtro)),
     ]);
 
-    const [agrupado] = await SalesReport.aggregate<{
-      archivos: TenenciaAgrupada<Types.ObjectId>[];
-      cargas: CargaAgrupada<Types.ObjectId>[];
-    }>(pipelineDeReportes(filtro, MAX_REPORTES));
-
-    const archivos = reportesFechados(agrupado);
-
+    const archivos = reportesListados(reportes, conteos);
     const autores = await usuariosPorId(archivos.map((a) => a.subidoPor));
 
     return ok({

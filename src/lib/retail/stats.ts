@@ -1,4 +1,5 @@
 import { connectDB } from "@/lib/db";
+import { ReportImport } from "@/models/ReportImport";
 import { SalesReport } from "@/models/SalesReport";
 import { DailySale } from "@/models/DailySale";
 import { memoRetail } from "./cache";
@@ -119,21 +120,20 @@ export async function resumenDashboard(): Promise<ResumenDashboard> {
       { $match: { date: { $gte: inicio } } },
       { $group: agrupacionMensual("$units") },
     ]),
-    // El analizador guarda una fila por artículo × día, así que los reportes se
-    // cuentan por `sourceFile` distinto y no por documento. Volver a subir el
-    // mismo archivo lo actualiza (upsert por la clave natural), y con $addToSet
-    // sigue contando como un reporte, que es lo que se quiere ver.
-    SalesReport.aggregate<UltimaCarga>([
-      { $sort: { importedAt: -1 } },
+    // Un documento por reporte cargado, así que los reportes se cuentan con un
+    // $sum y no reuniendo los `sourceFile` distintos de las ~15 mil filas de
+    // cada cuenta. El $sort de arriba es lo que le da sentido al $first: el
+    // reporte tocado más recientemente es el primero de su grupo.
+    ReportImport.aggregate<UltimaCarga>([
+      { $sort: { lastWriteAt: -1 } },
       {
         $group: {
           _id: "$account",
-          fecha: { $first: "$importedAt" },
+          fecha: { $first: "$lastWriteAt" },
           archivo: { $first: "$sourceFile" },
-          archivos: { $addToSet: "$sourceFile" },
+          reportes: { $sum: 1 },
         },
       },
-      { $project: { fecha: 1, archivo: 1, reportes: { $size: "$archivos" } } },
     ]),
   ]);
 
@@ -250,10 +250,8 @@ interface AgregadoCuenta {
   importe: number;
   unidades: number;
   articulos: string[];
-  archivos: string[];
   desde: Date | null;
   hasta: Date | null;
-  ultimoReporte: Date | null;
 }
 
 /**
@@ -289,10 +287,8 @@ async function calcularDetalleRetailers(): Promise<DetalleRetailer[]> {
         importe: { $sum: { $ifNull: ["$posSales", 0] } },
         unidades: { $sum: { $ifNull: ["$posQty", 0] } },
         articulos: { $addToSet: "$itemNbr" },
-        archivos: { $addToSet: "$sourceFile" },
         desde: { $min: "$date" },
         hasta: { $max: "$date" },
-        ultimoReporte: { $max: "$importedAt" },
       },
     },
   ]);
@@ -300,40 +296,50 @@ async function calcularDetalleRetailers(): Promise<DetalleRetailer[]> {
   const porCuenta = new Map(filas.map((f) => [f._id, f]));
   const total = filas.reduce((t, f) => t + f.importe, 0);
 
-  // El último archivo no sale del $group: `$max` sobre importedAt no arrastra
-  // el sourceFile de esa misma fila. Se resuelve con un findOne por cuenta con
-  // datos, que el índice { importedAt: -1 } contesta de inmediato.
-  const ultimos = await Promise.all(
-    [...porCuenta.keys()].map((account) =>
-      SalesReport.findOne({ account })
-        .sort({ importedAt: -1 })
-        .select({ sourceFile: 1 })
-        .lean()
-        .then((d) => [account, d?.sourceFile ?? null] as const)
-    )
-  );
-  const ultimoArchivo = new Map(ultimos);
+  // Cuántos reportes tiene cada cuenta, cuál fue el último y cuándo. Sale de la
+  // colección de cargas —una decena de documentos— y no de las filas: antes eran
+  // un $addToSet de `sourceFile` sobre el histórico entero MÁS un findOne por
+  // cuenta, porque `$max` sobre importedAt no arrastra el archivo de esa misma
+  // fila. Un solo $group contesta las tres cosas.
+  const cargas = await ReportImport.aggregate<UltimaCarga>([
+    { $sort: { lastWriteAt: -1 } },
+    {
+      $group: {
+        _id: "$account",
+        fecha: { $first: "$lastWriteAt" },
+        archivo: { $first: "$sourceFile" },
+        reportes: { $sum: 1 },
+      },
+    },
+  ]);
+  const porCarga = new Map(cargas.map((c) => [c._id, c]));
 
+  // Las dos fuentes aportan cuentas: un reporte recién borrado deja filas sin
+  // carga, y una carga interrumpida deja carga sin filas. Ninguna de las dos
+  // debe hacer desaparecer al retailer de la portada.
   const ids = [
     ...RETAILERS.map((r) => r.id),
-    ...[...porCuenta.keys()].filter((id) => !RETAILERS.some((r) => r.id === id)),
+    ...[...porCuenta.keys(), ...porCarga.keys()].filter(
+      (id) => !RETAILERS.some((r) => r.id === id)
+    ),
   ];
 
   return [...new Set(ids)]
     .map((id) => {
       const f = porCuenta.get(id);
+      const carga = porCarga.get(id);
       return {
         id,
         nombre: nombreRetailer(id),
         importe: f?.importe ?? 0,
         unidades: f?.unidades ?? 0,
         articulos: f?.articulos.length ?? 0,
-        reportes: f?.archivos.length ?? 0,
+        reportes: carga?.reportes ?? 0,
         participacion: total > 0 ? (f?.importe ?? 0) / total : null,
         desde: f?.desde ? fechaISO(new Date(f.desde)) : null,
         hasta: f?.hasta ? fechaISO(new Date(f.hasta)) : null,
-        ultimoReporte: f?.ultimoReporte ? new Date(f.ultimoReporte).toISOString() : null,
-        ultimoArchivo: ultimoArchivo.get(id) ?? null,
+        ultimoReporte: carga?.fecha ? new Date(carga.fecha).toISOString() : null,
+        ultimoArchivo: carga?.archivo ?? null,
       };
     })
     .sort((a, b) => b.importe - a.importe || a.nombre.localeCompare(b.nombre));
