@@ -1124,17 +1124,32 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                           </tr>
                         ) : (
                           (archivos ?? []).map((a) => (
-                            // El botón del nombre cubre toda la fila (ver
-                            // .cr-fila-link), igual que en la lista de
-                            // retailers: se puede hacer clic en cualquier parte
-                            // sin meter un control por celda.
-                            <tr key={a.sourceFile} className="cr-fila-link">
+                            // La fila entera abre el reporte: se puede hacer
+                            // clic en cualquier celda sin meter un control por
+                            // columna. El manejador va en el <tr> y no en un
+                            // ::after estirado sobre la fila porque WebKit no
+                            // posiciona las partes internas de una tabla y ese
+                            // overlay acababa tapando media página en Safari.
+                            // El botón se queda sin onClick a propósito: al
+                            // activarlo con Enter o Espacio dispara un click
+                            // que burbujea hasta aquí, así que el teclado
+                            // funciona y no hay doble disparo.
+                            <tr
+                              key={a.sourceFile}
+                              className="cr-fila-link"
+                              onClick={() => {
+                                // Arrastrar para seleccionar texto termina en
+                                // un click, y eso no es querer abrir el
+                                // reporte.
+                                if (window.getSelection()?.toString()) return;
+                                setReporteAbierto(a.sourceFile);
+                              }}
+                            >
                               <td className="max-w-96 truncate">
                                 <button
                                   type="button"
                                   className="cr-link block max-w-full cursor-pointer truncate text-left"
                                   title={a.sourceFile}
-                                  onClick={() => setReporteAbierto(a.sourceFile)}
                                 >
                                   {a.sourceFile}
                                 </button>

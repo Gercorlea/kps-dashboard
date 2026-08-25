@@ -191,15 +191,16 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
   display: flex; justify-content: space-between; align-items: center; }
 .cr-panel__body { padding: 16px 18px; }
 
-/* Fila de tabla clicable entera. El enlace del nombre se estira sobre la fila
-   con un ::after en vez de envolver el <tr> en un <a> —que no es HTML válido—
-   o de repetir un enlace por celda, que el lector de pantalla anunciaría ocho
-   veces. La fila es el bloque contenedor, así que las celdas NO deben quedar
-   posicionadas o el área clicable se recortaría a la primera.
-   Si un navegador ignora `position` en <tr>, el nombre sigue siendo un enlace
-   normal: se degrada, no se rompe. */
-.cr-fila-link { position: relative; }
-.cr-fila-link .cr-link::after { content: ""; position: absolute; inset: 0; }
+/* Fila de tabla clicable entera. Aquí el CSS sólo pone el cursor: quien abre la
+   fila es un onClick en el <tr>, y el control real sigue siendo el botón del
+   nombre —así el teclado y el lector de pantalla tienen un solo destino, sin
+   envolver el <tr> en un <a> (HTML inválido) ni repetir un enlace por celda.
+   El truco del enlace estirado (position: relative en la fila + un ::after a
+   inset: 0) NO sirve en tablas: WebKit ignora `position` en las partes internas
+   de la tabla, así que en Safari el ::after se medía contra un ancestro muy por
+   encima y cada fila tapaba media página —el clic caía siempre en la primera—.
+   Para cards, donde el contenedor es un <div>, ver .cr-rcard__link. */
+.cr-fila-link { cursor: pointer; }
 
 /* ============================ KPI cards ============================ */
 
