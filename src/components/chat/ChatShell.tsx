@@ -22,7 +22,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { api, ClientApiError } from "@/components/lib/api-client";
+import { api, ClientApiError, fetchConSesion } from "@/components/lib/api-client";
 import { MODELO_DEFECTO, MODELOS_IA } from "@/lib/ai-modelos";
 
 // Chat de KPS AI con el diseño CRONOS portado de Industria Real:
@@ -49,6 +49,20 @@ const SUGERENCIAS = [
   { icono: Percent, texto: "Explícame qué es el fill rate y cómo se calcula" },
   { icono: Lightbulb, texto: "Dame ideas para presentar un scorecard a un cliente" },
 ];
+
+// El transport lanza el cuerpo de la respuesta tal cual cuando el servidor
+// no responde 200. Mostrar solo "intenta de nuevo" escondía la causa real
+// (sesión vencida, límite de peticiones, historial rechazado) y dejaba el
+// fallo sin diagnóstico posible.
+function motivoDelError(error: Error): string {
+  try {
+    const cuerpo = JSON.parse(error.message) as { error?: { message?: string } };
+    if (cuerpo.error?.message) return cuerpo.error.message;
+  } catch {
+    // No era el contrato { ok, error }: caemos al mensaje genérico.
+  }
+  return "No se pudo obtener respuesta. Intenta de nuevo.";
+}
 
 // Reconstruye el mensaje guardado. Las llamadas a herramientas se vuelven
 // partes del mensaje para que la tarjeta de reporte siga ahí al recargar la
@@ -207,6 +221,8 @@ function Conversacion({
     () =>
       new DefaultChatTransport({
         api: "/api/ai/chat",
+        // Renueva la sesión y reintenta si el token venció a media charla.
+        fetch: fetchConSesion,
         prepareSendMessagesRequest: ({ messages, body }) => ({
           body: { chatId, messages, ...body },
         }),
@@ -370,7 +386,7 @@ function Conversacion({
               ) : null}
               {error ? (
                 <p className="cr-small" style={{ color: "var(--cr-danger)" }} role="alert">
-                  No se pudo obtener respuesta. Intenta de nuevo.
+                  {motivoDelError(error)}
                 </p>
               ) : null}
             </div>

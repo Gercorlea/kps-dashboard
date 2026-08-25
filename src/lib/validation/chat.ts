@@ -10,10 +10,14 @@ const uiPartSchema = z.looseObject({
   text: z.string().max(8000, "Message demasiado largo").optional(),
 });
 
+// Un turno con varias consultas encadenadas genera una parte por paso y otra
+// por herramienta: con el tope en 20, una respuesta que consultara SAP media
+// docena de veces tumbaba el SIGUIENTE mensaje. El límite protege del abuso,
+// no de nuestro propio flujo, así que va por encima del máximo alcanzable.
 const uiMessageSchema = z.looseObject({
   id: z.string().max(64).optional(),
   role: z.enum(["user", "assistant", "system"]),
-  parts: z.array(uiPartSchema).max(20),
+  parts: z.array(uiPartSchema).max(80),
 });
 
 export const chatBodySchema = z

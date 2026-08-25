@@ -1,4 +1,4 @@
-import { convertToModelMessages, type UIMessage } from "ai";
+import { convertToModelMessages, pruneMessages, type UIMessage } from "ai";
 import { isValidObjectId } from "mongoose";
 import type { NextRequest } from "next/server";
 import { ApiError, handleApiError, parseJson } from "@/lib/api";
@@ -12,7 +12,9 @@ import { Chat } from "@/models/Chat";
 import { Message } from "@/models/Message";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+// Un reporte largo puede tardar: 120 s se quedaban cortos y la petición
+// moría a mitad del streaming.
+export const maxDuration = 300;
 
 const TITULO_DEFECTO = "Nueva conversación";
 
@@ -64,7 +66,16 @@ export async function POST(request: NextRequest) {
     conversacion.updatedAt = new Date();
     await conversacion.save();
 
-    const mensajesModelo = await convertToModelMessages(body.messages as unknown as UIMessage[]);
+    // Sin podar, cada consulta a SAP (hasta 100 filas) se reenvía íntegra en
+    // TODOS los mensajes siguientes: una conversación normal pasaba de 190 mil
+    // tokens de entrada y acababa fallando. Se conservan las llamadas de los
+    // dos últimos mensajes —las que el modelo aún necesita— y del resto queda
+    // solo el texto, que ya resume lo encontrado.
+    const mensajesModelo = pruneMessages({
+      messages: await convertToModelMessages(body.messages as unknown as UIMessage[]),
+      toolCalls: "before-last-2-messages",
+      emptyMessages: "remove",
+    });
     const result = chat(mensajesModelo, {
       model: body.model,
       onFinish: async ({ texto, model, entrada, salida, tools }) => {
