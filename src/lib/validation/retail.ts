@@ -1,18 +1,7 @@
 import { z } from "zod";
 import { RETAILER_IDS } from "@/lib/retail/retailers";
 
-// El histórico multi-corte sigue siendo de San Pablo: es la única cuenta que
-// tuvo el flujo de ingesta por hojas fijas, hoy retirado.
-export const CUENTAS = ["san-pablo"] as const;
-export type Cuenta = (typeof CUENTAS)[number];
-
 const fechaISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha: YYYY-MM-DD");
-
-export const historicoQuerySchema = z.object({
-  account: z.enum(CUENTAS).default("san-pablo"),
-  desde: fechaISO.optional(),
-  hasta: fechaISO.optional(),
-});
 
 // --- Analizador ad-hoc (§7 bis) ---------------------------------------
 
@@ -52,6 +41,11 @@ export const guardarAnalisisSchema = z.object({
   // un id mal escrito no cree una cuenta fantasma imposible de encontrar.
   account: z.enum(RETAILER_IDS, { error: "Selecciona un retailer válido" }),
   sourceFile: z.string().min(1).max(300),
+  // Identifica la CARGA, no el archivo: la misma subida troceada en lotes manda
+  // el mismo valor en todos. Es lo que separa "este es el segundo lote" de "el
+  // reporte se volvió a subir", que son la misma escritura vista desde el
+  // servidor y fechan el reporte de forma distinta (ver models/ReportImport.ts).
+  carga: z.string().min(1).max(64),
   filas: z.array(reporteVentaRowSchema).min(1).max(MAX_FILAS_LOTE),
 });
 
@@ -98,15 +92,28 @@ export const FILAS_POR_PAGINA = 100;
 // `parte=serie&granularidad=dia` la primera vez que alguien la elige.
 export const METRICA_CONTEO_ID = "__conteo__";
 
-export const resumenAnalisisQuerySchema = z.object({
-  account: z.enum(RETAILER_IDS).optional(),
-  sourceFile: z.string().min(1).max(300).optional(),
-  parte: z.enum(["bundle", "serie"]).default("bundle"),
-  granularidad: z.enum(["dia", "mes", "anio"]).optional(),
-  // "archivo" agrega un solo reporte —lo que mira /retail/analisis— y "cuenta"
-  // agrega todos los del retailer, que es lo que necesita su ficha.
-  alcance: z.enum(["archivo", "cuenta"]).default("archivo"),
-});
+export const resumenAnalisisQuerySchema = z
+  .object({
+    account: z.enum(RETAILER_IDS).optional(),
+    sourceFile: z.string().min(1).max(300).optional(),
+    parte: z.enum(["bundle", "serie"]).default("bundle"),
+    granularidad: z.enum(["dia", "mes", "anio"]).optional(),
+    // "archivo" agrega un solo reporte —lo que mira /retail/analisis— y "cuenta"
+    // agrega todos los del retailer, que es lo que necesita su ficha.
+    alcance: z.enum(["archivo", "cuenta"]).default("archivo"),
+    // Periodo que mira la pestaña de Ventas de la ficha del retailer. Ausentes
+    // significa TODO el histórico, que es lo que pide la carga inicial: así el
+    // primer viaje sigue compartiendo entrada de caché con la de antes.
+    desde: fechaISO.optional(),
+    hasta: fechaISO.optional(),
+  })
+  // Se comparan como TEXTO y no como Date: la clave ISO con ceros a la
+  // izquierda ordena alfabéticamente igual que cronológicamente, y así no entra
+  // una zona horaria a decidir si el rango es válido.
+  .refine((q) => !q.desde || !q.hasta || q.desde <= q.hasta, {
+    message: "El inicio del periodo no puede ser posterior al fin",
+    path: ["desde"],
+  });
 
 export const filasAnalisisQuerySchema = z.object({
   account: z.enum(RETAILER_IDS).optional(),

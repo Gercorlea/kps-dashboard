@@ -46,6 +46,65 @@ export function formatearCompacto(n: number): string {
   return Math.abs(n) >= 10_000 ? nfCompacto.format(n) : formatearNumero(n);
 }
 
+/**
+ * Importes: el mismo número con "$" delante.
+ *
+ * Se antepone el símbolo en vez de usar `style: "currency"` de Intl para que un
+ * importe se lea EXACTAMENTE igual que el resto de los números de la app —los
+ * enteros sin ".00", los decimales con dos— y sólo se distinga por el signo. Va
+ * pegado al número, como se escribe en México: "$1,234.50".
+ *
+ * El negativo lleva el signo delante del símbolo ("-$120"), que es como lo
+ * escribe es-MX y evita el "$-120" que saldría de concatenar sin más.
+ */
+function conSimbolo(texto: string): string {
+  return texto.startsWith("-") ? `-$${texto.slice(1)}` : `$${texto}`;
+}
+
+/** Importe con la fidelidad de `formatearNumero`: tablas y tooltips. */
+export function formatearMoneda(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return conSimbolo(formatearNumero(n));
+}
+
+/** Importe compacto para ejes y etiquetas de barra: 1234567 → "$1.2 M". */
+export function formatearMonedaCompacta(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return conSimbolo(formatearCompacto(n));
+}
+
+/**
+ * Marca de eje. Igual que `formatearCompacto` pero abrevia desde el millar y no
+ * desde la decena de millar: en un eje las marcas se leen COMO COLUMNA, y
+ * "6,000 · 12 k · 18 k" salta a la vista como un error de formato. El umbral
+ * más alto de `formatearCompacto` sigue siendo el correcto para una etiqueta
+ * suelta al final de una barra, donde no hay con qué comparar.
+ */
+export function formatearEje(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return Math.abs(n) >= 1_000 ? nfCompacto.format(n) : formatearNumero(n);
+}
+
+/** La misma marca de eje con "$" delante. */
+export function formatearEjeMoneda(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return conSimbolo(formatearEje(n));
+}
+
+// Mes en UTC y no en local: se formatea una fecha sintética armada con
+// Date.UTC, igual que en fmt.ts, para que enero no se muestre como diciembre.
+const dfMesCorto = new Intl.DateTimeFormat(LOCALE, { month: "short", timeZone: "UTC" });
+
+/**
+ * Número de mes (1-12) → "Ene". Para el eje de la comparativa anual, donde
+ * caben doce etiquetas y el nombre completo no.
+ */
+export function formatearMesCorto(mes: number): string {
+  // es-MX devuelve "ene." con punto; sobra en un eje.
+  const texto = dfMesCorto.format(new Date(Date.UTC(2000, mes - 1, 1))).replace(".", "");
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
 /** Fecha en ISO local, sin corrimiento de zona horaria. */
 export function formatearFecha(d: Date): string {
   return `${d.getFullYear()}-${dosDigitos(d.getMonth() + 1)}-${dosDigitos(d.getDate())}`;
@@ -54,6 +113,18 @@ export function formatearFecha(d: Date): string {
 /** Fracción (1 = 100%) → porcentaje. */
 export function formatearPorcentaje(fraccion: number): string {
   return Number.isFinite(fraccion) ? fmtPct(fraccion) : "—";
+}
+
+/**
+ * Variación con signo explícito: un "+5%" se distingue de un "5%" a secas.
+ *
+ * Vive aquí y no en la gráfica porque el KPI de la ficha y la cabecera de la
+ * comparativa anual muestran LA MISMA cifra: con dos formateadores, uno de los
+ * dos acabaría redondeando distinto.
+ */
+export function formatearPorcentajeConSigno(fraccion: number): string {
+  const texto = formatearPorcentaje(fraccion);
+  return fraccion > 0 ? `+${texto}` : texto;
 }
 
 /**
@@ -102,5 +173,8 @@ export function formatearCeldaNormalizada(v: CeldaCruda, col: MetaColumna): stri
   // un "Item Nbr" no lleva separadores de miles.
   if (col.esIdentificador) return formatearCelda(v, true);
 
-  return formatearCelda(v);
+  // El "$" sólo cuando la celda acabó siendo un número: un importe que llegó
+  // como texto ilegible se muestra tal cual, sin fingir que es dinero.
+  const texto = formatearCelda(v);
+  return col.esMoneda && typeof v === "number" ? conSimbolo(texto) : texto;
 }

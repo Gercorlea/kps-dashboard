@@ -5,7 +5,7 @@
 // su propia directiva "use client" — entran al bundle de cliente por ser
 // importados desde aquí.
 
-import { Database } from "lucide-react";
+import { Clock, TriangleAlert } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnalisisKpis } from "@/components/retail/AnalisisKpis";
@@ -13,7 +13,7 @@ import { AnalisisTable } from "@/components/retail/AnalisisTable";
 import { AnalisisUploader } from "@/components/retail/AnalisisUploader";
 import { api, ClientApiError } from "@/components/lib/api-client";
 import { useDiferido } from "@/components/lib/useDiferido";
-import { Badge, EstadoVacio, Meter, Panel } from "@/components/ui/basicos";
+import { Aviso, Badge, EstadoVacio, Meter, Panel } from "@/components/ui/basicos";
 import {
   acumuladoresDeGrupos,
   agrupar,
@@ -36,7 +36,6 @@ import {
 } from "@/lib/retail/analisis/inferir-tipos";
 import {
   construirDataset,
-  elegirHojaConDatos,
   ErrorExcel,
   LIMITE_AVISO_BYTES,
   leerLibro,
@@ -54,14 +53,13 @@ import {
 } from "@/lib/retail/analisis/plantillas";
 import { formatearEntero } from "@/lib/retail/analisis/formato";
 import { METRICA_CONTEO } from "@/lib/retail/analisis/tipos";
-import { nombreRetailer, RETAILERS } from "@/lib/retail/retailers";
+import { nombreRetailer } from "@/lib/retail/retailers";
 import { MAX_FILAS_LOTE } from "@/lib/validation/retail";
 import type {
   Agregacion,
   CeldaCruda,
   Dataset,
   Granularidad,
-  HojaCruda,
 } from "@/lib/retail/analisis/tipos";
 
 // recharts (con redux y d3 detrás) es lo más pesado de la ruta y no sirve de
@@ -83,9 +81,9 @@ type Estado = "cargando" | "inactivo" | "leyendo" | "listo" | "error";
  * De dónde salieron las filas que se están analizando.
  *
  * Sólo cambia el envoltorio — el título de la tabla, su leyenda de procedencia
- * y si tiene sentido ofrecer "Guardar en histórico". Los filtros, los KPIs, la
- * tabla y las gráficas corren igual en los dos casos, porque los dos producen
- * el mismo `Dataset`.
+ * y si hay algo que escribir en el histórico. Los filtros, los KPIs, la tabla y
+ * las gráficas corren igual en los dos casos, porque los dos producen el mismo
+ * `Dataset`.
  */
 type Origen = "archivo" | "historico";
 
@@ -103,8 +101,18 @@ interface ResultadoGuardado {
   insertadas: number;
   actualizadas: number;
   descartadas: number;
-  /** Se recuerda con el resultado: el selector puede cambiar después. */
-  retailer: string;
+}
+
+/**
+ * Error listo para pintar: el motivo y, debajo, qué hacer al respecto.
+ *
+ * Es un objeto y no un string porque la caja de aviso separa las dos cosas: el
+ * usuario que sube un .csv necesita leer primero que no se acepta y después
+ * cómo convertirlo, no las dos frases pegadas en una línea de texto rojo.
+ */
+interface ErrorVisible {
+  titulo: string;
+  detalle?: string;
 }
 
 /** Lo que devuelven tanto `seleccionDePlantilla` como `datasetDesdeHistorico`. */
@@ -175,27 +183,25 @@ function fechaHora(iso: string | null): string | null {
     : d.toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function AnalisisExcel() {
+/**
+ * @param retailer Cuenta a la que pertenece TODO lo que pasa por esta pantalla:
+ *   el histórico que se muestra al entrar y el archivo que se sube. Viene de la
+ *   ficha del retailer desde la que se abrió la ruta, así que no se pregunta ni
+ *   se puede cambiar aquí.
+ */
+export function AnalisisExcel({ retailer }: { retailer: string }) {
   // Arranca cargando: al entrar se busca el último reporte guardado antes de
   // decidir si la pestaña está vacía.
   const [estado, setEstado] = useState<Estado>("cargando");
   const [procedencia, setProcedencia] = useState<Procedencia | null>(null);
-  const [mensajeError, setMensajeError] = useState<string | null>(null);
+  const [mensajeError, setMensajeError] = useState<ErrorVisible | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
-
-  // Las hojas crudas viven fuera del estado: cambiar de hoja no debe obligar a
-  // React a reconciliar un objeto de varios megabytes.
-  const hojasRef = useRef<HojaCruda[] | null>(null);
-  const [nombresHojas, setNombresHojas] = useState<string[]>([]);
-  const [hojaActual, setHojaActual] = useState("");
 
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [idxDimension, setIdxDimension] = useState(-1);
   const [idxMetrica, setIdxMetrica] = useState(METRICA_CONTEO);
   const [idxFecha, setIdxFecha] = useState(-1);
-  const [agregacion, setAgregacion] = useState<Agregacion>("suma");
-  const [granManual, setGranManual] = useState<Granularidad | null>(null);
 
   // Buscador y paginado de la tabla. Aquí las filas ya están en memoria, así
   // que filtrar y paginar es un slice; el histórico hace lo mismo contra Mongo.
@@ -209,17 +215,6 @@ export function AnalisisExcel() {
     setBusqueda(valor);
     setPagina(1);
   }, []);
-
-  // Retailer al que pertenece el archivo que se va a guardar. Arranca vacío a
-  // propósito: es una decisión de quien sube el reporte, no algo que se pueda
-  // deducir de la plantilla, y guardarlo en la cuenta equivocada ensucia el
-  // histórico de otro retailer. Sin elegirlo, el botón de guardar no se activa.
-  const [retailerGuardar, setRetailerGuardar] = useState("");
-
-  // Qué retailer se está viendo en el histórico. Vacío = el último reporte
-  // guardado, sea de quien sea.
-  const [retailerVista, setRetailerVista] = useState("");
-  const [cuentasConDatos, setCuentasConDatos] = useState<string[]>([]);
 
   // Acumuladores y página que llegan del servidor cuando el origen es
   // histórico. Con un archivo recién subido quedan en null y mandan los memos.
@@ -241,10 +236,17 @@ export function AnalisisExcel() {
   const [progreso, setProgreso] = useState(0);
   const [guardado, setGuardado] = useState<ResultadoGuardado | null>(null);
 
-  const aplicarDataset = useCallback((ds: Dataset, yaResuelto?: DatasetResuelto) => {
+  /**
+   * Aplica un dataset a la vista y devuelve su plantilla resuelta, o null si el
+   * layout no coincide con ninguna. Se devuelve en vez de leerse del estado
+   * porque el guardado automático se dispara en el mismo tick: `plantilla` y
+   * `columnasResueltas` todavía valdrían lo del archivo anterior.
+   */
+  const aplicarDataset = useCallback((
+    ds: Dataset,
+    yaResuelto?: DatasetResuelto
+  ): { dataset: Dataset; plantilla: Plantilla; columnas: ColumnaResuelta[] } | null => {
     setGuardado(null);
-    setHojaActual(ds.hoja);
-    setGranManual(null);
     setMensajeError(null);
     setEstado("listo");
     // Otro archivo (u otra hoja) es otro conjunto de filas: conservar la
@@ -266,18 +268,20 @@ export function AnalisisExcel() {
       setIdxDimension(porPlantilla.idxDimension);
       setIdxMetrica(porPlantilla.idxMetrica);
       setIdxFecha(porPlantilla.idxFecha);
-      setAgregacion(porPlantilla.idxMetrica === METRICA_CONTEO ? "conteo" : "suma");
-      return;
+      return {
+        dataset: conRoles,
+        plantilla: porPlantilla.plantilla,
+        columnas: porPlantilla.columnas,
+      };
     }
 
     setDataset(ds);
     setPlantilla(null);
     setColumnasResueltas(null);
     setIdxDimension(elegirDimension(ds.columnas));
-    const met = elegirMetrica(ds.columnas);
-    setIdxMetrica(met);
+    setIdxMetrica(elegirMetrica(ds.columnas));
     setIdxFecha(elegirFecha(ds.columnas));
-    setAgregacion(met === METRICA_CONTEO ? "conteo" : "suma");
+    return null;
   }, []);
 
   // Al entrar se piden los agregados y la PRIMERA PÁGINA del último reporte
@@ -295,14 +299,13 @@ export function AnalisisExcel() {
   // buscador siguen siendo el mismo código.
   const cargarHistorico = useCallback(async () => {
     try {
-      const q = retailerVista ? `?account=${encodeURIComponent(retailerVista)}` : "";
+      const q = `?account=${encodeURIComponent(retailer)}`;
       const [res, pag] = await Promise.all([
         api<RespuestaResumen>(`/api/retail/analisis/resumen${q}`),
         api<RespuestaFilas>(
-          `/api/retail/analisis/filas${q}${q ? "&" : "?"}page=1&limit=${FILAS_POR_PAGINA}`
+          `/api/retail/analisis/filas${q}&page=1&limit=${FILAS_POR_PAGINA}`
         ),
       ]);
-      setCuentasConDatos(res.cuentas);
       const plantilla = res.archivo ? plantillaPorId(res.archivo.template) : null;
       if (!res.archivo || !plantilla || pag.filas.length === 0) {
         setEstado("inactivo");
@@ -340,9 +343,8 @@ export function AnalisisExcel() {
       // error que bloquee la vista.
       setEstado("inactivo");
     }
-    // retailerVista es dependencia real: cambiar de retailer recarga el último
-    // reporte de ESE retailer.
-  }, [aplicarDataset, retailerVista]);
+    // retailer es dependencia real: es la cuenta cuyo último reporte se pide.
+  }, [aplicarDataset, retailer]);
 
   useEffect(() => {
     // fetch-on-mount: el estado inicial ya es "cargando"
@@ -353,19 +355,31 @@ export function AnalisisExcel() {
   // Manda el dataset al histórico por lotes: 15 mil filas en un solo POST son
   // varios MB sin señal de avance, y el upsert por lote deja el progreso
   // visible. Es idempotente, así que reintentar no duplica.
-  const guardarEnHistorico = useCallback(async () => {
-    // El retailer es obligatorio; el botón ya viene deshabilitado sin él, esto
-    // es el cinturón por si se dispara desde otro lado.
-    if (!dataset || !plantilla || !columnasResueltas || !retailerGuardar) return;
+  //
+  // No hay botón: se dispara solo al cargar el archivo, y la cuenta es la del
+  // panel desde el que se entró. Recibe el dataset y la plantilla por parámetro
+  // —y no del estado— porque el disparo ocurre en el mismo tick en que se
+  // aplicaron.
+  const guardarEnHistorico = useCallback(async (
+    ds: Dataset,
+    plt: Plantilla,
+    columnas: ColumnaResuelta[],
+    archivo: string
+  ) => {
     setGuardando(true);
     setProgreso(0);
     setGuardado(null);
     setMensajeError(null);
 
     try {
-      const { filas, descartadas } = filasParaHistorico(dataset, columnasResueltas);
+      const { filas, descartadas } = filasParaHistorico(ds, columnas);
       let insertadas = 0;
       let actualizadas = 0;
+      // Un id por SUBIDA, compartido por todos sus lotes. El servidor no puede
+      // deducirlo: cada lote es un POST suelto, y sin esto el segundo lote de
+      // una primera subida marcaría el reporte como actualizado el mismo día en
+      // que se importó (ver models/ReportImport.ts).
+      const carga = crypto.randomUUID();
 
       for (let i = 0; i < filas.length; i += MAX_FILAS_LOTE) {
         const lote = filas.slice(i, i + MAX_FILAS_LOTE);
@@ -374,9 +388,10 @@ export function AnalisisExcel() {
           {
             method: "POST",
             body: JSON.stringify({
-              template: plantilla.id,
-              account: retailerGuardar,
-              sourceFile: nombreArchivo ?? dataset.hoja,
+              template: plt.id,
+              account: retailer,
+              sourceFile: archivo,
+              carga,
               filas: lote,
             }),
           }
@@ -386,17 +401,19 @@ export function AnalisisExcel() {
         setProgreso(Math.min(1, (i + lote.length) / filas.length));
       }
 
-      setGuardado({ insertadas, actualizadas, descartadas, retailer: retailerGuardar });
+      setGuardado({ insertadas, actualizadas, descartadas });
     } catch (error) {
-      setMensajeError(
-        error instanceof ClientApiError
-          ? `No se pudo guardar en el histórico: ${error.message}`
-          : "No se pudo guardar en el histórico."
-      );
+      setMensajeError({
+        titulo: "No se pudo guardar en el histórico",
+        detalle:
+          error instanceof ClientApiError
+            ? `${error.message} El análisis sigue en pantalla; vuelve a subir el archivo para reintentar.`
+            : "El análisis sigue en pantalla; vuelve a subir el archivo para reintentar.",
+      });
     } finally {
       setGuardando(false);
     }
-  }, [dataset, plantilla, columnasResueltas, nombreArchivo, retailerGuardar]);
+  }, [retailer]);
 
   const alArchivo = useCallback(
     async (file: File) => {
@@ -417,9 +434,6 @@ export function AnalisisExcel() {
       setSerieDiaria(null);
       claveSerieServida.current = null;
       claveFilasServida.current = null;
-      // Otro archivo puede ser de otro retailer: se vuelve a preguntar en vez
-      // de arrastrar la elección del anterior.
-      setRetailerGuardar("");
       setAviso(
         file.size > LIMITE_AVISO_BYTES
           ? `El archivo pesa ${Math.round(file.size / 1024 / 1024)} MB; el análisis puede tardar unos segundos.`
@@ -434,47 +448,45 @@ export function AnalisisExcel() {
       try {
         const t0 = performance.now();
         const hojas = await leerLibro(file);
-        const ds = construirDataset(hojas, elegirHojaConDatos(hojas));
-        hojasRef.current = hojas;
-        setNombresHojas(hojas.map((h) => h.nombre));
-        aplicarDataset(ds);
+        // Sólo la PRIMERA hoja del libro. Antes se buscaba "la primera con
+        // datos" y un selector dejaba cambiar a cualquier otra, pero cambiar de
+        // hoja nunca escribía en el histórico: la vista prometía un análisis
+        // que no se podía conservar. Los reportes que se cargan aquí traen los
+        // datos en la hoja 1, así que la hoja deja de ser una decisión.
+        const ds = construirDataset(hojas, hojas[0].nombre);
+        const resuelto = aplicarDataset(ds);
         if (process.env.NODE_ENV === "development") {
           console.debug(
             `[analisis] parseo ${Math.round(performance.now() - t0)} ms · ${ds.totalFilas} filas`
           );
         }
+        // Guardado automático: subir el archivo ES guardarlo. La cuenta es la
+        // del panel desde el que se entró, así que no hay nada que preguntar.
+        // Sin plantilla reconocida no se guarda —no hay mapeo fiable de
+        // encabezados a campos del histórico— y el panel lo dice en pantalla.
+        if (resuelto) {
+          void guardarEnHistorico(
+            resuelto.dataset,
+            resuelto.plantilla,
+            resuelto.columnas,
+            file.name
+          );
+        }
       } catch (error) {
-        hojasRef.current = null;
         setDataset(null);
-        setNombresHojas([]);
         setMensajeError(
           error instanceof ErrorExcel
-            ? error.message
-            : "Ocurrió un error inesperado al leer el archivo."
+            ? { titulo: error.message, detalle: error.sugerencia }
+            : {
+                titulo: "Ocurrió un error inesperado al leer el archivo.",
+                detalle:
+                  "Vuelve a intentarlo. Si sigue pasando, comprueba que el archivo abra bien en Excel.",
+              }
         );
         setEstado("error");
       }
     },
-    [aplicarDataset]
-  );
-
-  const alCambiarHoja = useCallback(
-    (nombre: string) => {
-      const hojas = hojasRef.current;
-      if (!hojas) return;
-      setHojaActual(nombre);
-      try {
-        // Se re-deriva desde las hojas cacheadas; no se relee el archivo.
-        aplicarDataset(construirDataset(hojas, nombre));
-      } catch (error) {
-        setDataset(null);
-        setMensajeError(
-          error instanceof ErrorExcel ? error.message : "No se pudo usar esa hoja."
-        );
-        setEstado("error");
-      }
-    },
-    [aplicarDataset]
+    [aplicarDataset, guardarEnHistorico]
   );
 
   // Referencias estables mientras el dataset no cambie: sirven como deps.
@@ -482,8 +494,14 @@ export function AnalisisExcel() {
   const colMetrica = dataset && idxMetrica >= 0 ? dataset.columnas[idxMetrica] : null;
   const colFecha = dataset && idxFecha >= 0 ? dataset.columnas[idxFecha] : null;
 
-  // Sin columna numérica no hay suma ni promedio posibles.
-  const agregacionEfectiva: Agregacion = colMetrica ? agregacion : "conteo";
+  // Ya no se elige: una métrica real se suma y "Cantidad de filas" se cuenta.
+  //
+  // El desplegable de agregación ofrecía además "Promedio", y lo que se veía
+  // era un promedio POR FILA del reporte —una fila es un artículo en un día—,
+  // que no es el promedio que nadie va a buscar. Sin él la única alternativa a
+  // la suma era el conteo, y ése ya lo decide la métrica: sin columna numérica
+  // no hay nada que sumar.
+  const agregacionEfectiva: Agregacion = colMetrica ? "suma" : "conteo";
   const nombreMetrica = colMetrica?.nombre ?? "Cantidad de filas";
 
   // La tabla muestra las mismas columnas que ofrecen los filtros: fuera las
@@ -515,11 +533,13 @@ export function AnalisisExcel() {
     [filasFiltradas, paginaActual]
   );
 
+  // Ya no se elige: sale del rango que cubre el reporte. Un archivo de un mes
+  // se ve por día y uno de tres años por año sin que haya que pedirlo, que es
+  // lo que el desplegable acertaba nueve de cada diez veces.
   const granEfectiva = useMemo<Granularidad>(() => {
-    if (granManual) return granManual;
     if (!dataset || !colFecha) return "mes";
     return granularidadAuto(dataset.filas, colFecha);
-  }, [granManual, dataset, colFecha]);
+  }, [dataset, colFecha]);
 
   const datosBarra = useMemo(
     () =>
@@ -581,17 +601,6 @@ export function AnalisisExcel() {
   // numéricas. Con plantilla hay métricas declaradas, así que sólo estorbaría.
   const ofrecerConteo = opcionesMetrica.length === 0 || !columnasResueltas;
 
-  // Elegir una métrica real saca de "Conteo", que ya no está en el desplegable:
-  // sin esto la agregación quedaría en un valor sin opción que lo represente.
-  const alCambiarMetrica = useCallback(
-    (valor: string) => {
-      const i = Number(valor);
-      setIdxMetrica(i);
-      if (i !== METRICA_CONTEO) setAgregacion((a) => (a === "conteo" ? "suma" : a));
-    },
-    []
-  );
-
   // ---------------------------------------------- los dos orígenes, un render
   //
   // Un archivo subido tiene todas sus filas en memoria y agrega arriba, en los
@@ -613,14 +622,15 @@ export function AnalisisExcel() {
       ? (columnasResueltas[idxMetrica]?.campo ?? null)
       : null;
 
-  // Cambiar dimensión, métrica o agregación NO pide nada: el bundle ya trae los
+  // Cambiar dimensión o métrica NO pide nada: el bundle ya trae los
   // acumuladores de todas las combinaciones y el plegado ocurre más abajo.
   //
-  // La única excepción es la granularidad diaria: son 735 buckets contra los 25
-  // de la mensual, 205 KB contra 50, así que se queda fuera del bundle y se pide
-  // la primera vez que se elige. Después vive en el estado y ya no se repite.
+  // La excepción es la serie diaria: son 735 buckets contra los 25 de la
+  // mensual, 205 KB contra 50, así que se queda fuera del bundle y se pide
+  // aparte cuando el reporte es lo bastante corto para que el servidor la
+  // calcule por día. Después vive en el estado y ya no se repite.
   const granVista: Granularidad = esHistorico
-    ? (granManual ?? resumen?.granularidad ?? "mes")
+    ? (resumen?.granularidad ?? "mes")
     : granEfectiva;
 
   useEffect(() => {
@@ -635,7 +645,7 @@ export function AnalisisExcel() {
       parte: "serie",
       granularidad: "dia",
     });
-    if (retailerVista) q.set("account", retailerVista);
+    q.set("account", retailer);
     void api<{ serie: SerieAcumulada }>(`/api/retail/analisis/resumen?${q.toString()}`)
       .then((r) => setSerieDiaria({ archivo: archivoHistorico, ...r.serie }))
       // Si falla, la gráfica temporal queda vacía pero el resto de la pestaña
@@ -643,7 +653,7 @@ export function AnalisisExcel() {
       .catch(() => {
         claveSerieServida.current = null;
       });
-  }, [esHistorico, archivoHistorico, granVista, retailerVista, serieDiaria]);
+  }, [esHistorico, archivoHistorico, granVista, retailer, serieDiaria]);
 
   // Buscar y paginar el histórico también son del servidor: filtrar en el
   // navegador sólo alcanzaría a la página que está en pantalla.
@@ -662,12 +672,12 @@ export function AnalisisExcel() {
       page: String(pagina),
       limit: String(FILAS_POR_PAGINA),
     });
-    if (retailerVista) q.set("account", retailerVista);
+    q.set("account", retailer);
     if (busquedaDiferida) q.set("buscar", busquedaDiferida);
     void api<RespuestaFilas>(`/api/retail/analisis/filas?${q.toString()}`)
       .then(setPaginaHistorico)
       .catch(() => {});
-  }, [esHistorico, archivoHistorico, busquedaDiferida, pagina, retailerVista]);
+  }, [esHistorico, archivoHistorico, busquedaDiferida, pagina, retailer]);
 
   // La página del histórico llega en el orden de `campos`; se permuta al de las
   // columnas con el mismo helper que arma el dataset inicial.
@@ -802,19 +812,38 @@ export function AnalisisExcel() {
   }, [dataset, procedencia]);
 
   return (
-    <div className="flex flex-col gap-6">
+    // min-w-0: sin él la columna flex se niega a ser más angosta que su hijo
+    // más ancho, y la tabla de un Excel de muchas columnas estiraría la página
+    // en vez de sacar su propia barra horizontal.
+    <div className="flex min-w-0 flex-col gap-6">
       <AnalisisUploader
         onArchivo={alArchivo}
         cargando={estado === "leyendo"}
         nombreArchivo={nombreArchivo}
+        nota={`Solo archivos .xlsx · Se guarda en el histórico de ${nombreRetailer(retailer)}`}
       />
 
-      {aviso ? <p className="cr-small">{aviso}</p> : null}
+      {aviso ? (
+        <Aviso tono="warn" titulo={aviso} icono={<Clock size={18} strokeWidth={1.75} />} />
+      ) : null}
 
+      {/* El error de carga es lo primero que hay que poder leer, así que va en
+          caja propia y con el archivo que lo provocó: arrastrar un .csv dejaba
+          antes una línea de texto rojo perdida entre los paneles. */}
       {mensajeError ? (
-        <p className="cr-small" style={{ color: "var(--cr-danger)" }} role="alert">
-          {mensajeError}
-        </p>
+        <Aviso
+          tono="danger"
+          titulo={mensajeError.titulo}
+          icono={<TriangleAlert size={18} strokeWidth={1.75} />}
+        >
+          {nombreArchivo ? (
+            <>
+              <strong>{nombreArchivo}</strong>
+              {mensajeError.detalle ? " · " : null}
+            </>
+          ) : null}
+          {mensajeError.detalle}
+        </Aviso>
       ) : null}
 
       {estado === "cargando" ? (
@@ -828,45 +857,75 @@ export function AnalisisExcel() {
         <Panel>
           <EstadoVacio
             title="Sin archivo cargado"
-            detalle="Sube un .xlsx para ver los datos y su análisis. Se detectan solas las columnas de fecha, numéricas y de categoría. Al guardarlo en el histórico volverá a aparecer aquí la próxima vez que entres."
+            detalle={`Sube un .xlsx para ver los datos y su análisis. Se detectan solas las columnas de fecha, numéricas y de categoría, y el reporte se guarda solo en el histórico de ${nombreRetailer(retailer)}: volverá a aparecer aquí la próxima vez que entres.`}
           />
         </Panel>
       ) : null}
 
-      {/* Una sola fila de filtros arriba de todo: cada gráfica, la tabla y los
-          KPIs se recalculan contra la misma selección, así que los números
-          siempre concuerdan entre sí. */}
-      {dataset || nombresHojas.length > 1 ? (
+      {/* El panel informa de un guardado que ya ocurrió: subir el archivo ES
+          guardarlo, en la cuenta del panel desde el que se entró. Lo único que
+          decide si hay escritura es la plantilla: sin ella no hay mapeo fiable
+          de encabezados a campos del histórico, y hay que decirlo en pantalla
+          en vez de dejar el archivo sin guardar en silencio. El reporte que
+          viene DEL histórico no se guarda: ya está guardado. */}
+      {dataset && procedencia?.origen === "archivo" ? (
+        <Panel title={`Histórico de ${nombreRetailer(retailer)}`}>
+          {plantilla ? (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Badge tono="ok">Plantilla reconocida</Badge>
+                <span className="cr-body">{plantilla.nombre}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Badge tono="danger">Plantilla NO reconocida</Badge>
+                <span className="cr-body">{procedencia.archivo}</span>
+              </div>
+              <span className="cr-small">
+                El layout de este archivo no coincide con ninguna plantilla conocida, así
+                que NO se guardó en el histórico de {nombreRetailer(retailer)}.
+              </span>
+            </div>
+          )}
+
+          {guardando ? (
+            <div className="mt-3 flex flex-col gap-2">
+              <span className="cr-small flex items-center gap-2">
+                <span className="cr-spin" aria-hidden="true" />
+                Guardando en el histórico…
+              </span>
+              <Meter value={progreso} tono="ink" />
+            </div>
+          ) : null}
+
+          {guardado ? (
+            <p className="cr-small mt-3" style={{ color: "var(--cr-ok)" }} role="status">
+              Guardado correctamente en el histórico de {nombreRetailer(retailer)}.{" "}
+              {formatearEntero(guardado.insertadas)} filas nuevas y{" "}
+              {formatearEntero(guardado.actualizadas)} actualizadas
+              {guardado.descartadas > 0
+                ? ` · ${formatearEntero(guardado.descartadas)} descartadas por no tener fecha o código de artículo`
+                : ""}
+              .
+            </p>
+          ) : null}
+        </Panel>
+      ) : null}
+
+      {/* Una sola fila de filtros: cada gráfica, la tabla y los KPIs se
+          recalculan contra la misma selección, así que los números siempre
+          concuerdan entre sí.
+
+          Van DEBAJO del panel de plantilla —y sólo si hay plantilla— porque
+          eligen entre columnas cuyo rol declara ella. Sin plantilla los roles
+          son una inferencia sobre encabezados desconocidos, y ofrecer ahí un
+          desplegable de "Métrica" invita a leer como ventas una columna que
+          nadie ha identificado. */}
+      {dataset && plantilla ? (
         <div className="flex flex-wrap items-end gap-3">
-          {/* Sólo al ver el histórico: elige de QUÉ retailer se mira el último
-              reporte. Con un archivo cargado no aplica — se está viendo ese
-              archivo, y el retailer se elige al guardarlo. */}
-          {procedencia?.origen === "historico" && cuentasConDatos.length > 1 ? (
-            <Selector
-              etiqueta="Retailer"
-              valor={retailerVista}
-              onCambio={setRetailerVista}
-            >
-              <option value="">Último guardado</option>
-              {cuentasConDatos.map((id) => (
-                <option key={id} value={id}>
-                  {nombreRetailer(id)}
-                </option>
-              ))}
-            </Selector>
-          ) : null}
-
-          {nombresHojas.length > 1 ? (
-            <Selector etiqueta="Hoja" valor={hojaActual} onCambio={alCambiarHoja}>
-              {nombresHojas.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </Selector>
-          ) : null}
-
-          {dataset && opcionesDimension.length > 0 ? (
+          {opcionesDimension.length > 0 ? (
             <Selector
               etiqueta="Dimensión"
               valor={String(idxDimension)}
@@ -880,140 +939,38 @@ export function AnalisisExcel() {
             </Selector>
           ) : null}
 
-          {dataset ? (
-            <Selector etiqueta="Métrica" valor={String(idxMetrica)} onCambio={alCambiarMetrica}>
-              {ofrecerConteo ? <option value={METRICA_CONTEO}>Cantidad de filas</option> : null}
-              {opcionesMetrica.map((c) => (
-                <option key={c.indice} value={c.indice}>
-                  {c.nombre}
-                </option>
-              ))}
-            </Selector>
-          ) : null}
-
-          {dataset && colMetrica ? (
-            <Selector
-              etiqueta="Agregación"
-              valor={agregacion}
-              onCambio={(v) => setAgregacion(v as Agregacion)}
-            >
-              {/* Sin "Conteo": contaba FILAS del reporte, no unidades ni
-                  ventas, y con una fila por artículo y día lo que devolvía era
-                  "en cuántos días apareció", que se lee como un dato de venta y
-                  no lo es. Quien quiera filas tiene la métrica "Cantidad de
-                  filas" cuando el archivo no trae plantilla. */}
-              <option value="suma">Suma</option>
-              <option value="promedio">Promedio</option>
-            </Selector>
-          ) : null}
-
-          {dataset && colFecha ? (
-            <Selector
-              etiqueta="Granularidad"
-              valor={granManual ?? granEfectiva}
-              onCambio={(v) => setGranManual(v as Granularidad)}
-            >
-              <option value="dia">Día</option>
-              <option value="mes">Mes</option>
-              <option value="anio">Año</option>
-            </Selector>
-          ) : null}
+          <Selector
+            etiqueta="Métrica"
+            valor={String(idxMetrica)}
+            onCambio={(v) => setIdxMetrica(Number(v))}
+          >
+            {ofrecerConteo ? <option value={METRICA_CONTEO}>Cantidad de filas</option> : null}
+            {opcionesMetrica.map((c) => (
+              <option key={c.indice} value={c.indice}>
+                {c.nombre}
+              </option>
+            ))}
+          </Selector>
         </div>
       ) : null}
 
-      {/* La plantilla reconocida es lo que habilita guardar: sin ella no hay
-          mapeo fiable de encabezados a campos del histórico. El reporte que
-          viene DEL histórico no se ofrece guardar: ya está guardado. */}
-      {dataset && plantilla && procedencia?.origen === "archivo" ? (
-        <Panel title="Histórico de reportes">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <Badge tono="ok">Plantilla reconocida</Badge>
-                <span className="cr-body">{plantilla.nombre}</span>
-              </div>
-              <span className="cr-small">
-                Se guardan {columnasResueltas?.filter((c) => c.rol !== "ignorada").length} columnas;
-                se omiten{" "}
-                {columnasResueltas
-                  ?.filter((c) => c.rol === "ignorada")
-                  .map((c) => c.nombre)
-                  .join(", ")}{" "}
-                por ser constantes o vacías. Volver a guardar el mismo reporte actualiza en vez
-                de duplicar.
-              </span>
-            </div>
-            <div className="flex flex-wrap items-end gap-3">
-              {/* Obligatorio y sin valor por omisión: es lo que separa los
-                  reportes por retailer, y un default silencioso terminaría
-                  metiendo el reporte de uno en el histórico de otro. */}
-              <Selector
-                etiqueta="Retailer del reporte"
-                valor={retailerGuardar}
-                onCambio={setRetailerGuardar}
-              >
-                <option value="">Selecciona…</option>
-                {RETAILERS.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.nombre}
-                  </option>
-                ))}
-              </Selector>
-
-              <button
-                type="button"
-                className="cr-btn cr-btn--primary"
-                disabled={guardando || !retailerGuardar}
-                aria-busy={guardando}
-                title={
-                  retailerGuardar ? undefined : "Elige primero el retailer del reporte"
-                }
-                onClick={() => void guardarEnHistorico()}
-              >
-                {guardando ? (
-                  <>
-                    <span className="cr-spin" aria-hidden="true" />
-                    Guardando…
-                  </>
-                ) : (
-                  <>
-                    <Database strokeWidth={1.75} />
-                    Guardar en histórico
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {guardando ? (
-            <div className="mt-3">
-              <Meter value={progreso} tono="ink" />
-            </div>
-          ) : null}
-
-          {guardado ? (
-            <p className="cr-small mt-3" style={{ color: "var(--cr-ok)" }} role="status">
-              Listo en {nombreRetailer(guardado.retailer)}:{" "}
-              {formatearEntero(guardado.insertadas)} filas nuevas y{" "}
-              {formatearEntero(guardado.actualizadas)} actualizadas
-              {guardado.descartadas > 0
-                ? ` · ${formatearEntero(guardado.descartadas)} descartadas por no tener fecha o código de artículo`
-                : ""}
-              .
-            </p>
-          ) : null}
-        </Panel>
-      ) : null}
-
-      {dataset && kpisVista ? (
+      {dataset ? (
         <>
-          <AnalisisKpis
-            kpis={kpisVista}
-            nombreMetrica={nombreMetrica}
-            nombreDimension={colDimension?.nombre ?? null}
-          />
+          {/* Los KPIs son la misma inferencia que las gráficas, sólo que en
+              números grandes: "Total <columna adivinada>" se lee como un dato
+              del reporte y aquí nadie identificó esa columna. Sin plantilla se
+              van con ellas. */}
+          {plantilla && kpisVista ? (
+            <AnalisisKpis
+              kpis={kpisVista}
+              nombreMetrica={nombreMetrica}
+              nombreDimension={colDimension?.nombre ?? null}
+            />
+          ) : null}
 
           <AnalisisTable
+            // Volcado crudo del Excel: 14 columnas que sólo entran apretadas.
+            densa
             titulo={esHistorico ? "Último reporte guardado" : "Datos"}
             columnas={columnasTabla}
             filasVisibles={filasVista}
@@ -1034,15 +991,22 @@ export function AnalisisExcel() {
             onPagina={setPagina}
           />
 
-          <AnalisisCharts
-            datosBarra={barraVista}
-            datosSerie={serieVista}
-            datosComposicion={composicionVista}
-            nombreDimension={colDimension?.nombre ?? null}
-            nombreMetrica={nombreMetrica}
-            agregacion={agregacionEfectiva}
-            granularidad={granVista}
-          />
+          {/* Sin plantilla reconocida no hay gráficas. Lo que se dibujaría son
+              sumas de una columna que nadie identificó como métrica y cortes
+              por una dimensión adivinada: un gráfico con ejes rotulados da esos
+              números por buenos, y este archivo ni siquiera se guardó. La tabla
+              sí se queda: enseña el archivo tal cual, sin interpretarlo. */}
+          {plantilla && kpisVista ? (
+            <AnalisisCharts
+              datosBarra={barraVista}
+              datosSerie={serieVista}
+              datosComposicion={composicionVista}
+              nombreDimension={colDimension?.nombre ?? null}
+              nombreMetrica={nombreMetrica}
+              agregacion={agregacionEfectiva}
+              granularidad={granVista}
+            />
+          ) : null}
         </>
       ) : null}
     </div>

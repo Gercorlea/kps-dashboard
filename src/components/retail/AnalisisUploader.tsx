@@ -5,12 +5,15 @@ interface Props {
   onArchivo: (file: File) => void;
   cargando: boolean;
   nombreArchivo: string | null;
+  /** Letra chica bajo el título: quién se queda con lo que se cargue. */
+  nota: string;
 }
 
-// Selector de archivo para el análisis exploratorio. A diferencia de
-// <Uploader>, no sube nada: el .xlsx se parsea en el navegador y no sale del
-// equipo (§7 bis). Por eso tampoco hay barra de progreso ni fecha de corte.
-export function AnalisisUploader({ onArchivo, cargando, nombreArchivo }: Props) {
+// Selector de archivo del analizador. A diferencia de <Uploader>, el .xlsx no
+// viaja: se parsea en el navegador (§7 bis) y lo que se manda al servidor son
+// las filas normalizadas, ya sin el archivo. Por eso no hay fecha de corte, y
+// el progreso de la escritura lo pinta el panel del histórico, no esta caja.
+export function AnalisisUploader({ onArchivo, cargando, nombreArchivo, nota }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [arrastrando, setArrastrando] = useState(false);
 
@@ -45,9 +48,7 @@ export function AnalisisUploader({ onArchivo, cargando, nombreArchivo }: Props) 
             ? nombreArchivo
             : "Arrastra un Excel o selecciónalo para analizarlo"}
         </p>
-        <span className="cr-small">
-          Solo .xlsx · se procesa en tu navegador, no se sube a ningún servidor
-        </span>
+        <span className="cr-small">{nota}</span>
       </div>
 
       {/* El input nativo no se puede estilizar: se oculta y el botón lo dispara. */}

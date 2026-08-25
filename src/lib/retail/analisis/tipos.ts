@@ -13,6 +13,26 @@ export type TipoColumna = "fecha" | "numero" | "categoria" | "vacia";
 export type FormatoNumerico = "coma-miles" | "punto-miles" | "nativo";
 
 export type Agregacion = "suma" | "promedio" | "conteo";
+
+/**
+ * Cómo se junta una métrica cuando varias filas caen en el mismo grupo.
+ *
+ * Lo aditivo se suma y ya. El problema son las columnas que YA vienen
+ * promediadas por fila —"Avg Price", "Avg Sales $ per Store"—: sumarlas da un
+ * número sin significado (el precio promedio de un producto salía en 167,618 en
+ * vez de 239). Para ésas hay dos lecturas honestas:
+ *
+ * · "razon" reconstruye el promedio verdadero dividiendo dos columnas que sí
+ *   son aditivas. Es EXACTO cuando la identidad existe en el reporte —en el de
+ *   Walmart, Avg Price es exactamente POS Sales / POS Qty— y además ignora
+ *   solo las filas sin venta, que aportan 0 arriba y 0 abajo.
+ * · "promedio" es la media de las filas que traían el dato, para cuando no hay
+ *   con qué reconstruirla.
+ */
+export type AgregadoMetrica =
+  | { tipo: "suma" }
+  | { tipo: "promedio" }
+  | { tipo: "razon"; numerador: string; divisor: string };
 export type Granularidad = "dia" | "mes" | "anio";
 
 export interface MetaColumna {
@@ -27,6 +47,12 @@ export interface MetaColumna {
   esConstante: boolean;
   magnitud: number; // suma de |v| sobre la muestra; 0 si no es numérica
   formatoNumerico: FormatoNumerico;
+  /**
+   * La columna es un importe y se muestra con "$". Opcional porque la
+   * inferencia no lo adivina: un número no dice si son pesos o piezas, así que
+   * sólo lo declara la plantilla (ver `moneda` en plantillas.ts).
+   */
+  esMoneda?: boolean;
   // Para columnas de fecha escritas como texto: orden de los componentes.
   ordenFecha: "dia-mes" | "mes-dia" | null;
 }

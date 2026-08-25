@@ -22,7 +22,10 @@ este documento.**
    alineados a la derecha, headers de tabla y labels en **mono uppercase
    9–10px gris**.
 6. **Sombras mínimas**: `border + fondo plano`; elevación solo `--cr-shadow-1`.
-7. **Transiciones de 120ms**; animación solo para estados live (spinner, pulse).
+7. **Transiciones de 120ms**; animación solo para estados live (spinner,
+   pulse) y para el cambio de sección en fichas con pestañas: `.cr-vista`
+   entra en 160ms y el indicador de `.cr-segment--desliza` viaja en 180ms.
+   Todo lo que se mueva por gusto va bajo `prefers-reduced-motion: reduce`.
 
 ## Tipografía
 
@@ -39,7 +42,9 @@ Clases `.cr-*` en `design-system.css`: `cr-btn` (primary/secondary/ai/ghost/sm),
 `cr-kpi` (línea superior de 2px; roja si alerta), `cr-badge` (ok/warn/danger/ai),
 `cr-table` (+ `.num`, columnas sticky de SKU/descripción en desktop),
 `cr-meter`, shell (`cr-sidebar`, `cr-navlink`, `cr-page-head`,
-`cr-page-content`), chat (`cr-msg-user`, `cr-msg-assistant`, `cr-chat-send`).
+`cr-page-content` + `--pegado` cuando lo primero del contenido es aquello a lo
+que el título se refiere y debe leerse junto a la cabecera), chat
+(`cr-msg-user`, `cr-msg-assistant`, `cr-chat-send`).
 
 Toda tabla va envuelta en un `.cr-panel` con scroll interno (`cr-table-scroll`).
 

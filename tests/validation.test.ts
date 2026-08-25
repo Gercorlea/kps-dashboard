@@ -1,25 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { loginSchema } from "@/lib/validation/auth";
-import {
-  CUENTAS,
-  guardarAnalisisSchema,
-  historicoQuerySchema,
-} from "@/lib/validation/retail";
+import { guardarAnalisisSchema, resumenAnalisisQuerySchema } from "@/lib/validation/retail";
 import { nombreRetailer, RETAILER_IDS, RETAILERS } from "@/lib/retail/retailers";
 
 // Los esquemas de carga por hojas fijas se fueron con ese flujo: sus
 // colecciones estaban vacías y la vía real de entrada es el analizador, que
 // valida con `guardarAnalisisSchema`.
 
-describe("historicoQuerySchema", () => {
-  it("acepta fechas ISO y rechaza otros formatos", () => {
-    expect(historicoQuerySchema.safeParse({ desde: "2026-05-12" }).success).toBe(true);
-    expect(historicoQuerySchema.safeParse({ desde: "12/05/2026" }).success).toBe(false);
+describe("resumenAnalisisQuerySchema", () => {
+  it("sin periodo agrega todo el histórico, que es la carga inicial", () => {
+    const r = resumenAnalisisQuerySchema.safeParse({ account: "walmart", alcance: "cuenta" });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.desde).toBeUndefined();
+    expect(r.success && r.data.hasta).toBeUndefined();
   });
 
-  it("cae en san-pablo, la única cuenta que tuvo ingesta por hojas fijas", () => {
-    const r = historicoQuerySchema.safeParse({});
-    expect(r.success && r.data.account).toBe("san-pablo");
+  it("acepta un periodo en ISO y rechaza cualquier otro formato", () => {
+    expect(
+      resumenAnalisisQuerySchema.safeParse({ desde: "2026-01-01", hasta: "2026-03-31" }).success
+    ).toBe(true);
+    // Sin ceros a la izquierda la clave dejaría de ordenar como texto, que es
+    // de lo que se fía todo el módulo.
+    expect(resumenAnalisisQuerySchema.safeParse({ desde: "2026-1-1" }).success).toBe(false);
+    expect(resumenAnalisisQuerySchema.safeParse({ hasta: "31/03/2026" }).success).toBe(false);
+  });
+
+  it("rechaza el rango al revés antes de llegar a Mongo", () => {
+    // Un $gte mayor que el $lte no falla: devuelve cero filas, y eso se lee
+    // como "este retailer no vendió nada".
+    expect(
+      resumenAnalisisQuerySchema.safeParse({ desde: "2026-03-31", hasta: "2026-01-01" }).success
+    ).toBe(false);
+    // Un solo día sí vale: es el rango de una fecha.
+    expect(
+      resumenAnalisisQuerySchema.safeParse({ desde: "2026-01-01", hasta: "2026-01-01" }).success
+    ).toBe(true);
   });
 });
 
@@ -51,8 +66,25 @@ describe("retailers del analizador", () => {
   const base = {
     template: "walmart-mensual",
     sourceFile: "reporte.xlsx",
+    carga: "8f1c2b3a-0000-4000-8000-000000000001",
     filas: [filaValida],
   };
+
+  it("exige el id de carga", () => {
+    // Sin él, el servidor no puede distinguir el segundo lote de una subida de
+    // una re-subida del mismo archivo, y fecharía como "actualizado" un reporte
+    // que se acaba de importar (ver models/ReportImport.ts).
+    const sinCarga = {
+      template: base.template,
+      sourceFile: base.sourceFile,
+      account: "walmart",
+      filas: base.filas,
+    };
+    expect(guardarAnalisisSchema.safeParse(sinCarga).success).toBe(false);
+    expect(guardarAnalisisSchema.safeParse({ ...base, account: "walmart", carga: "" }).success).toBe(
+      false
+    );
+  });
 
   it("acepta los cuatro retailers", () => {
     expect(RETAILERS).toHaveLength(4);
@@ -83,12 +115,5 @@ describe("retailers del analizador", () => {
     expect(nombreRetailer("heb")).toBe("HEB");
     // Una cuenta vieja en la base debe verse, no desaparecer de la pantalla.
     expect(nombreRetailer("cuenta-vieja")).toBe("cuenta-vieja");
-  });
-
-  it("no toca CUENTAS, que sigue siendo la del histórico de San Pablo", () => {
-    // RETAILERS (analizador) y CUENTAS (histórico multi-corte) son listas
-    // distintas a propósito: confundirlas mostraría en /retail/historico
-    // cuentas de las que no hay cortes.
-    expect(CUENTAS).toEqual(["san-pablo"]);
   });
 });

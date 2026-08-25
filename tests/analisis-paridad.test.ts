@@ -245,4 +245,13 @@ describe("granularidadPorRango", () => {
     expect(granularidadPorRango(dias(0), dias(734))).toBe("mes");
     expect(granularidadPorRango(dias(0), dias(1825))).toBe("anio");
   });
+
+  it("con un umbral más generoso, un trimestre se ve día a día", () => {
+    // El filtro de periodo de la ficha pasa 130: con los 60 de siempre, pedir
+    // un trimestre (~90 días) dejaba una serie de tres puntos.
+    expect(granularidadPorRango(dias(0), dias(90), 130)).toBe("dia");
+    expect(granularidadPorRango(dias(0), dias(90))).toBe("mes");
+    // Y un semestre sigue siendo mensual con los dos umbrales.
+    expect(granularidadPorRango(dias(0), dias(182), 130)).toBe("mes");
+  });
 });

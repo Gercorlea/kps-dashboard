@@ -1,13 +1,15 @@
-import type { PipelineStage, Types } from "mongoose";
+import type { PipelineStage } from "mongoose";
 import type { NextRequest } from "next/server";
 import { ApiError, handleApiError, ok, parseQuery } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { columnasHistorico, plantillaPorId } from "@/lib/retail/analisis/plantillas";
-import { PRIMERA_ESCRITURA, ULTIMA_ACTUALIZACION } from "@/lib/retail/importaciones";
+import { invalidarRetail } from "@/lib/retail/cache";
+import { filasDelArchivo } from "@/lib/retail/importaciones";
 import { fechaISO } from "@/lib/retail/normalize";
 import { usuariosPorId } from "@/lib/usuarios";
 import { borrarReporteSchema, reporteAnalisisQuerySchema } from "@/lib/validation/retail";
+import { ReportImport } from "@/models/ReportImport";
 import { SalesReport } from "@/models/SalesReport";
 
 // GET /api/retail/analisis/reporte — ficha de UN reporte guardado.
@@ -16,36 +18,23 @@ import { SalesReport } from "@/models/SalesReport";
 // sólo puede decir el archivo, quién lo subió y cuándo, y de ahí salen las dos
 // preguntas que siempre siguen —qué trae dentro y quién ha escrito en él—.
 //
-// Todo en un solo viaje ($facet): el resumen del contenido y las escrituras por
-// usuario recorren las mismas filas.
-
-/** Marcas que se mandan para la ficha; se informa además cuántas hay en total. */
-const MAX_MARCAS = 12;
+// Son dos fuentes y cada una contesta lo suyo: el documento del reporte
+// (`reportimports`) dice cuándo se cargó y quién, y las filas que CONTIENE
+// dicen qué trae. Antes las dos preguntas salían de las filas, y como un
+// reporte solapado se quedaba con las del otro hacía falta un $or y un $facet
+// de tres ramas para separar "lo que tiene" de "lo que creó". Con la membresía
+// acumulada esa distinción desaparece: ningún archivo pierde filas.
 
 interface Resumen {
   filas: number;
-  importado: Date | null;
-  /** Null si el reporte no se ha vuelto a subir desde que se importó. */
-  actualizado: Date | null;
-  subidoPor: Types.ObjectId | null;
   desde: Date | null;
   hasta: Date | null;
   articulos: number;
   marcas: string[];
+  /** Filas que no comparte con ningún otro reporte: las que se irían al borrarlo. */
+  exclusivas: number;
   /** Un `s_<campo>` por métrica de la plantilla. */
   [suma: string]: unknown;
-}
-
-/**
- * Quién escribió más recientemente en el reporte: es quien lo actualizó.
- *
- * Se agrupa por usuario y no por carga porque "una carga" no es algo que las
- * filas puedan contar por sí solas —una sola viaja en lotes de 2000 filas, cada
- * uno con su marca de tiempo—; el máximo por usuario sí identifica al último.
- */
-interface UltimoAutor {
-  _id: Types.ObjectId | null;
-  hasta: Date;
 }
 
 export async function GET(request: NextRequest) {
@@ -54,122 +43,99 @@ export async function GET(request: NextRequest) {
     const { account, sourceFile } = parseQuery(request.url, reporteAnalisisQuerySchema);
     await connectDB();
 
-    const filtro = { sourceFile, ...(account ? { account } : {}) };
-
-    // La plantilla dice qué columnas son métricas: sumar "todo lo numérico"
-    // metería los códigos de artículo en los totales.
-    const cabeza = await SalesReport.findOne(filtro)
-      .select({ template: 1, account: 1 })
-      .lean();
+    // La cabecera sale del documento del reporte, y con ella el 404: un reporte
+    // existe aunque todas sus filas las comparta con otro, y antes ese caso
+    // devolvía 404 sobre un archivo que la lista seguía mostrando.
+    const cabeza = await ReportImport.findOne({
+      sourceFile,
+      ...(account ? { account } : {}),
+    }).lean();
     if (!cabeza) {
       throw new ApiError(404, "NO_ENCONTRADO", "Ese reporte no está en el histórico");
     }
+
+    // La plantilla dice qué columnas son métricas: sumar "todo lo numérico"
+    // metería los códigos de artículo en los totales.
     const plantilla = plantillaPorId(cabeza.template);
     const metricas = plantilla
       ? columnasHistorico(plantilla).filter((c) => c.rol === "metrica")
       : [];
 
-    const proyeccion: Record<string, unknown> = {
-      date: 1,
-      itemNbr: 1,
-      brand: 1,
-      importedAt: 1,
-      importedBy: 1,
-      ...PRIMERA_ESCRITURA,
-    };
     const sumas: Record<string, unknown> = {};
     const devolverSumas: Record<string, unknown> = {};
     for (const m of metricas) {
-      proyeccion[m.campo] = 1;
       sumas[`s_${m.campo}`] = { $sum: { $ifNull: [`$${m.campo}`, 0] } };
       devolverSumas[`s_${m.campo}`] = 1;
     }
 
-    const ramas: Record<string, PipelineStage.FacetPipelineStage[]> = {
-      resumen: [
-        // Ordenar por la primera escritura es lo que le da sentido al $first:
-        // la fila más antigua del reporte es la de la carga original.
-        { $sort: { primerImport: 1 } },
-        {
-          $group: {
-            _id: null,
-            filas: { $sum: 1 },
-            importado: { $min: "$primerImport" },
-            actualizado: ULTIMA_ACTUALIZACION,
-            subidoPor: { $first: "$primerAutor" },
-            desde: { $min: "$date" },
-            hasta: { $max: "$date" },
-            articulos: { $addToSet: "$itemNbr" },
-            marcas: { $addToSet: "$brand" },
-            ...sumas,
+    const pipeline: PipelineStage[] = [
+      { $match: filasDelArchivo(cabeza.account, sourceFile) },
+      {
+        $group: {
+          _id: null,
+          filas: { $sum: 1 },
+          desde: { $min: "$date" },
+          hasta: { $max: "$date" },
+          articulos: { $addToSet: "$itemNbr" },
+          marcas: { $addToSet: "$brand" },
+          // Cuántas filas tiene este reporte a solas. Es lo que de verdad
+          // desaparece al borrarlo, y lo que el diálogo de confirmación tiene
+          // que decir: el resto se queda porque otro reporte también las tiene.
+          exclusivas: {
+            $sum: { $cond: [{ $eq: [{ $size: "$sourceFiles" }, 1] }, 1, 0] },
           },
+          ...sumas,
         },
-        {
-          $project: {
-            filas: 1,
-            importado: 1,
-            actualizado: 1,
-            subidoPor: 1,
-            desde: 1,
-            hasta: 1,
-            // El conteo se hace aquí y no en el cliente: son artículos
-            // distintos, no filas, y el arreglo entero no hace falta.
-            articulos: { $size: "$articulos" },
-            marcas: 1,
-            ...devolverSumas,
-          },
+      },
+      {
+        $project: {
+          filas: 1,
+          desde: 1,
+          hasta: 1,
+          exclusivas: 1,
+          // El conteo se hace aquí y no en el cliente: son artículos
+          // distintos, no filas, y el arreglo entero no hace falta.
+          articulos: { $size: "$articulos" },
+          marcas: 1,
+          ...devolverSumas,
         },
-      ],
-      ultimoAutor: [
-        { $group: { _id: "$importedBy", hasta: { $max: "$importedAt" } } },
-        { $sort: { hasta: -1 } },
-        { $limit: 1 },
-      ],
-    };
+      },
+    ];
 
-    const [facetado] = await SalesReport.aggregate<{
-      resumen: Resumen[];
-      ultimoAutor: UltimoAutor[];
-    }>([
-      { $match: filtro },
-      // Proyectar antes del $facet: las dos ramas ordenan en memoria y ninguna
-      // necesita el resto de las columnas del reporte.
-      { $project: proyeccion },
-      { $facet: ramas },
-    ]);
+    const [resumen] = await SalesReport.aggregate<Resumen>(pipeline);
 
-    const resumen = facetado?.resumen?.[0];
-    if (!resumen) {
-      throw new ApiError(404, "NO_ENCONTRADO", "Ese reporte no está en el histórico");
-    }
-    // Quien escribió más recientemente es quien actualizó el reporte; sólo se
-    // informa si hubo actualización, para no atribuirle a nadie un cambio que
-    // no ocurrió.
-    const ultimoAutor = resumen.actualizado ? facetado?.ultimoAutor?.[0]?._id : null;
-    const usuarios = await usuariosPorId([resumen.subidoPor, ultimoAutor]);
+    // Quien reimportó el reporte es quien lo actualizó; sólo se informa si hubo
+    // actualización, para no atribuirle a nadie un cambio que no ocurrió.
+    const usuarios = await usuariosPorId([cabeza.importedBy, cabeza.reimportedBy]);
 
-    const marcas = (resumen.marcas ?? []).filter((m) => m.trim() !== "").sort();
+    // Sólo el conteo: la ficha muestra cuántas marcas trae el reporte, no
+    // cuáles. El $addToSet de arriba sigue siendo la única forma de contarlas
+    // sin traer una fila por marca.
+    const marcas = (resumen?.marcas ?? []).filter((m) => m.trim() !== "");
 
     return ok({
       sourceFile,
       account: cabeza.account,
       template: cabeza.template,
       plantilla: plantilla?.nombre ?? null,
-      filas: resumen.filas,
-      articulos: resumen.articulos,
-      marcas: marcas.slice(0, MAX_MARCAS),
+      // Un reporte sin filas es el que se quedó vacío porque las suyas se
+      // borraron desde otro que también las tenía. Se muestra en cero en vez de
+      // desaparecer.
+      filas: resumen?.filas ?? 0,
+      exclusivas: resumen?.exclusivas ?? 0,
+      articulos: resumen?.articulos ?? 0,
       marcasTotal: marcas.length,
       // Periodo que cubren los datos, no las fechas de carga.
-      desde: resumen.desde ? fechaISO(new Date(resumen.desde)) : null,
-      hasta: resumen.hasta ? fechaISO(new Date(resumen.hasta)) : null,
-      importado: resumen.importado ? new Date(resumen.importado).toISOString() : null,
-      actualizado: resumen.actualizado ? new Date(resumen.actualizado).toISOString() : null,
-      subidoPor: usuarios.get(String(resumen.subidoPor)) ?? null,
-      actualizadoPor: usuarios.get(String(ultimoAutor)) ?? null,
+      desde: resumen?.desde ? fechaISO(new Date(resumen.desde)) : null,
+      hasta: resumen?.hasta ? fechaISO(new Date(resumen.hasta)) : null,
+      importado: cabeza.importedAt?.toISOString() ?? null,
+      actualizado: cabeza.reimportedAt?.toISOString() ?? null,
+      subidoPor: usuarios.get(String(cabeza.importedBy)) ?? null,
+      actualizadoPor: usuarios.get(String(cabeza.reimportedBy)) ?? null,
       metricas: metricas.map((m) => ({
         campo: m.campo,
         nombre: m.nombre,
-        total: (resumen[`s_${m.campo}`] as number) ?? 0,
+        total: (resumen?.[`s_${m.campo}`] as number) ?? 0,
       })),
     });
   } catch (e) {
@@ -184,12 +150,10 @@ export async function GET(request: NextRequest) {
 // volver a subir el bueno encima, que arregla las filas repetidas pero deja las
 // que el archivo malo tenía de más.
 //
-// Borra por `sourceFile` dentro del retailer, que es lo que la ficha llama "un
-// reporte". Ojo con la consecuencia del upsert por clave natural: si una carga
-// posterior reescribió filas de este archivo, esas filas ya son del otro
-// reporte y no se tocan; y al revés, las que este reporte le quitó a uno
-// anterior sí se van con él. Por eso la interfaz enseña cuántas filas se van
-// antes de confirmar.
+// Borrar un reporte NO es borrar sus filas: las que comparte con otro reporte
+// siguen haciendo falta y sólo dejan de estar a su nombre. Antes no se podía
+// distinguir —la procedencia era un escalar— y este borrado se llevaba por
+// delante las filas que el reporte le había quitado a otro anterior.
 export async function DELETE(request: NextRequest) {
   try {
     // Mismo permiso que para guardar: quien puede escribir en el histórico de
@@ -199,12 +163,36 @@ export async function DELETE(request: NextRequest) {
     const { account, sourceFile } = parseQuery(request.url, borrarReporteSchema);
     await connectDB();
 
-    const { deletedCount } = await SalesReport.deleteMany({ account, sourceFile });
-    if (deletedCount === 0) {
+    // 1. Las filas cuyo ÚNICO dueño es este reporte. La igualdad es contra el
+    //    arreglo completo (`[sourceFile]`), no contra un elemento: eso es lo
+    //    que separa "sólo suya" de "también suya".
+    const { deletedCount } = await SalesReport.deleteMany({
+      account,
+      sourceFiles: [sourceFile],
+    });
+    // 2. Las compartidas pierden la membresía y se quedan, porque el otro
+    //    reporte las sigue mostrando. Va DESPUÉS del borrado a propósito: al
+    //    revés habría un instante con `sourceFiles: []` —filas de nadie que las
+    //    gráficas de alcance de cuenta seguirían sumando— y haría falta un
+    //    barrido por $size, que no usa índice.
+    const { modifiedCount } = await SalesReport.updateMany(filasDelArchivo(account, sourceFile), {
+      $pull: { sourceFiles: sourceFile },
+    });
+    // 3. El reporte, como entidad. Es lo que decide el 404: un reporte existe
+    //    aunque no tenga ninguna fila propia.
+    const { deletedCount: reportes } = await ReportImport.deleteOne({ account, sourceFile });
+
+    if (reportes === 0 && deletedCount === 0 && modifiedCount === 0) {
       throw new ApiError(404, "NO_ENCONTRADO", "Ese reporte no está en el histórico");
     }
+    // Mismo motivo que al guardar: lo que hay agregado en memoria todavía
+    // cuenta las filas que se acaban de ir.
+    invalidarRetail();
 
-    return ok({ borradas: deletedCount });
+    // `borradas` son las filas que desaparecieron de verdad; `conservadas`, las
+    // que sobreviven porque otro reporte también las tiene. La suma es lo que
+    // la ficha mostraba como "filas".
+    return ok({ borradas: deletedCount, conservadas: modifiedCount });
   } catch (e) {
     return handleApiError(e);
   }

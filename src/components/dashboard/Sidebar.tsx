@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   BarChart3,
-  History,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -43,8 +42,6 @@ const ITEMS: { seccion: string; items: Item[] }[] = [
     seccion: "Módulos",
     items: [
       { href: "/retail", etiqueta: "Retail", icono: <Table2 strokeWidth={1.75} />, modulo: "retail" },
-      { href: "/retail/analisis", etiqueta: "Análisis", icono: <BarChart3 strokeWidth={1.75} />, modulo: "retail" },
-      { href: "/retail/historico", etiqueta: "Histórico", icono: <History strokeWidth={1.75} />, modulo: "retail" },
       { href: "/cronos-ia", etiqueta: "KPS AI", icono: <Sparkles strokeWidth={1.75} />, modulo: "cronos-ia", ai: true },
     ],
   },
@@ -57,17 +54,10 @@ const ITEMS: { seccion: string; items: Item[] }[] = [
   },
 ];
 
-// "Retail" cubre sus subrutas (/retail/cargar, /retail/:id, …) salvo las que
-// ya tienen entrada propia en el menú: si no, se encenderían dos links a la vez.
-const SUBRUTAS_CON_ENTRADA_PROPIA = ["/retail/analisis", "/retail/historico"];
-
+// Cada link cubre sus subrutas. Ninguna subruta de /retail tiene entrada propia
+// en el menú —a /retail/analisis y a la ficha de un retailer se entra desde la
+// lista—, así que "Retail" es el único link que puede encenderse en /retail/*.
 function esActivo(pathname: string, href: string): boolean {
-  if (href === "/retail") {
-    const laLlevaOtro = SUBRUTAS_CON_ENTRADA_PROPIA.some(
-      (r) => pathname === r || pathname.startsWith(`${r}/`)
-    );
-    return !laLlevaOtro && (pathname === "/retail" || pathname.startsWith("/retail/"));
-  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

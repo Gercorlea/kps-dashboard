@@ -10,26 +10,35 @@ import { Schema, model, models, type Model, type Types } from "mongoose";
 export interface ISalesReport {
   _id: Types.ObjectId;
 
-  // Procedencia: de qué archivo y plantilla salió cada fila.
+  // Procedencia: de qué plantilla salió la fila y en qué archivos aparece.
   template: string; // "walmart-mensual"
   account: string; // "walmart"
-  sourceFile: string;
-  /** Última escritura de la fila: se sobrescribe si el reporte se vuelve a subir. */
+
+  /**
+   * Archivos que CONTIENEN esta fila, no "el archivo que la trajo".
+   *
+   * La clave natural no incluye el archivo, así que dos reportes que se solapan
+   * —feb-mar y luego mar-abr— comparten las filas de marzo. Con un escalar, el
+   * segundo se las quitaba al primero: la pertenencia es de muchos a muchos y
+   * estaba modelada como uno a uno. Se acumula con $addToSet, de modo que el
+   * registro compartido aparece en los dos reportes SIN duplicarse en la
+   * colección ni en ninguna agregación por cuenta.
+   *
+   * Una fila que se queda sin ningún archivo (se borró el último que la tenía)
+   * ya no la reclama nadie y se elimina; ver el DELETE de
+   * /api/retail/analisis/reporte.
+   */
+  sourceFiles: string[];
+
+  /**
+   * Última escritura de la fila. Se sobrescribe cada vez que una carga la toca,
+   * sea el mismo reporte al volver a subirse o uno que se solapa con él.
+   *
+   * Cuándo se importó un REPORTE no se deduce de aquí: vive en su propio
+   * documento (models/ReportImport.ts). Éste sólo fecha la fila.
+   */
   importedAt: Date;
   importedBy: Types.ObjectId;
-
-  // Primera escritura de la fila, y quién la hizo. Van aparte porque el upsert
-  // por la clave natural sobrescribe `importedAt`/`importedBy` cada vez que se
-  // vuelve a subir el mismo reporte: sin estos dos campos la fecha en que se
-  // importó por primera vez se perdía, y la ficha del retailer no podía
-  // distinguir "importado el" de "última actualización".
-  //
-  // Opcionales porque las filas guardadas antes de que existieran no los
-  // tienen; quien los lea cae a `importedAt`/`importedBy` con $ifNull, y la
-  // siguiente carga que toque la fila los rellena con lo que traía (ver el
-  // update de pipeline en POST /api/retail/analisis).
-  firstImportedAt?: Date;
-  firstImportedBy?: Types.ObjectId;
 
   // Fecha y periodo. `wmMonth` es el mes FISCAL de Walmart y no siempre
   // coincide con el mes calendario de `date`, así que se guardan los dos.
@@ -58,13 +67,9 @@ const SalesReportSchema = new Schema<ISalesReport>(
   {
     template: { type: String, required: true },
     account: { type: String, required: true },
-    sourceFile: { type: String, default: "" },
+    sourceFiles: { type: [String], default: [] },
     importedAt: { type: Date, required: true },
     importedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    // Sin `default`: los escribe el update del POST, y un default de esquema se
-    // le adelantaría en el upsert.
-    firstImportedAt: { type: Date },
-    firstImportedBy: { type: Schema.Types.ObjectId, ref: "User" },
 
     date: { type: Date, required: true },
     wmMonth: { type: String, default: "" },
@@ -88,15 +93,24 @@ const SalesReportSchema = new Schema<ISalesReport>(
 
 // Clave natural del grano. Es lo que hace que volver a subir el mismo reporte
 // ACTUALICE en vez de duplicar: sin esto el histórico se infla en cada carga.
+// Y es también lo que garantiza que compartir una fila entre dos archivos no
+// pueda duplicarla: la procedencia está fuera de la clave a propósito.
 SalesReportSchema.index({ account: 1, itemNbr: 1, date: 1 }, { unique: true });
 SalesReportSchema.index({ account: 1, date: -1 });
 SalesReportSchema.index({ account: 1, brand: 1, date: -1 });
 
-// La tabla de /retail/analisis lista un archivo a la vez, ordenado por
-// (date, itemNbr) para que el paginado sea estable: sin un orden total, dos
-// filas empatadas pueden salir en las páginas 1 y 2 a la vez, o en ninguna.
-SalesReportSchema.index({ sourceFile: 1, date: 1, itemNbr: 1 });
-// Resolver "el último Excel cargado" es un solo findOne ordenado por esto.
+// Todo lo que mira UN reporte: la tabla de /retail/analisis, el bundle con
+// alcance=archivo y la ficha del reporte.
+//
+// Es multikey porque `sourceFiles` es un arreglo — el único de la clave
+// compuesta, que es lo que Mongo permite. Sirve igual para la igualdad por
+// contención ({ sourceFiles: "x.xlsx" }), mantiene el orden total (date,
+// itemNbr) que necesita el paginado de la tabla —sin un orden total, dos filas
+// empatadas pueden salir en las páginas 1 y 2 a la vez, o en ninguna— y con
+// `account` al frente cubre además el $unwind que cuenta filas por archivo.
+SalesReportSchema.index({ account: 1, sourceFiles: 1, date: 1, itemNbr: 1 });
+
+// Resolver "la última fila escrita" es un solo findOne ordenado por esto.
 SalesReportSchema.index({ importedAt: -1 });
 
 export const SalesReport: Model<ISalesReport> =

@@ -3,10 +3,8 @@
 // Módulo aparte de validation/retail.ts —y sin zod— para que la lista se pueda
 // importar desde un componente de cliente sin arrastrar los esquemas.
 //
-// Ojo: NO es lo mismo que `CUENTAS`. Esa lista es la del flujo de ingesta por
-// hojas fijas, que hoy sólo sabe procesar San Pablo; ampliarla dejaría crear
-// cargas que ese flujo no puede leer. Aquí se listan las cuentas del
-// analizador, que acepta cualquier reporte con plantilla reconocida.
+// Son las cuentas del analizador, que acepta cualquier reporte con plantilla
+// reconocida.
 
 export interface Retailer {
   /** Se guarda en `account`; no cambiar sin migrar los documentos existentes. */

@@ -6,6 +6,7 @@
 import { valorFecha, valorNumerico } from "./inferir-tipos";
 import type {
   Agregacion,
+  AgregadoMetrica,
   FilaCruda,
   Granularidad,
   Kpis,
@@ -120,6 +121,22 @@ export interface GrupoAcumulado {
 }
 
 /**
+ * Un grupo con clave COMPUESTA: la pestaña de productos de la ficha del
+ * retailer, donde una fila es una combinación de varios campos (nombre, UPC,
+ * marca) y no un solo valor de dimensión.
+ *
+ * `valores` va alineado al arreglo `campos` que acompaña a los grupos en la
+ * respuesta, igual que `suma` y `n` van alineados a `metricas`.
+ */
+export interface GrupoProducto {
+  valores: string[];
+  /** Filas del grupo, con métrica legible o sin ella. */
+  conteo: number;
+  suma: number[];
+  n: number[];
+}
+
+/**
  * Grupos del servidor → el mapa que comen `plegarTopN` y `rellenarSerie`.
  *
  * Es la pieza que hace instantáneo cambiar de métrica en el histórico: el
@@ -151,6 +168,173 @@ export function acumuladoresDeGrupos(
     }
   }
   return mapa;
+}
+
+/**
+ * Valor de UNA métrica en un grupo, respetando cómo declara la plantilla que se
+ * junta esa columna (ver `AgregadoMetrica`).
+ *
+ * `metricas` dice en qué posición de `suma` y `n` viene cada campo, igual que
+ * en `acumuladoresDeGrupos`.
+ *
+ * Devuelve null —y no 0— cuando no hay con qué calcular: sin unidades vendidas
+ * no hay precio promedio, y un 0 se leería como "este producto vale cero" en
+ * vez de "no aplica".
+ */
+export function valorMetricaAgregada(
+  grupo: { suma: number[]; n: number[] },
+  metricas: string[],
+  campo: string,
+  agregado: AgregadoMetrica = { tipo: "suma" }
+): number | null {
+  if (agregado.tipo === "razon") {
+    const a = metricas.indexOf(agregado.numerador);
+    const b = metricas.indexOf(agregado.divisor);
+    // Una razón que apunta a columnas que el servidor no mandó no se rellena
+    // con la suma: sería justo el número equivocado que esto viene a evitar.
+    if (a < 0 || b < 0) return null;
+    const divisor = grupo.suma[b] ?? 0;
+    return divisor === 0 ? null : (grupo.suma[a] ?? 0) / divisor;
+  }
+
+  const i = metricas.indexOf(campo);
+  if (i < 0) return null;
+
+  if (agregado.tipo === "promedio") {
+    // `n` cuenta las filas que traían la columna como número, que es entre
+    // cuántas hay que dividir; `conteo` incluiría las que no la traían.
+    const n = grupo.n[i] ?? 0;
+    return n === 0 ? null : (grupo.suma[i] ?? 0) / n;
+  }
+
+  return grupo.suma[i] ?? 0;
+}
+
+/**
+ * Comparativa año contra año: el mismo mes de los dos años, uno junto a otro.
+ *
+ * `puntos` trae un mes por cada uno que tenga dato en ALGUNO de los dos años,
+ * con null —y no cero— en el año que no lo tenga: el retailer cuyo último
+ * reporte es de abril no vendió cero en mayo, es que mayo todavía no existe, y
+ * una barra en cero diría lo contrario.
+ *
+ * Los totales, en cambio, se calculan SÓLO sobre los meses con dato en los dos
+ * años. Comparar doce meses del año pasado contra los cuatro que van del actual
+ * daría una caída del 70% que no es tal, y es justo el número que alguien
+ * copiaría a un correo.
+ */
+export interface ComparativaAnual {
+  anioActual: number;
+  anioPrevio: number;
+  puntos: { mes: number; actual: number | null; previo: number | null }[];
+  /** Meses con dato en los dos años; es la base de los totales. */
+  mesesComparables: number;
+  totalActual: number;
+  totalPrevio: number;
+  /** Fracción (1 = +100%); null si no hay base contra la cual comparar. */
+  variacion: number | null;
+}
+
+/** Suma dos acumuladores sin tocar ninguno de los dos. */
+function juntar(a: Acumulador, b: Acumulador): Acumulador {
+  return { suma: a.suma + b.suma, conteo: a.conteo + b.conteo };
+}
+
+/**
+ * Ventana de comparación: qué año se toma como "actual" y qué meses entran.
+ *
+ * La usa el filtro de periodo de la ficha del retailer: con "T1 2026" elegido,
+ * la comparativa tiene que ser contra el T1 de 2025 —los mismos tres meses— y
+ * no contra el trimestre anterior ni contra el año completo.
+ */
+export interface VentanaAnual {
+  anio: number;
+  /** Meses 1-12 que se comparan. */
+  meses: number[];
+}
+
+/**
+ * Serie mensual ("YYYY-MM" → acumulador) → comparativa de los dos años más
+ * recientes que aparezcan. Null si sólo hay uno: no hay nada que comparar.
+ *
+ * Se toman los dos años PRESENTES y no `anio` y `anio - 1` para que un hueco en
+ * medio (2024 y 2026, sin 2025) siga produciendo una comparativa; las etiquetas
+ * llevan el año de verdad, así que no se puede leer mal.
+ *
+ * Con `ventana` el par de años deja de deducirse: es `ventana.anio` contra el
+ * inmediatamente anterior, y sólo por los meses que diga. Ahí sí van años
+ * consecutivos y no "los dos presentes", porque quien filtró un trimestre pidió
+ * ESE trimestre del año pasado; el mapa que se pasa tiene que ser el del
+ * histórico completo, que es el único que trae el año previo.
+ */
+export function compararAnios(
+  mapa: Map<string, Acumulador>,
+  agregacion: Agregacion,
+  ventana?: VentanaAnual
+): ComparativaAnual | null {
+  let anioActual: number;
+  let anioPrevio: number;
+
+  if (ventana) {
+    anioActual = ventana.anio;
+    anioPrevio = ventana.anio - 1;
+  } else {
+    const anios = new Set<number>();
+    for (const clave of mapa.keys()) {
+      const anio = Number(clave.slice(0, 4));
+      if (Number.isInteger(anio)) anios.add(anio);
+    }
+    if (anios.size < 2) return null;
+    [anioActual, anioPrevio] = [...anios].sort((a, b) => b - a);
+  }
+
+  const puntos: ComparativaAnual["puntos"] = [];
+  let accActual: Acumulador = { suma: 0, conteo: 0 };
+  let accPrevio: Acumulador = { suma: 0, conteo: 0 };
+  let mesesComparables = 0;
+
+  const meses = ventana ? ventana.meses : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  for (const mes of meses) {
+    const mm = mes < 10 ? `0${mes}` : String(mes);
+    const a = mapa.get(`${anioActual}-${mm}`);
+    const p = mapa.get(`${anioPrevio}-${mm}`);
+    if (!a && !p) continue;
+
+    puntos.push({
+      mes,
+      actual: a ? resolver(a, agregacion) : null,
+      previo: p ? resolver(p, agregacion) : null,
+    });
+
+    // Sólo los meses que están en los dos años entran a los totales.
+    if (a && p) {
+      accActual = juntar(accActual, a);
+      accPrevio = juntar(accPrevio, p);
+      mesesComparables++;
+    }
+  }
+
+  // Con ventana los dos años vienen dados y pueden no tener ni un mes con
+  // datos (un trimestre del primer año reportado no tiene año anterior): no hay
+  // comparativa que pintar, igual que cuando sólo se detecta un año.
+  if (puntos.length === 0) return null;
+
+  // Se resuelve el acumulador junto y no se suman los valores mes a mes: con
+  // agregación "promedio" la suma de doce promedios no es el promedio del año.
+  const totalActual = resolver(accActual, agregacion);
+  const totalPrevio = resolver(accPrevio, agregacion);
+
+  return {
+    anioActual,
+    anioPrevio,
+    puntos,
+    mesesComparables,
+    totalActual,
+    totalPrevio,
+    // Mismo criterio que el resumen del dashboard: sin base positiva no hay
+    // porcentaje, en vez de un ∞ o un signo al revés con una base negativa.
+    variacion: totalPrevio > 0 ? (totalActual - totalPrevio) / totalPrevio : null,
+  };
 }
 
 /**
@@ -255,11 +439,23 @@ export function granularidadAuto(filas: FilaCruda[], colFecha: MetaColumna): Gra
   return rango ? granularidadPorRango(rango.desde, rango.hasta) : "mes";
 }
 
-/** Igual que `granularidadAuto` pero desde un rango ya calculado: en el
- *  histórico el mínimo y el máximo salen de un `$group`, sin recorrer filas. */
-export function granularidadPorRango(desde: Date, hasta: Date): Granularidad {
+/**
+ * Igual que `granularidadAuto` pero desde un rango ya calculado: en el
+ * histórico el mínimo y el máximo salen de un `$group`, sin recorrer filas.
+ *
+ * `umbralDia` es el corte a día en días. Los 60 por omisión son para el rango
+ * COMPLETO de un reporte, donde bajar a día casi nunca aplica. La ficha del
+ * retailer pasa un umbral más generoso porque ahí el rango lo elige la persona:
+ * con 60, un trimestre filtrado caía en "mes" y dejaba una serie de tres
+ * puntos, que es justo lo que no se quiere ver tras pedir un trimestre.
+ */
+export function granularidadPorRango(
+  desde: Date,
+  hasta: Date,
+  umbralDia = 60
+): Granularidad {
   const dias = (hasta.getTime() - desde.getTime()) / 86_400_000;
-  if (dias < 60) return "dia";
+  if (dias < umbralDia) return "dia";
   if (dias < 1825) return "mes";
   return "anio";
 }

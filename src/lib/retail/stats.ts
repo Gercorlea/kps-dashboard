@@ -1,50 +1,12 @@
 import { connectDB } from "@/lib/db";
-import { PurchaseOrderLine } from "@/models/PurchaseOrderLine";
-import { DcStock } from "@/models/DcStock";
-import { PharmacyStock } from "@/models/PharmacyStock";
+import { ReportImport } from "@/models/ReportImport";
 import { SalesReport } from "@/models/SalesReport";
-import { Upload } from "@/models/Upload";
 import { DailySale } from "@/models/DailySale";
+import { memoRetail } from "./cache";
 import { RETAILERS, nombreRetailer } from "./retailers";
 import { fechaISO } from "./normalize";
 
-// Estadísticas para el overview del dashboard y la serie histórica (§10).
-
-async function fillRateEnCorte(account: string, corte: Date): Promise<number | null> {
-  const [r] = await PurchaseOrderLine.aggregate([
-    { $match: { account, cutoffDate: corte } },
-    {
-      $group: {
-        _id: null,
-        pedidas: { $sum: { $ifNull: ["$allocatedQty", 0] } },
-        entregadas: { $sum: { $ifNull: ["$deliveredQty", 0] } },
-      },
-    },
-  ]);
-  if (!r || r.pedidas <= 0) return null;
-  return r.entregadas / r.pedidas;
-}
-
-async function inventarioTotal(account: string, corte: Date): Promise<number> {
-  const [farma] = await PharmacyStock.aggregate([
-    { $match: { account, cutoffDate: corte } },
-    {
-      $group: {
-        _id: null,
-        total: {
-          $sum: {
-            $add: [{ $ifNull: ["$unrestrictedStock", 0] }, { $ifNull: ["$pharmacyInTransit", 0] }],
-          },
-        },
-      },
-    },
-  ]);
-  const [cedis] = await DcStock.aggregate([
-    { $match: { account, cutoffDate: corte } },
-    { $group: { _id: null, total: { $sum: { $ifNull: ["$realAvailabilityDC", 0] } } } },
-  ]);
-  return (farma?.total ?? 0) + (cedis?.total ?? 0);
-}
+// Estadísticas para el overview del dashboard y la lista de retailers.
 
 // --- Overview del dashboard: venta mensual por retailer ----------------
 
@@ -158,21 +120,20 @@ export async function resumenDashboard(): Promise<ResumenDashboard> {
       { $match: { date: { $gte: inicio } } },
       { $group: agrupacionMensual("$units") },
     ]),
-    // El analizador guarda una fila por artículo × día, así que los reportes se
-    // cuentan por `sourceFile` distinto y no por documento. Volver a subir el
-    // mismo archivo lo actualiza (upsert por la clave natural), y con $addToSet
-    // sigue contando como un reporte, que es lo que se quiere ver.
-    SalesReport.aggregate<UltimaCarga>([
-      { $sort: { importedAt: -1 } },
+    // Un documento por reporte cargado, así que los reportes se cuentan con un
+    // $sum y no reuniendo los `sourceFile` distintos de las ~15 mil filas de
+    // cada cuenta. El $sort de arriba es lo que le da sentido al $first: el
+    // reporte tocado más recientemente es el primero de su grupo.
+    ReportImport.aggregate<UltimaCarga>([
+      { $sort: { lastWriteAt: -1 } },
       {
         $group: {
           _id: "$account",
-          fecha: { $first: "$importedAt" },
+          fecha: { $first: "$lastWriteAt" },
           archivo: { $first: "$sourceFile" },
-          archivos: { $addToSet: "$sourceFile" },
+          reportes: { $sum: 1 },
         },
       },
-      { $project: { fecha: 1, archivo: 1, reportes: { $size: "$archivos" } } },
     ]),
   ]);
 
@@ -289,10 +250,8 @@ interface AgregadoCuenta {
   importe: number;
   unidades: number;
   articulos: string[];
-  archivos: string[];
   desde: Date | null;
   hasta: Date | null;
-  ultimoReporte: Date | null;
 }
 
 /**
@@ -303,7 +262,22 @@ interface AgregadoCuenta {
  * Sale sólo de SalesReport —la colección del analizador, la única con datos—
  * y los cuatro de RETAILERS aparecen siempre, tengan reportes o no.
  */
+/**
+ * Ficha de cada retailer para la portada de /retail y para la cabecera de
+ * /retail/[retailer].
+ *
+ * Va por `memoRetail` porque es lo primero que espera la navegación a la ficha:
+ * el $group con dos $addToSet sobre la colección entera se midió en 2.9 s, 1.5 s
+ * y 0.2 s en tres corridas seguidas, y hasta que contesta el navegador ni
+ * siquiera ha empezado a pedir los datos de las gráficas. Es el mismo dato para
+ * todo el mundo y sólo cambia al guardar o borrar un reporte, que es cuando se
+ * invalida.
+ */
 export async function detalleRetailers(): Promise<DetalleRetailer[]> {
+  return memoRetail("detalleRetailers", calcularDetalleRetailers);
+}
+
+async function calcularDetalleRetailers(): Promise<DetalleRetailer[]> {
   await connectDB();
 
   const filas = await SalesReport.aggregate<AgregadoCuenta>([
@@ -313,10 +287,8 @@ export async function detalleRetailers(): Promise<DetalleRetailer[]> {
         importe: { $sum: { $ifNull: ["$posSales", 0] } },
         unidades: { $sum: { $ifNull: ["$posQty", 0] } },
         articulos: { $addToSet: "$itemNbr" },
-        archivos: { $addToSet: "$sourceFile" },
         desde: { $min: "$date" },
         hasta: { $max: "$date" },
-        ultimoReporte: { $max: "$importedAt" },
       },
     },
   ]);
@@ -324,115 +296,51 @@ export async function detalleRetailers(): Promise<DetalleRetailer[]> {
   const porCuenta = new Map(filas.map((f) => [f._id, f]));
   const total = filas.reduce((t, f) => t + f.importe, 0);
 
-  // El último archivo no sale del $group: `$max` sobre importedAt no arrastra
-  // el sourceFile de esa misma fila. Se resuelve con un findOne por cuenta con
-  // datos, que el índice { importedAt: -1 } contesta de inmediato.
-  const ultimos = await Promise.all(
-    [...porCuenta.keys()].map((account) =>
-      SalesReport.findOne({ account })
-        .sort({ importedAt: -1 })
-        .select({ sourceFile: 1 })
-        .lean()
-        .then((d) => [account, d?.sourceFile ?? null] as const)
-    )
-  );
-  const ultimoArchivo = new Map(ultimos);
+  // Cuántos reportes tiene cada cuenta, cuál fue el último y cuándo. Sale de la
+  // colección de cargas —una decena de documentos— y no de las filas: antes eran
+  // un $addToSet de `sourceFile` sobre el histórico entero MÁS un findOne por
+  // cuenta, porque `$max` sobre importedAt no arrastra el archivo de esa misma
+  // fila. Un solo $group contesta las tres cosas.
+  const cargas = await ReportImport.aggregate<UltimaCarga>([
+    { $sort: { lastWriteAt: -1 } },
+    {
+      $group: {
+        _id: "$account",
+        fecha: { $first: "$lastWriteAt" },
+        archivo: { $first: "$sourceFile" },
+        reportes: { $sum: 1 },
+      },
+    },
+  ]);
+  const porCarga = new Map(cargas.map((c) => [c._id, c]));
 
+  // Las dos fuentes aportan cuentas: un reporte recién borrado deja filas sin
+  // carga, y una carga interrumpida deja carga sin filas. Ninguna de las dos
+  // debe hacer desaparecer al retailer de la portada.
   const ids = [
     ...RETAILERS.map((r) => r.id),
-    ...[...porCuenta.keys()].filter((id) => !RETAILERS.some((r) => r.id === id)),
+    ...[...porCuenta.keys(), ...porCarga.keys()].filter(
+      (id) => !RETAILERS.some((r) => r.id === id)
+    ),
   ];
 
   return [...new Set(ids)]
     .map((id) => {
       const f = porCuenta.get(id);
+      const carga = porCarga.get(id);
       return {
         id,
         nombre: nombreRetailer(id),
         importe: f?.importe ?? 0,
         unidades: f?.unidades ?? 0,
         articulos: f?.articulos.length ?? 0,
-        reportes: f?.archivos.length ?? 0,
+        reportes: carga?.reportes ?? 0,
         participacion: total > 0 ? (f?.importe ?? 0) / total : null,
         desde: f?.desde ? fechaISO(new Date(f.desde)) : null,
         hasta: f?.hasta ? fechaISO(new Date(f.hasta)) : null,
-        ultimoReporte: f?.ultimoReporte ? new Date(f.ultimoReporte).toISOString() : null,
-        ultimoArchivo: ultimoArchivo.get(id) ?? null,
+        ultimoReporte: carga?.fecha ? new Date(carga.fecha).toISOString() : null,
+        ultimoArchivo: carga?.archivo ?? null,
       };
     })
     .sort((a, b) => b.importe - a.importe || a.nombre.localeCompare(b.nombre));
-}
-
-// --- Serie histórica multi-corte (§10 /retail/historico) ---------------
-
-export interface SerieHistorica {
-  ventasPorSemana: Array<{ semana: string; units: number }>;
-  inventarioPorCorte: Array<{ corte: string; inventario: number; moh: number | null }>;
-  fillRatePorCorte: Array<{ corte: string; fillRate: number | null }>;
-}
-
-export async function serieHistorica(
-  account: string,
-  desde?: string,
-  hasta?: string
-): Promise<SerieHistorica> {
-  await connectDB();
-  const filtroFecha: Record<string, Date> = {};
-  if (desde) filtroFecha.$gte = new Date(`${desde}T00:00:00.000Z`);
-  if (hasta) filtroFecha.$lte = new Date(`${hasta}T00:00:00.000Z`);
-  const matchVentas = {
-    account,
-    ...(Object.keys(filtroFecha).length ? { date: filtroFecha } : {}),
-  };
-
-  const semanas = await DailySale.aggregate([
-    { $match: matchVentas },
-    {
-      $group: {
-        _id: {
-          $dateTrunc: { date: "$date", unit: "week", startOfWeek: "monday" },
-        },
-        units: { $sum: "$units" },
-      },
-    },
-    { $sort: { _id: 1 } },
-  ]);
-
-  const filtroCorte = { account, status: "processed" as const };
-  const cortesTodos = (await Upload.distinct("cutoffDate", filtroCorte)) as Date[];
-  const cortes = cortesTodos
-    .map((c) => new Date(c))
-    .filter(
-      (c) =>
-        (!filtroFecha.$gte || c >= filtroFecha.$gte) &&
-        (!filtroFecha.$lte || c <= filtroFecha.$lte)
-    )
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const inventarioPorCorte: SerieHistorica["inventarioPorCorte"] = [];
-  const fillRatePorCorte: SerieHistorica["fillRatePorCorte"] = [];
-  for (const corte of cortes) {
-    const inventario = await inventarioTotal(account, corte);
-    const desde30 = new Date(corte.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const [venta30] = await DailySale.aggregate([
-      { $match: { account, date: { $gte: desde30, $lte: corte } } },
-      { $group: { _id: null, units: { $sum: "$units" } } },
-    ]);
-    const unidades30 = venta30?.units ?? 0;
-    inventarioPorCorte.push({
-      corte: fechaISO(corte),
-      inventario,
-      moh: unidades30 > 0 ? inventario / unidades30 : null,
-    });
-    fillRatePorCorte.push({ corte: fechaISO(corte), fillRate: await fillRateEnCorte(account, corte) });
-  }
-
-  return {
-    ventasPorSemana: semanas.map((s) => ({
-      semana: fechaISO(new Date(s._id)),
-      units: s.units,
-    })),
-    inventarioPorCorte,
-    fillRatePorCorte,
-  };
 }

@@ -102,6 +102,8 @@
 .cr-btn--ghost:hover:not(:disabled) { background: #f4f4f1; color: #15171c; }
 .cr-btn--danger    { background: #fff; color: var(--cr-danger); border-color: rgba(207,71,51,.35); }
 .cr-btn--danger:hover:not(:disabled) { background: var(--cr-danger-tint); }
+.cr-btn--ok        { background: #fff; color: var(--cr-ok); border-color: rgba(31,148,104,.35); }
+.cr-btn--ok:hover:not(:disabled) { background: var(--cr-ok-tint); }
 .cr-btn--sm        { padding: 7px 12px; font-size: 11.5px; }
 /* Iconos dentro de botones: 14×14px */
 .cr-btn svg { width: 14px; height: 14px; }
@@ -119,6 +121,28 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 
 .cr-field { display: flex; flex-direction: column; gap: 6px; }
 
+/* Grupo de radios en línea. Vive dentro de un .cr-field —misma etiqueta, mismo
+   alto— para que se alinee con los <select> de su misma fila de filtros. */
+.cr-radios { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; min-height: 37px; }
+.cr-radio {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--cr-ink-2); cursor: pointer; white-space: nowrap;
+  transition: color .12s;
+}
+/* El punto se pinta con un inset blanco sobre el fondo tinta: un ::before
+   aparte quedaría descentrado en cuanto cambiara el tamaño de la fuente. */
+.cr-radio input {
+  appearance: none; margin: 0; flex: none; width: 14px; height: 14px;
+  border: 1px solid rgba(10,12,18,.28); border-radius: 50%; background: #fff;
+  cursor: pointer; transition: background .12s, border-color .12s, box-shadow .12s;
+}
+.cr-radio:hover input:not(:checked) { border-color: rgba(10,12,18,.45); }
+.cr-radio input:checked {
+  background: #15171c; border-color: #15171c; box-shadow: inset 0 0 0 2.5px #fff;
+}
+.cr-radio input:focus-visible { outline: 2px solid #15171c; outline-offset: 2px; }
+.cr-radio:has(input:checked) { color: var(--cr-ink); font-weight: 500; }
+
 /* ============ Segmented control — lo usan las dos pestañas ============ */
 
 .cr-segment { display: inline-flex; border: 1px solid rgba(10,12,18,.10);
@@ -131,6 +155,34 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-segment__item--active { background: #15171c; color: #fff; font-weight: 500; }
 .cr-segment__item--active:hover { background: #15171c; }
 
+/* Variante con indicador deslizante: la pastilla tinta viaja hasta la pestaña
+   nueva en vez de saltar. El fondo deja de pintarlo el propio item y pasa a ser
+   un elemento aparte que se mueve; los items van por encima para que su texto
+   no quede tapado.
+
+   La pista interna existe por el scroll horizontal: en móvil .cr-segment lleva
+   overflow-x auto, y un absoluto dentro de un contenedor con scroll se coloca
+   contra su padding box —no contra el contenido desplazado—, así que el
+   indicador se quedaría quieto mientras las pestañas se mueven. */
+.cr-segment--desliza .cr-segment__pista { position: relative; display: inline-flex; }
+.cr-segment--desliza .cr-segment__item { position: relative; z-index: 1; }
+.cr-segment__indicador {
+  position: absolute; inset-block: 0; left: 0; z-index: 0;
+  background: #15171c; opacity: 0; pointer-events: none;
+}
+/* Hasta que hay medidas el marcado es el de siempre —el item activo pinta su
+   propio fondo— para que el servidor y la primera pintura no muestren la
+   pastilla en el borde izquierdo ni con ancho cero. El relevo ocurre en el
+   mismo commit en que el indicador ya tiene su sitio. */
+.cr-segment--medido .cr-segment__indicador { opacity: 1; }
+.cr-segment--medido .cr-segment__item--active,
+.cr-segment--medido .cr-segment__item--active:hover { background: transparent; }
+/* El movimiento se habilita un frame después de la primera medida: si no, el
+   salto de 0 a la posición real se vería como un deslizamiento al cargar. */
+.cr-segment--anima .cr-segment__indicador {
+  transition: transform .18s cubic-bezier(.2,.6,.2,1), width .18s cubic-bezier(.2,.6,.2,1);
+}
+
 /* ============================ Cards y paneles ============================ */
 
 .cr-card, .cr-panel { background: #fff; border: 1px solid rgba(10,12,18,.10);
@@ -139,15 +191,16 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
   display: flex; justify-content: space-between; align-items: center; }
 .cr-panel__body { padding: 16px 18px; }
 
-/* Fila de tabla clicable entera. El enlace del nombre se estira sobre la fila
-   con un ::after en vez de envolver el <tr> en un <a> —que no es HTML válido—
-   o de repetir un enlace por celda, que el lector de pantalla anunciaría ocho
-   veces. La fila es el bloque contenedor, así que las celdas NO deben quedar
-   posicionadas o el área clicable se recortaría a la primera.
-   Si un navegador ignora `position` en <tr>, el nombre sigue siendo un enlace
-   normal: se degrada, no se rompe. */
-.cr-fila-link { position: relative; }
-.cr-fila-link .cr-link::after { content: ""; position: absolute; inset: 0; }
+/* Fila de tabla clicable entera. Aquí el CSS sólo pone el cursor: quien abre la
+   fila es un onClick en el <tr>, y el control real sigue siendo el botón del
+   nombre —así el teclado y el lector de pantalla tienen un solo destino, sin
+   envolver el <tr> en un <a> (HTML inválido) ni repetir un enlace por celda.
+   El truco del enlace estirado (position: relative en la fila + un ::after a
+   inset: 0) NO sirve en tablas: WebKit ignora `position` en las partes internas
+   de la tabla, así que en Safari el ::after se medía contra un ancestro muy por
+   encima y cada fila tapaba media página —el clic caía siempre en la primera—.
+   Para cards, donde el contenedor es un <div>, ver .cr-rcard__link. */
+.cr-fila-link { cursor: pointer; }
 
 /* ============================ KPI cards ============================ */
 
@@ -157,9 +210,116 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-kpi::before { content: ""; position: absolute; top: 0; left: 0; right: 0;
   height: 2px; background: #15171c; }              /* rojo #cf4733 si alerta */
 .cr-kpi--alert::before { background: #cf4733; }
+.cr-kpi--positivo::before { background: #2e9e5b; }
 .cr-kpi__label { font-size: 10.5px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .1em; color: #99a0ab; }
 .cr-kpi__value { font-size: 30px; font-weight: 800; letter-spacing: -.025em; color: #15171c; }
+
+/* ==================== Card de retailer (portada de /retail) ====================
+   Una card por retailer en lugar de una fila de tabla: la fila daba ocho
+   columnas del mismo peso y ninguna identidad —había que leerla entera para
+   saber de quién era—. La identidad entra por `--cr-rcard-color`, que estampa
+   el componente con el color de la cuenta; el CSS no sabe qué retailer es. */
+
+.cr-rcard {
+  position: relative; display: flex; flex-direction: column; gap: 14px;
+  padding: 16px; background: var(--cr-surface);
+  border: 1px solid var(--cr-line); border-radius: var(--cr-r-sm);
+  box-shadow: var(--cr-shadow-1); overflow: hidden;
+  transition: background .12s, border-color .12s;
+}
+/* Cinta de identidad: el mismo recurso de .cr-kpi, 2px arriba y nada más. */
+.cr-rcard::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--cr-rcard-color, var(--cr-ink));
+}
+.cr-rcard:hover { background: var(--cr-surface-2); border-color: var(--cr-line-2); }
+.cr-rcard:focus-within { border-color: var(--cr-line-2); }
+/* Sin reportes: la cinta baja a línea para que la card no compita con las que
+   sí tienen datos. */
+.cr-rcard--vacio::before { background: var(--cr-line-2); }
+
+/* La card entera es el enlace, igual que .cr-fila-link en las tablas: el
+   ::after del nombre se estira sobre la card. */
+.cr-rcard__link { text-decoration: none; }
+.cr-rcard__link::after { content: ""; position: absolute; inset: 0; }
+.cr-rcard:hover .cr-rcard__link { text-decoration: underline; text-underline-offset: 2px; }
+
+.cr-rcard__head { display: flex; align-items: center; gap: 8px; }
+.cr-rcard__nombre {
+  font-size: 14px; font-weight: 600; color: var(--cr-ink);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-rcard__ir {
+  margin-left: auto; flex-shrink: 0; color: var(--cr-ink-3);
+  transition: color .12s, transform .12s;
+}
+.cr-rcard:hover .cr-rcard__ir { color: var(--cr-ink); transform: translateX(2px); }
+
+/* Renglón de encabezado de un bloque: label a la izquierda, dato suelto a la
+   derecha (la participación, la variación del mes). */
+.cr-rcard__cifra {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; min-height: 18px;
+}
+.cr-rcard__label {
+  font-family: var(--cr-font-mono); font-size: 9px; font-weight: 500;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--cr-ink-3);
+}
+.cr-rcard__part {
+  font-family: var(--cr-font-mono); font-size: 11px;
+  font-variant-numeric: tabular-nums; color: var(--cr-ink-2);
+}
+.cr-rcard__valor {
+  font-family: var(--cr-font-mono); font-size: 21px; font-weight: 600;
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--cr-ink);
+  margin: 2px 0 8px;
+}
+
+/* Participación sobre el importe total. Va en el color del retailer y no en
+   tinta: es la misma cuenta de la que habla la cinta de arriba. */
+.cr-rcard__barra {
+  height: 4px; background: var(--cr-surface-3);
+  border-radius: var(--cr-r-xs); overflow: hidden;
+}
+.cr-rcard__barra span {
+  display: block; height: 100%;
+  background: var(--cr-rcard-color, var(--cr-ink));
+}
+
+/* Sparkline de doce meses. */
+.cr-rcard__spark { position: relative; margin-top: 4px; }
+.cr-rcard__spark svg { display: block; width: 100%; height: 40px; }
+/* Marca del último mes con dato. Cuadrada y colocada en %, no un <circle>: el
+   viewBox se estira a lo ancho y un círculo saldría ovalado. */
+.cr-rcard__punta {
+  position: absolute; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+  border-radius: var(--cr-r-xs);
+}
+
+/* Las tres cifras secundarias, en la misma rejilla en todas las cards. */
+.cr-rcard__cifras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cr-rcard__cifras dt {
+  font-family: var(--cr-font-mono); font-size: 9px; font-weight: 500;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--cr-ink-3);
+}
+.cr-rcard__cifras dd {
+  margin-top: 2px; font-family: var(--cr-font-mono); font-size: 13px;
+  font-variant-numeric: tabular-nums; color: var(--cr-ink);
+}
+
+.cr-rcard__pie {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: auto; padding-top: 12px; border-top: 1px solid var(--cr-line-soft);
+  font-family: var(--cr-font-mono); font-size: 11px; color: var(--cr-ink-3);
+}
+
+/* Retailer sin reportes: el hueco de la cifra y el sparkline se rellena con el
+   motivo, para que la rejilla no se descuadre al mezclar cards con y sin datos. */
+.cr-rcard__vacio {
+  flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  padding: 16px 0; font-size: 12px; color: var(--cr-ink-3);
+}
 
 /* ============================ Badges ============================ */
 
@@ -171,6 +331,39 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-badge--warn   { background: rgba(184,121,28,.12);  color: #b9791c; }
 .cr-badge--danger { background: rgba(207,71,51,.10);   color: #cf4733; }
 .cr-badge--ai     { background: rgba(91,61,245,.08);   color: #5b3df5; }
+
+/* ============================ Avisos ============================ */
+
+/* Caja de mensaje de estado. Existe porque un error de carga se mostraba como
+   una línea de texto rojo entre dos paneles y se perdía: lo que falla al subir
+   un archivo tiene que leerse antes que nada, y necesita sitio para decir qué
+   hacer a continuación, no sólo qué salió mal. */
+.cr-aviso {
+  display: flex; align-items: flex-start; gap: var(--cr-s3);
+  padding: var(--cr-s3) var(--cr-s4);
+  border: 1px solid var(--cr-line);
+  border-radius: var(--cr-r-sm);
+  background: var(--cr-surface-2);
+}
+.cr-aviso__icono {
+  display: flex; flex-shrink: 0; margin-top: 1px; color: var(--cr-ink-3);
+}
+.cr-aviso__cuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cr-aviso__titulo { font-size: 13.5px; font-weight: 600; line-height: 1.35; color: var(--cr-ink); }
+.cr-aviso__detalle { font-size: 12.5px; line-height: 1.5; color: var(--cr-ink-2); }
+.cr-aviso__detalle strong { font-weight: 500; color: var(--cr-ink); }
+
+.cr-aviso--danger { border-color: rgba(207,71,51,.28); background: var(--cr-danger-tint); }
+.cr-aviso--danger .cr-aviso__icono,
+.cr-aviso--danger .cr-aviso__titulo { color: var(--cr-danger); }
+.cr-aviso--danger .cr-aviso__detalle,
+.cr-aviso--danger .cr-aviso__detalle strong { color: #8f3325; }
+
+.cr-aviso--warn { border-color: rgba(184,121,28,.28); background: var(--cr-warn-tint); }
+.cr-aviso--warn .cr-aviso__icono,
+.cr-aviso--warn .cr-aviso__titulo { color: var(--cr-warn); }
+.cr-aviso--warn .cr-aviso__detalle,
+.cr-aviso--warn .cr-aviso__detalle strong { color: #7c5312; }
 
 /* ============================ Tablas de datos ============================ */
 
@@ -184,7 +377,11 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-table tbody tr:hover td { background: #fafaf9; }
 .cr-table .num { font-family: var(--cr-font-mono); font-size: 12px;
   text-align: right; font-variant-numeric: tabular-nums; }
-.cr-table thead th.num { text-align: right; }
+/* `.cr-table .num` (0,2,0) le ganaba a `.cr-table thead th` (0,1,2), así que
+   un encabezado numérico salía a 12px junto a los de texto a 9px. Se restituye
+   aquí, que es más específico (0,2,1): del .num en el encabezado sólo se quiere
+   la alineación a la derecha. */
+.cr-table thead th.num { text-align: right; font-size: 9px; }
 
 /* Columnas sticky (SKU + descripción) — solo desktop */
 @media (min-width: 1024px) {
@@ -201,7 +398,11 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 }
 
 /* Contenedor con scroll para toda tabla (envolver en .cr-panel) */
-.cr-table-scroll { overflow-x: auto; }
+/* El contenedor con scroll de cualquier tabla. `max-width: 100%` lo ata al
+   ancho del panel: sin él una tabla más ancha que la pantalla lo empuja en vez
+   de desbordarse dentro, y la barra horizontal acaba saliendo en el documento
+   en lugar de en la tabla. */
+.cr-table-scroll { overflow-x: auto; max-width: 100%; }
 
 /* ============================ Barras de progreso ============================ */
 
@@ -211,13 +412,162 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-meter__fill--danger { background: #cf4733; }
 .cr-meter__fill--ink { background: #15171c; }
 
+/* ============================ Gráficas ============================
+   Cromo de las gráficas de retail (tooltip, leyenda, cifra de cabecera). Los
+   colores de las series NO viven aquí: son los tokens --viz-* de globals.css,
+   que es la paleta categórica validada. Esto es todo lo que rodea al dato. */
+
+/* Tooltip propio. El de recharts es una caja blanca con borde gris y la
+   tipografía del navegador; esta habla el idioma del design system. */
+.cr-viz-tip {
+  min-width: 150px; max-width: 280px;
+  padding: 9px 11px;
+  background: var(--cr-surface);
+  border: 1px solid var(--cr-line);
+  border-radius: var(--cr-r-sm);
+  box-shadow: var(--cr-shadow-2);
+}
+.cr-viz-tip__titulo {
+  font-family: var(--cr-font-mono); font-size: 9.5px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .1em; color: var(--cr-ink-3);
+  margin-bottom: 7px;
+}
+.cr-viz-tip__fila { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.cr-viz-tip__nombre {
+  flex: 1; min-width: 0; font-size: 12px; color: var(--cr-ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-viz-tip__valor {
+  font-family: var(--cr-font-mono); font-size: 12px; font-weight: 500;
+  font-variant-numeric: tabular-nums; color: var(--cr-ink); white-space: nowrap;
+}
+.cr-viz-tip__nota {
+  font-family: var(--cr-font-mono); font-size: 10.5px; color: var(--cr-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.cr-viz-tip__total {
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px solid var(--cr-line-soft);
+}
+/* Cuadrito de color de una serie: el ÚNICO sitio donde el color de la paleta
+   toca el texto. Las letras siempre van en tinta (§4.5). */
+.cr-viz-punto { width: 9px; height: 9px; flex-shrink: 0; border-radius: var(--cr-r-xs); }
+
+/* Leyenda en HTML plano (ver el comentario de los componentes: recharts 3 ya no
+   deja fijar el orden de la suya). Los ítems son botones cuando la gráfica
+   permite aislar una serie. */
+.cr-viz-leyenda { display: flex; flex-wrap: wrap; gap: 2px 4px; margin-top: 12px; }
+.cr-viz-leyenda__item {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 8px; border: 1px solid transparent; border-radius: var(--cr-r-xs);
+  background: transparent; font: inherit; text-align: left;
+  transition: background .12s, border-color .12s, opacity .12s;
+}
+button.cr-viz-leyenda__item { cursor: pointer; }
+button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-color: var(--cr-line-soft); }
+.cr-viz-leyenda__item--activo { background: var(--cr-surface-3); border-color: var(--cr-line); }
+.cr-viz-leyenda__item--apagado { opacity: .38; }
+.cr-viz-leyenda__nombre { font-size: 12px; color: var(--cr-ink-2); }
+.cr-viz-leyenda__item--activo .cr-viz-leyenda__nombre { color: var(--cr-ink); font-weight: 500; }
+.cr-viz-leyenda__cifra,
+.cr-viz-leyenda__nota {
+  font-family: var(--cr-font-mono); font-size: 11px; color: var(--cr-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Leyenda al costado de la gráfica —la de la dona—: una fila por serie a ancho
+   completo, el nombre recortado con elipsis y las cifras en columna a la
+   derecha. Aquí la cifra principal sube a tinta 2: es la lectura de la tarjeta,
+   no una nota al margen. */
+.cr-viz-leyenda--lista { flex-direction: column; flex-wrap: nowrap; gap: 0; margin-top: 0; }
+.cr-viz-leyenda--lista > li { width: 100%; }
+.cr-viz-leyenda--lista .cr-viz-leyenda__item { display: flex; width: 100%; padding: 5px 8px; }
+.cr-viz-leyenda--lista .cr-viz-leyenda__nombre {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-viz-leyenda--lista .cr-viz-leyenda__cifra {
+  color: var(--cr-ink-2); text-align: right; min-width: 46px;
+}
+.cr-viz-leyenda--lista .cr-viz-leyenda__nota { text-align: right; min-width: 54px; }
+
+/* ─── Dona de participación ───
+   El anillo va en una caja cuadrada de tamaño fijo (recharts necesita medidas
+   para resolver los radios) y la leyenda ocupa el resto. Con `flex-wrap`, en una
+   tarjeta angosta la leyenda baja debajo del anillo en vez de estrujarse. */
+.cr-viz-dona { display: flex; flex-wrap: wrap; align-items: center; gap: var(--cr-s4); }
+.cr-viz-dona__anillo { position: relative; flex: 0 0 auto; }
+/* El centro es HTML y no un <text> del SVG: así usa los tokens de tipografía.
+   Sin eventos de puntero para no robarle el hover a los gajos de abajo. */
+.cr-viz-dona__centro {
+  position: absolute; inset: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  text-align: center;
+  /* El acolchado deja el texto dentro del agujero (2 × innerRadius): un nombre
+     largo no debe montarse sobre los gajos. */
+  padding: 0 46px;
+}
+.cr-viz-dona__etiqueta {
+  font-family: var(--cr-font-mono); font-size: 9px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .1em; color: var(--cr-ink-3);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-viz-dona__cifra {
+  font-family: var(--cr-font-mono); font-size: 15px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--cr-ink); line-height: 1.2;
+}
+/* Importe exacto del gajo con foco, bajo el porcentaje. En tinta 3: es el
+   respaldo del dato, no la lectura principal. */
+.cr-viz-dona__exacto {
+  font-family: var(--cr-font-mono); font-size: 11px; color: var(--cr-ink-3);
+  font-variant-numeric: tabular-nums;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-viz-dona__leyenda { flex: 1 1 190px; min-width: 0; }
+
+/* Subtítulo de una gráfica: qué se está mirando. Más apagado que .cr-small
+   porque es cromo, no dato. */
+.cr-viz-sub { font-size: 12px; color: var(--cr-ink-3); margin-bottom: 12px; }
+
+/* Cifra de cabecera: el último valor y su variación, a la derecha del título. */
+.cr-viz-head { display: flex; align-items: center; gap: 8px; }
+.cr-viz-head__valor {
+  font-family: var(--cr-font-mono); font-size: 13px; font-weight: 500;
+  font-variant-numeric: tabular-nums; color: var(--cr-ink);
+}
+.cr-viz-delta {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-family: var(--cr-font-mono); font-size: 10.5px; font-weight: 500;
+  padding: 2px 6px; border-radius: var(--cr-r-xs); white-space: nowrap;
+}
+.cr-viz-delta svg { width: 11px; height: 11px; }
+.cr-viz-delta--sube   { background: var(--cr-ok-tint);     color: var(--cr-ok); }
+.cr-viz-delta--baja   { background: var(--cr-danger-tint); color: var(--cr-danger); }
+.cr-viz-delta--neutro { background: var(--cr-surface-3);   color: var(--cr-ink-2); }
+
 /* ============================ App shell ============================ */
 
 .cr-shell { min-height: 100dvh; background: var(--cr-canvas); }
-.cr-shell__main { min-height: 100dvh; display: flex; flex-direction: column; background: var(--cr-bg); }
+
+/* min-width: 0 no es cosmético: <main> es un ITEM DE GRID, y un item de grid
+   arranca con min-width: auto, o sea "nunca más angosto que mi contenido".
+   Basta con que dentro haya una tabla de sesenta columnas para que la columna
+   1fr crezca hasta caber entera: la página entera se ensancha, el body saca
+   barra horizontal y el header y el sidebar se van fuera de cuadro al hacer
+   scroll. Con el mínimo en 0 la columna se queda en el ancho de la ventana y
+   quien se desborda es el contenedor con scroll de la tabla, que es donde el
+   desbordamiento se ve y se entiende. */
+.cr-shell__main {
+  min-height: 100dvh; min-width: 0;
+  display: flex; flex-direction: column; background: var(--cr-bg);
+}
 
 @media (min-width: 1024px) {
-  .cr-shell { display: grid; grid-template-columns: var(--cr-sidebar-width) 1fr; }
+  /* minmax(0, 1fr) y no 1fr: por lo mismo de arriba, un track 1fr tiene mínimo
+     auto y se estira con el contenido. Los dos frenos se acompañan — el del
+     track y el del item — porque cualquiera de los dos por su cuenta se cae en
+     cuanto alguien mete otro contenedor en medio. */
+  .cr-shell { display: grid; grid-template-columns: var(--cr-sidebar-width) minmax(0, 1fr); }
 }
 
 .cr-sidebar {
@@ -283,7 +633,23 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-detalle-head__tabs { display: flex; align-items: center; gap: 16px; justify-content: space-between; }
 .cr-detalle-head__tabs > .cr-segment { overflow-x: auto; max-width: 100%; }
 
-.cr-page-content { flex: 1; padding: 16px; background: var(--cr-bg); }
+.cr-page-content { flex: 1; min-width: 0; padding: 16px; background: var(--cr-bg); }
+
+/* Cambio de sección en una ficha con pestañas: el contenido nuevo entra en vez
+   de aparecer de golpe. Sólo entrada —no hay salida— para no retrasar la
+   respuesta al clic: el ojo lee el movimiento, la mano no espera.
+
+   El flex y el gap no son decoración: este div pasa a ser el único hijo de
+   .cr-page-content, así que tiene que reproducir la separación entre paneles
+   que antes daba el contenedor. */
+.cr-vista {
+  display: flex; flex-direction: column; gap: 24px; flex: 1;
+  animation: cr-vista-entra .16s cubic-bezier(.2,.6,.2,1) both;
+}
+@keyframes cr-vista-entra {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
 @media (min-width: 768px)  { .cr-page-head, .cr-detalle-head { padding: 18px 24px; } .cr-page-content { padding: 24px; } }
 @media (min-width: 1280px) { .cr-page-head, .cr-detalle-head { padding: 20px 40px; } .cr-page-content { padding: 40px; } }
 
@@ -768,6 +1134,12 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-pulse { animation: cr-pulse 1.6s ease-in-out infinite; }
 @keyframes cr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
+/* Bloque de esqueleto: el hueco del dato que todavía no llega. Gris terciario y
+   cuadrado, como los wells. La animación NO va aquí sino en un .cr-pulse en la
+   raíz del esqueleto, para que todos los bloques laten a la vez y no cada uno
+   por su cuenta. Los tamaños los pone el componente: dependen de qué dato es. */
+.cr-skel { background: var(--cr-surface-3); border-radius: var(--cr-r-xs); }
+
 .cr-link { color: var(--cr-ink); text-decoration: underline; text-underline-offset: 2px; }
 .cr-link:hover { color: var(--cr-ink-2); }
 /* Enlace sin destino todavía: va como <button> para que sea clicable y
@@ -827,3 +1199,13 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
 .cr-consumo__detalle { opacity: 0.75; }
 .cr-consumo__costo { color: var(--cr-ink-2); font-weight: 500; }
 .cr-consumo__total { font-family: var(--cr-font-mono); color: var(--cr-ink-2); }
+
+/* ====================== Movimiento reducido ====================== */
+
+/* Quien pide menos movimiento en el sistema sigue viendo los estados live
+   —spinner y pulse dicen que algo está pasando—, pero el cambio de sección
+   vuelve a ser instantáneo: ahí la animación sólo acompaña, no informa. */
+@media (prefers-reduced-motion: reduce) {
+  .cr-vista { animation: none; }
+  .cr-segment--anima .cr-segment__indicador { transition: none; }
+}

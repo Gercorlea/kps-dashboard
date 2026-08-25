@@ -19,7 +19,7 @@ Gateway · SheetJS en el servidor · Vitest.
 src/app/
   (app)/        dashboard autenticado — layout con Sidebar (verifica sesión)
     dashboard/  overview con KPIs, venta mensual por retailer y lista de retailers
-    retail/     lista de retailers, [retailer]/ (ficha), analisis/, historico/
+    retail/     lista de retailers, [retailer]/ (ficha), analisis/
     cronos-ia/  chat
     admin/      usuarios/, estadisticas/
   (auth)/       login/, recuperar/, restablecer/[token]/
@@ -50,29 +50,66 @@ reporte actualiza en vez de duplicar.
 
 El Excel **no se almacena**: sólo viajan las filas ya mapeadas a campos.
 
-Ese upsert sobrescribe `importedAt`/`importedBy` de cada fila, así que la primera
-escritura se guarda aparte en `firstImportedAt`/`firstImportedBy` con
-`$setOnInsert`. Como eso sólo cubre las altas —y las filas guardadas antes de que
-el campo existiera se ACTUALIZAN, no se insertan—, cada POST arranca con un
-`updateMany` que le copia a esas filas el `importedAt` que traen antes de
-pisárselo. Va en una orden aparte y no dentro del upsert de cada fila porque se
-midió: resolverlo con un update de pipeline por fila obliga a envolver cada valor
-en `$literal` (un texto que empieza por "$" se leería como referencia a un campo)
-e infla el comando un 46%, que sobre un enlace de ~110 KB/s son 80 → 150 s por
-carga. Con los dos pares, una fila con `importedAt > firstImportedAt` es
-exactamente una fila que reescribió una carga posterior: de ahí salen el
-"Importado" y la "Última actualización" que muestra la ficha del retailer, sin
-que una carga partida en lotes de 2000 filas —cada uno con su marca de tiempo—
-parezca una actualización. Los acumuladores viven en
-`lib/retail/importaciones.ts` para que la lista de reportes y la ficha de un
-reporte (`GET /api/retail/analisis/reporte`) cuenten lo mismo.
+### Un registro puede estar en dos reportes
+
+La clave natural **no incluye el archivo**, y eso tiene una consecuencia: dos
+reportes que se solapan —feb-mar y luego mar-abr— **comparten** las filas de
+marzo. Es una relación de muchos a muchos, y por eso la procedencia de una fila
+es un **conjunto**, `sourceFiles`, que el upsert acumula con `$addToSet` en vez
+de pisar con `$set`.
+
+Las dos mitades del update dicen cosas distintas a propósito:
+
+- **`$set`** — las métricas las gana la última carga. Si dos archivos traen el
+  mismo registro con cifras distintas, quedan las del más reciente.
+- **`$addToSet`** — la procedencia no se pisa. Los dos reportes muestran la fila
+  como suya y el documento sigue siendo **uno solo**, así que ninguna agregación
+  por cuenta —las gráficas— la cuenta dos veces.
+
+En la ficha del retailer eso se ve en la columna *Filas* de "Reportes
+guardados": la suma de la columna es **mayor** que el total del histórico, y es
+correcto. Se calcula con un `$unwind` sobre `sourceFiles`
+(`lib/retail/importaciones.ts`).
+
+Antes la procedencia era un escalar y el segundo reporte le **quitaba** las
+filas al primero: desaparecían de su conteo, de su periodo y de sus totales, y
+su botón de borrar se llevaba filas ajenas. De ahí venía todo el andamiaje de
+`firstSourceFile` / `firstImportedAt` y el `$facet` de dos ramas que intentaba
+adivinar qué carga había creado cada fila —algo que, para una fila ya
+reescrita, nadie había guardado nunca—. Con la membresía acumulada esa pregunta
+deja de tener uso y el andamiaje entero desaparece.
+
+Borrar un reporte deja de ser `deleteMany`: se van las filas cuyo **único**
+dueño es él (`sourceFiles: [archivo]`, igualdad contra el arreglo completo) y
+las compartidas sólo pierden la membresía (`$pull`). En ese orden, para no dejar
+ni un instante filas con `sourceFiles: []` que las gráficas seguirían sumando.
+
+### Las fechas son del reporte, no de sus filas
+
+Cuándo se importó un reporte y quién lo subió vive en `reportimports`
+(`models/ReportImport.ts`), un documento por `(account, sourceFile)`. Las filas
+dicen **qué** hay; ese documento dice **cuándo** y **quién**. Con eso la lista de
+"Reportes guardados" es un `find` sobre unas decenas de documentos indexados en
+vez de una agregación sobre las ~15,000 filas de la cuenta, y `stats.ts` deja de
+reunir los `sourceFile` distintos del histórico entero para contar reportes.
+
+Una carga viaja en lotes de 2000 filas y cada lote es un POST suelto, así que el
+cliente genera un **id de carga** (`carga`) y lo manda en todos. Sin él, el
+segundo lote de una primera subida vería el documento que dejó el primero y
+marcaría el reporte como actualizado el mismo día en que se importó. "El
+documento lo dejó otra carga" es exactamente "el reporte se volvió a subir".
+
+> Queda fuera un caso que ya se comportaba así antes: volver a subir un archivo
+> con **menos** filas no le quita la membresía a las que ya no trae. La salida es
+> borrar el reporte y volver a subirlo, que ahora sí es seguro para el reporte
+> que se solapa con él.
 
 > El flujo anterior de ingesta por hojas fijas (`/retail/cargar`, el parser por
 > hoja y el scorecard) se retiró: sus colecciones llevaban tiempo vacías —0
 > documentos en ventas, inventarios, OC y pronósticos— y sólo sabía procesar San
 > Pablo, porque estampaba `account: "san-pablo"` fijo en cada carga. Los modelos
-> siguen declarados porque `/retail/historico` y la herramienta de consulta de
-> KPS AI aún los referencian.
+> siguen declarados porque la herramienta de consulta de KPS AI aún los
+> referencia.
 
 ## Lectura: agregar en Mongo, plegar en el navegador
 
@@ -96,7 +133,8 @@ desincronicen; `tests/analisis-paridad.test.ts` fija esa frontera.
 
 | Colección | Origen | Índices principales |
 |---|---|---|
-| `salesreports` | reportes del analizador | `{account, itemNbr, date}` unique · `{account, date:-1}` · `{sourceFile, date, itemNbr}` · `{importedAt:-1}` |
+| `salesreports` | reportes del analizador | `{account, itemNbr, date}` unique · `{account, date:-1}` · `{account, brand, date:-1}` · `{account, sourceFiles, date, itemNbr}` (multikey) · `{importedAt:-1}` |
+| `reportimports` | un documento por archivo cargado | `{account, sourceFile}` unique · `{account, lastWriteAt:-1}` · `{account, importedAt:-1}` |
 | `uploads` | metadatos por archivo (ingesta retirada) | `{fileHash}` unique parcial · `{cuenta, fechaCorte:-1}` · `{status}` |
 | `ventadiarias` | VENTAS (unpivot) | `{cuenta, fecha:-1, sku}` · `{uploadId}` · `{cuenta, marca, fecha:-1}` |
 | `pronosticosemanals` | PRONOSTICOS (unpivot) | `{cuenta, semanaInicio:-1, sku}` · `{uploadId}` |

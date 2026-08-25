@@ -24,8 +24,9 @@ interface Ficha {
   template: string;
   plantilla: string | null;
   filas: number;
+  /** Filas que no comparte con ningún otro reporte: las que se irían al borrarlo. */
+  exclusivas: number;
   articulos: number;
-  marcas: string[];
   marcasTotal: number;
   /** Periodo que cubren los datos, no las fechas de carga. */
   desde: string | null;
@@ -191,30 +192,6 @@ export function ReporteDetalle({
                     ))}
                   </tbody>
                 </table>
-              </div>
-              {/* Sumar una columna que ya es un promedio (Avg Price) no
-                  significa nada; se muestran las dos lecturas en vez de elegir
-                  una que engañe en la mitad de las filas. */}
-              <div className="cr-panel__body">
-                <p className="cr-small">
-                  El promedio es por fila del reporte: es la lectura que tiene sentido en las
-                  columnas que ya vienen promediadas, donde el total no.
-                </p>
-              </div>
-            </Panel>
-          ) : null}
-
-          {ficha.marcas.length > 0 ? (
-            <Panel title="Marcas">
-              <div className="flex flex-wrap gap-2">
-                {ficha.marcas.map((m) => (
-                  <Badge key={m}>{m}</Badge>
-                ))}
-                {ficha.marcasTotal > ficha.marcas.length ? (
-                  <span className="cr-small">
-                    y {fmtNum(ficha.marcasTotal - ficha.marcas.length)} más
-                  </span>
-                ) : null}
               </div>
             </Panel>
           ) : null}
