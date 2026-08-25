@@ -62,6 +62,7 @@ export default async function RetailPage() {
               label="Vs mes anterior"
               value={fmtPct(summary.variacionUltimoPeriodo, true)}
               alerta={(summary.variacionUltimoPeriodo ?? 0) < 0}
+              positivo={(summary.variacionUltimoPeriodo ?? 0) > 0}
               detalle={
                 summary.periodoPrevio
                   ? `${fmtMes(summary.ultimoPeriodo)} contra ${fmtMes(summary.periodoPrevio)}`

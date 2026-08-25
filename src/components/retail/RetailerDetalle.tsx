@@ -502,14 +502,20 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   );
   // Las dimensiones que manda el bundle ya son las que declara la plantilla;
   // las métricas no, porque el servidor suma TODAS (la tabla de productos pinta
-  // una columna por cada una) y el selector ofrece sólo las declaradas.
-  const opcionesMetrica = useMemo(
-    () =>
-      columnas.filter(
-        (c) => c.filtro === "metrica" && (bundle?.metricas ?? []).includes(c.campo)
-      ),
-    [columnas, bundle]
-  );
+  // una columna por cada una) y el filtro ofrece sólo las declaradas.
+  //
+  // La preferida de la plantilla ("Ventas netas" en Walmart) va PRIMERA: es la
+  // que se abre marcada, y con radios el primero es el que se lee como el punto
+  // de partida. Dejarla en medio pondría el punto en la segunda opción.
+  const opcionesMetrica = useMemo(() => {
+    const ofrecidas = columnas.filter(
+      (c) => c.filtro === "metrica" && (bundle?.metricas ?? []).includes(c.campo)
+    );
+    const preferida = bundle?.seleccion?.metrica;
+    if (!preferida) return ofrecidas;
+    const i = ofrecidas.findIndex((c) => c.campo === preferida);
+    return i <= 0 ? ofrecidas : [ofrecidas[i], ...ofrecidas.filter((_, j) => j !== i)];
+  }, [columnas, bundle]);
 
   // Sin selector: las métricas se suman siempre. Sin métrica elegida no hay
   // nada que sumar y lo único que queda es contar filas.
@@ -786,7 +792,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
     <>
       {opcionesDimension.length > 0 ? (
         <Selector
-          etiqueta="Dimensión"
+          etiqueta="Agrupar por"
           valor={campoDimension ?? ""}
           onCambio={setCampoDimension}
         >
@@ -798,21 +804,23 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
         </Selector>
       ) : null}
 
-      <Selector
-        etiqueta="Métrica"
+      {/* Radios y no un desplegable, igual que el orden de Productos: las
+          métricas de una plantilla son dos o tres y caben a la vista, así que
+          se ve de un vistazo entre qué se elige y cambiar cuesta un clic. */}
+      <Radios
+        etiqueta="Medida"
+        nombre="metrica-ventas"
         valor={campoMetrica ?? ""}
+        opciones={
+          // "Cantidad de filas" sólo como rescate: si la plantilla declara
+          // métricas, el filtro habla de ventas y unidades y no de filas de
+          // un Excel.
+          opcionesMetrica.length === 0
+            ? [{ valor: "", etiqueta: "Cantidad de filas" }]
+            : opcionesMetrica.map((c) => ({ valor: c.campo, etiqueta: c.nombre }))
+        }
         onCambio={(v) => setCampoMetrica(v || null)}
-      >
-        {/* "Cantidad de filas" sólo como rescate: si la plantilla declara
-            métricas, el selector habla de ventas y unidades y no de filas de
-            un Excel. */}
-        {opcionesMetrica.length === 0 ? <option value="">Cantidad de filas</option> : null}
-        {opcionesMetrica.map((c) => (
-          <option key={c.campo} value={c.campo}>
-            {c.nombre}
-          </option>
-        ))}
-      </Selector>
+      />
     </>
   );
 

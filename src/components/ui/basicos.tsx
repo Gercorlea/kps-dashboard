@@ -18,15 +18,18 @@ export function Kpi({
   label,
   value,
   alerta = false,
+  positivo = false,
   detalle,
 }: {
   label: string;
   value: ReactNode;
   alerta?: boolean;
+  positivo?: boolean;
   detalle?: ReactNode;
 }) {
+  const mod = alerta ? " cr-kpi--alert" : positivo ? " cr-kpi--positivo" : "";
   return (
-    <div className={`cr-kpi${alerta ? " cr-kpi--alert" : ""}`}>
+    <div className={`cr-kpi${mod}`}>
       <div className="cr-kpi__label">{label}</div>
       <div className="cr-kpi__value">{value}</div>
       {detalle ? <div className="cr-small mt-1">{detalle}</div> : null}
