@@ -10,9 +10,12 @@ import { DcStock } from "@/models/DcStock";
 import { PharmacyStock } from "@/models/PharmacyStock";
 import { Upload } from "@/models/Upload";
 import { DailySale } from "@/models/DailySale";
+import { SapInvoiceLine } from "@/models/SapInvoiceLine";
+import { asegurarFacturasFrescas } from "@/lib/sap/sincronizar-facturas";
 
 export const COLECCIONES_RETAIL = [
   "sales",
+  "sapSales",
   "weeklyForecast",
   "dailyForecast",
   "dcStock",
@@ -26,6 +29,7 @@ export type ColeccionRetail = (typeof COLECCIONES_RETAIL)[number];
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const MODELOS: Record<ColeccionRetail, Model<any>> = {
   sales: DailySale,
+  sapSales: SapInvoiceLine,
   weeklyForecast: WeeklyForecast,
   dailyForecast: DailyForecast,
   dcStock: DcStock,
@@ -43,6 +47,9 @@ const CAMPOS = new Set([
   "buyer", "purchaseDoc", "fillRate", "allocatedQty",
   "deliveredQty", "unrestrictedStock", "pharmacyInTransit", "inventoryLevel",
   "realAvailabilityDC", "targetStock", "reorderPoint", "status", "filename",
+  // sapSales (líneas de factura de SAP sincronizadas a Mongo)
+  "docNum", "docDate", "cardCode", "cardName", "itemCode", "quantity",
+  "price", "lineTotal", "currency",
 ]);
 
 const LIMITE_MAX = 50;
@@ -67,6 +74,15 @@ export interface ResultadoRetail {
   filas: Record<string, unknown>[];
 }
 
+// Las fechas llegan como texto ISO y los campos de fecha son Date de BSON:
+// sin convertir, Mongo compara tipos distintos y el filtro (igual O rango)
+// devuelve silenciosamente cero filas.
+function normalizarValor(value: string | number): string | number | Date {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00.000Z`)
+    : value;
+}
+
 function construirFiltro(consulta: ConsultaRetail): Record<string, unknown> {
   const filtro: Record<string, unknown> = {};
   for (const f of consulta.filtros ?? []) {
@@ -77,15 +93,11 @@ function construirFiltro(consulta: ConsultaRetail): Record<string, unknown> {
         $options: "i",
       };
     } else if (f.operador === "mayorQue") {
-      filtro[f.field] = { $gt: f.value };
+      filtro[f.field] = { $gt: normalizarValor(f.value) };
     } else if (f.operador === "menorQue") {
-      filtro[f.field] = { $lt: f.value };
+      filtro[f.field] = { $lt: normalizarValor(f.value) };
     } else {
-      // Las fechas llegan como texto ISO; el resto tal cual.
-      filtro[f.field] =
-        typeof f.value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(f.value)
-          ? new Date(`${f.value}T00:00:00.000Z`)
-          : f.value;
+      filtro[f.field] = normalizarValor(f.value);
     }
   }
   return filtro;
@@ -93,6 +105,9 @@ function construirFiltro(consulta: ConsultaRetail): Record<string, unknown> {
 
 export async function consultarRetail(consulta: ConsultaRetail): Promise<ResultadoRetail> {
   await connectDB();
+  // sapSales es una copia de SAP: se refresca incremental (throttle de 5 min)
+  // para que "toda la historia" incluya también las facturas de hoy.
+  if (consulta.coleccion === "sapSales") await asegurarFacturasFrescas();
   const model = MODELOS[consulta.coleccion];
   const filtro = construirFiltro(consulta);
   const limite = Math.min(Math.max(consulta.limite ?? 10, 1), LIMITE_MAX);

@@ -10,6 +10,8 @@ import {
   Menu,
   Sparkles,
   Table2,
+  Inbox,
+  Truck,
   Users,
   X,
 } from "lucide-react";
@@ -43,6 +45,13 @@ const ITEMS: { seccion: string; items: Item[] }[] = [
     items: [
       { href: "/retail", etiqueta: "Retail", icono: <Table2 strokeWidth={1.75} />, modulo: "retail" },
       { href: "/cronos-ia", etiqueta: "KPS AI", icono: <Sparkles strokeWidth={1.75} />, modulo: "cronos-ia", ai: true },
+    ],
+  },
+  {
+    seccion: "Proveedores",
+    items: [
+      { href: "/proveedores", etiqueta: "Proveedores", icono: <Truck strokeWidth={1.75} />, modulo: "proveedores" },
+      { href: "/peticiones", etiqueta: "Peticiones", icono: <Inbox strokeWidth={1.75} />, modulo: "proveedores" },
     ],
   },
   {

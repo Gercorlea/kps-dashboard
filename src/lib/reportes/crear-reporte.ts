@@ -24,7 +24,10 @@ export interface ResultadoReporte {
   error?: string;
 }
 
-const MAX_MARKDOWN = 80_000;
+// 30k y no más: el modelo TECLEA el reporte token a token (~75-165 tok/s), y
+// 80k caracteres eran ~5 minutos de tecleo — justo el maxDuration de la ruta,
+// así que los reportes grandes morían por timeout a mitad del streaming.
+const MAX_MARKDOWN = 30_000;
 const MIN_MARKDOWN = 40;
 
 function sanearArchivo(name: string): string {

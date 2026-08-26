@@ -1200,12 +1200,132 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
 .cr-consumo__costo { color: var(--cr-ink-2); font-weight: 500; }
 .cr-consumo__total { font-family: var(--cr-font-mono); color: var(--cr-ink-2); }
 
-/* ====================== Movimiento reducido ====================== */
+/* --------------------------------------------------------------------------
+   PETICIONES DE PROVEEDORES — resumen de la decisión
+   --------------------------------------------------------------------------
+   Bloque destacado que abre el detalle de una petición: dice sobre qué se está
+   decidiendo antes de cualquier dato fiscal. Va aquí y no en el componente
+   porque el resto de estilos del dashboard viven en esta hoja. */
 
-/* Quien pide menos movimiento en el sistema sigue viendo los estados live
-   —spinner y pulse dicen que algo está pasando—, pero el cambio de sección
-   vuelve a ser instantáneo: ahí la animación sólo acompaña, no informa. */
-@media (prefers-reduced-motion: reduce) {
-  .cr-vista { animation: none; }
-  .cr-segment--anima .cr-segment__indicador { transition: none; }
+.cr-callout {
+  border: 1px solid var(--cr-line-2);
+  border-left: 3px solid var(--cr-accent);
+  border-radius: 6px;
+  background: var(--cr-accent-tint);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.cr-callout p { margin: 0 0 4px; }
+.cr-callout p:last-child { margin-bottom: 0; }
+
+/* Los datos fiscales van plegados: hacen falta para auditar, no para decidir. */
+.cr-detalle-fiscal { margin-top: 16px; }
+.cr-detalle-fiscal > summary {
+  cursor: pointer;
+  color: var(--cr-ink-3);
+  padding: 6px 0;
+}
+.cr-detalle-fiscal > summary:hover { color: var(--cr-ink); }
+
+/* Panel lateral de revisión de una petición.
+   Va superpuesto y no debajo de la tabla: con la lista larga, el detalle
+   quedaba fuera de pantalla y había que bajar a buscarlo cada vez. */
+.cr-revision {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 100vw);
+  overflow-y: auto;
+  background: var(--cr-bg);
+  border-left: 1px solid var(--cr-line-2);
+  box-shadow: -8px 0 32px rgba(10, 12, 18, 0.12);
+  z-index: 36;
+  padding: 20px;
+}
+.cr-revision__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* Confirmación de archivado.
+   Centrada y modal, no un panel lateral como .cr-revision: aquí no se lee nada
+   de la tabla de atrás, se contesta sí o no. El z-index va por encima del panel
+   de revisión porque se puede archivar teniéndolo abierto. */
+.cr-confirmar {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(10, 12, 18, 0.45);
+}
+.cr-confirmar__caja {
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  background: var(--cr-bg);
+  border: 1px solid var(--cr-line-2);
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(10, 12, 18, 0.24);
+}
+
+/* Bloque de decisión del panel de revisión.
+   Separado del contenido de arriba por una línea: es el punto donde se deja de
+   leer y se actúa, y sin ese corte los botones se montaban sobre el campo. */
+.cr-decision {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--cr-line);
+}
+.cr-decision .cr-field { margin-bottom: 12px; }
+.cr-decision__botones {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Documentos de una petición: XML, PDF y evidencias.
+   Tarjetas y no filas de tabla: son cosas que se abren, y como enlace se ve
+   que se pueden pulsar. Lo que falta se muestra apagado en vez de omitirse,
+   porque "no lo subió" es información para quien decide. */
+.cr-docs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.cr-doc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--cr-line);
+  border-radius: 6px;
+  color: var(--cr-ink);
+  text-decoration: none;
+}
+a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tint); }
+.cr-doc[data-falta="si"] { color: var(--cr-ink-3); border-style: dashed; }
+.cr-doc__tipo {
+  flex: none;
+  width: 40px;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 4px;
+  background: var(--cr-canvas);
+  font-family: var(--cr-font-mono);
+  font-size: 10px;
+  color: var(--cr-ink-3);
+}
+
+/* Comparativa orden contra factura: números a la derecha para poder restarlos
+   de un vistazo, y la fila marcada cuando no cuadra. */
+.cr-comparativa td.cr-num,
+.cr-comparativa th.cr-num { text-align: right; font-variant-numeric: tabular-nums; }
+.cr-comparativa tr[data-diff="si"] td { background: var(--cr-danger-tint); }
+.cr-comparativa tfoot td {
+  border-top: 2px solid var(--cr-line-2);
+  font-weight: 600;
 }

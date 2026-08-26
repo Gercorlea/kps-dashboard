@@ -4,7 +4,7 @@
 //  - Cualquier entity set del Service Layer (son ~332), salvo Login/Logout.
 //  - $top acotado y $select por defecto para no reventar tokens.
 import { camposPorDefecto, nombreEntidad } from "./campos";
-import { sapFetch } from "./service-layer";
+import { sapFetch, sapFetchV2 } from "./service-layer";
 
 // Las más usadas, para orientar al modelo. NO es una lista de permisos:
 // consultarSap acepta cualquier entity set que exista en SAP.
@@ -83,4 +83,78 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
     filas,
     ...(porDefecto ? { campos: porDefecto } : {}),
   };
+}
+
+// --- Agregación en el servidor (OData v4, /b1s/v2) ---------------------------
+//
+// Existe para que el modelo NUNCA responda un total o un ranking contando
+// filas de una muestra: groupby/aggregate se ejecuta sobre TODO el entity set
+// dentro de SAP y devuelve solo los grupos. Limitaciones verificadas en vivo:
+//  - no acepta $filter ni filter() dentro de $apply → siempre es historia completa;
+//  - no acepta $orderby sobre los alias del aggregate → se ordena aquí en JS;
+//  - solo campos de CABECERA (DocumentLines no es agregable: para ventas por
+//    artículo está la colección sapSales de consultar_retail).
+
+export const OPERACIONES_AGREGADO = ["suma", "promedio", "max", "min"] as const;
+export type OperacionAgregado = (typeof OPERACIONES_AGREGADO)[number];
+
+const OPERACION_ODATA: Record<OperacionAgregado, string> = {
+  suma: "sum",
+  promedio: "average",
+  max: "max",
+  min: "min",
+};
+
+export interface AgregadoSap {
+  entidad: string; // entity set de cabecera, ej: "Invoices", "Orders"
+  agruparPor?: string[]; // campos de agrupación; sin ellos, un total global
+  metricas?: Array<{ campo: string; operacion: OperacionAgregado }>;
+  top?: number; // grupos a devolver tras ordenar (defecto 20)
+}
+
+export interface ResultadoAgregadoSap {
+  grupos: number; // cuántos grupos existen en total
+  devueltas: number;
+  filas: Record<string, unknown>[];
+}
+
+const CAMPO_ODATA = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const TOP_GRUPOS = 1000; // tope de grupos que se traen para ordenar en JS
+
+export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgregadoSap> {
+  const entidad = consulta.entidad.trim().replace(/^\/+/, "");
+  if (!entidad || entidad.includes("..") || PROHIBIDAS.has(nombreEntidad(entidad))) {
+    throw new Error(`Entidad no permitida: ${consulta.entidad}`);
+  }
+  const grupos = (consulta.agruparPor ?? []).filter((c) => CAMPO_ODATA.test(c));
+  const metricas = (consulta.metricas ?? []).filter((m) => CAMPO_ODATA.test(m.campo));
+
+  // $count siempre: "cuántos documentos" es la pregunta más común.
+  const aliasDe = (m: { campo: string; operacion: OperacionAgregado }) =>
+    `${m.operacion}_${m.campo}`;
+  const partes = [
+    ...metricas.map((m) => `${m.campo} with ${OPERACION_ODATA[m.operacion]} as ${aliasDe(m)}`),
+    "$count as documentos",
+  ];
+  const aggregate = `aggregate(${partes.join(",")})`;
+  const apply = grupos.length ? `groupby((${grupos.join(",")}),${aggregate})` : aggregate;
+
+  const data = await sapFetchV2<{ value?: Record<string, unknown>[] }>(
+    `/${entidad}?$apply=${encodeURIComponent(apply)}&$top=${TOP_GRUPOS}`,
+    { headers: { Prefer: `odata.maxpagesize=${TOP_GRUPOS}` } }
+  );
+
+  const filas = (data.value ?? []).map((f) => {
+    const limpia = { ...f };
+    delete limpia["@odata.id"];
+    return limpia;
+  });
+
+  // SAP no sabe ordenar por el agregado: se ordena aquí, por la primera
+  // métrica pedida (o por el conteo), de mayor a menor.
+  const claveOrden = metricas.length ? aliasDe(metricas[0]) : "documentos";
+  filas.sort((a, b) => (Number(b[claveOrden]) || 0) - (Number(a[claveOrden]) || 0));
+
+  const top = Math.min(Math.max(consulta.top ?? 20, 1), 100);
+  return { grupos: filas.length, devueltas: Math.min(filas.length, top), filas: filas.slice(0, top) };
 }

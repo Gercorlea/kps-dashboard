@@ -113,6 +113,62 @@ export async function sapFetch<T>(path: string, init: RequestInit = {}): Promise
   return (await res.json()) as T
 }
 
+/**
+ * Sube un multipart al Service Layer (Attachments2).
+ *
+ * Va aparte de `sapFetch` por un detalle que rompería la subida en silencio:
+ * `sapFetch` fija `Content-Type: application/json` en todas sus llamadas, y un
+ * multipart necesita que ese encabezado lo escriba el propio `FormData` con su
+ * boundary. Sobrescribirlo con la cadena vacía tampoco sirve —el encabezado
+ * sigue presente y undici deja de generarlo—, así que la única salida limpia es
+ * no ponerlo.
+ */
+export async function sapUpload<T>(path: string, form: FormData): Promise<T> {
+  const doFetch = async (cookie: string) =>
+    fetch(`${baseUrl()}${path.startsWith('/') ? path : `/${path}`}`, {
+      method: 'POST',
+      body: form,
+      headers: { Cookie: cookie },
+      cache: 'no-store',
+    })
+
+  let res = await doFetch((await getSession()).cookie)
+
+  if (res.status === 401) {
+    session = null
+    res = await doFetch((await getSession()).cookie)
+  }
+
+  if (!res.ok) throw new SapError(await readErrorMessage(res), res.status)
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
+/**
+ * Igual que `sapFetch` pero contra /b1s/v2 (OData v4). La cookie B1SESSION de
+ * v1 vale para v2 (verificado en vivo), así que comparte la misma sesión.
+ * v2 existe aquí por una sola razón: `$apply=groupby/aggregate`, que agrega
+ * TODO el entity set en el servidor — v1 no lo soporta.
+ */
+export async function sapFetchV2<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const v2 = baseUrl().replace(/\/v1$/, '/v2')
+  const doFetch = async (cookie: string) =>
+    fetch(`${v2}${path.startsWith('/') ? path : `/${path}`}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...init.headers, Cookie: cookie },
+      cache: 'no-store',
+    })
+
+  let res = await doFetch((await getSession()).cookie)
+  if (res.status === 401) {
+    session = null
+    res = await doFetch((await getSession()).cookie)
+  }
+  if (!res.ok) throw new SapError(await readErrorMessage(res), res.status)
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
 /** Fuerza un Login nuevo contra SAP y confirma que la sesión abre (sin consultar datos). */
 export async function sapCheckConnection(): Promise<void> {
   session = null

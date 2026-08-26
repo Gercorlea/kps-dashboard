@@ -12,6 +12,7 @@
     "test": "vitest run",
     "seed:superadmin": "tsx scripts/seed-superadmin.ts",
     "sap:contexto": "tsx scripts/generar-contexto-sap.ts",
+    "sap:facturas": "tsx --env-file=.env.local scripts/sincronizar-facturas-sap.ts",
     "predev": "npm run sap:contexto",
     "prebuild": "npm run sap:contexto",
     "migrar:ingles": "tsx --env-file=.env.local scripts/migrar-esquemas-ingles.ts"
@@ -30,6 +31,7 @@
     "@vercel/analytics": "^2.0.1",
     "ai": "^7.0.64",
     "bcryptjs": "^3.0.3",
+    "decimal.js": "^10.6.0",
     "framer-motion": "^13.1.0",
     "jose": "^6.2.8",
     "lucide-react": "^1.31.0",

@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     });
     const result = chat(mensajesModelo, {
       model: body.model,
-      onFinish: async ({ texto, model, entrada, salida, tools }) => {
+      onFinish: async ({ texto, model, entrada, salida, cache, tools }) => {
         try {
           await Message.create({
             chatId: conversacion._id,
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
             model,
             inputTokens: entrada,
             outputTokens: salida,
-            costUSD: costUSD(model, entrada, salida),
+            costUSD: costUSD(model, entrada, salida, cache),
             tools: tools.length ? tools : undefined,
           });
           await Chat.updateOne({ _id: conversacion._id }, { $set: { updatedAt: new Date() } });
@@ -106,11 +106,15 @@ export async function POST(request: NextRequest) {
         if (part.type !== "finish") return undefined;
         const entrada = part.totalUsage?.inputTokens ?? 0;
         const salida = part.totalUsage?.outputTokens ?? 0;
+        const cache = {
+          leidos: part.totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0,
+          escritos: part.totalUsage?.inputTokenDetails?.cacheWriteTokens ?? 0,
+        };
         return {
           model: modeloUsado,
           entrada,
           salida,
-          costo: costUSD(modeloUsado, entrada, salida),
+          costo: costUSD(modeloUsado, entrada, salida, cache),
         };
       },
     });

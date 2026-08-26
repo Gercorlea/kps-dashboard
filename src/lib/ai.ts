@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { stepCountIs, streamText, tool } from "ai";
 import type { ModelMessage } from "ai";
 import { z } from "zod";
-import { ENTIDADES_SAP, consultarSap } from "@/lib/sap/consultas";
+import { ENTIDADES_SAP, OPERACIONES_AGREGADO, agregarSap, consultarSap } from "@/lib/sap/consultas";
 import { COLECCIONES_RETAIL, consultarRetail } from "@/lib/retail/consultas-ia";
 import { MODELO_DEFECTO, esModeloValido } from "@/lib/ai-modelos";
 import { crearReporte } from "@/lib/reportes/crear-reporte";
@@ -34,14 +34,22 @@ function hoy(): { iso: string; largo: string } {
   return { iso, largo };
 }
 
-function sistemaPrompt(): string {
+// La fecha cambia cada día, así que va en un bloque APARTE del prompt
+// estático: metida dentro invalidaría el caché de Anthropic cada medianoche
+// y volverían a procesarse los ~18,800 tokens de contexto desde cero.
+function promptFecha(): string {
   const { iso, largo } = hoy();
-  return `Eres KPS AI, el asistente conversacional de Arcanum dentro de Cronos Retail.
+  return `Hoy es ${largo} (${iso}), hora de ${ZONA}. Nunca preguntes al usuario qué
+día es: resuelve tú "hoy", "ayer", "esta semana", "este mes" o "el año pasado"
+a partir de esa fecha y úsala para construir los filtros de tus consultas.`;
+}
+
+// Prefijo ESTÁTICO del prompt: se evalúa una sola vez al cargar el módulo, no
+// por petición. Es literalmente lo que Anthropic cachea, así que nada que
+// varíe entre peticiones (fechas, usuario, modelo) puede entrar aquí.
+const PROMPT_ESTATICO = `Eres KPS AI, el asistente conversacional de Arcanum dentro de Cronos Retail.
 Respondes siempre en español, de forma clara, directa y profesional.
 
-Hoy es ${largo} (${iso}), hora de ${ZONA}. Nunca preguntes al usuario qué día
-es: resuelve tú "hoy", "ayer", "esta semana", "este mes" o "el año pasado" a
-partir de esa date y úsala para construir los filtros de tus consultas.
 Consultas datos en vivo de dos fuentes: SAP Business One (Service Layer) y
 la base de MongoDB del módulo Retail (ventas, pronósticos, inventarios,
 órdenes de compra y cargas). Nunca menciones "la pestaña Retail" como
@@ -69,12 +77,57 @@ Nunca nombres funciones, archivos, parámetros ni detalles internos de esta
 aplicación al explicarte. Si algo no se pudo consultar, dilo en términos de
 negocio ("ese dato no está capturado en SAP"), jamás mencionando el código.
 
+LENGUAJE DE NEGOCIO (regla dura). Quien te lee lleva ventas, compras o
+inventario, no sistemas. En tus respuestas NUNCA aparecen nombres de campos
+de SAP ni valores codificados: ni en el texto, ni en los encabezados de
+tabla, ni en las viñetas, ni dentro de los reportes. Tampoco expliques la
+estructura de los datos: nada de "clave primaria", "entidad", "entity set",
+"colección", "campo", "OData", "Service Layer", "MongoDB" o "esquema". Si te
+preguntan qué información tienes sobre algo, contesta con los conceptos de
+negocio en una frase o una lista corta ("de cada proveedor tengo nombre,
+teléfono, correo, saldo, moneda y si está activo"), NUNCA con una tabla de
+campo/descripción.
+
+Traduce siempre al presentar, y usa la etiqueta en español de encabezado:
+- Socios de negocio: CardCode → Código; CardName → Nombre; CardType → Tipo;
+  GroupCode → Grupo; Phone1 → Teléfono; EmailAddress → Correo;
+  CurrentAccountBalance → Saldo; Currency → Moneda; Valid → Estatus.
+- Artículos: ItemCode → Código; ItemName → Artículo; U_Marca → Marca;
+  ItemsGroupCode → Grupo; BarCode → Código de barras;
+  QuantityOnStock → Existencia; QuantityOrderedFromVendors → Pedido a
+  proveedor; QuantityOrderedByCustomers → Comprometido con clientes;
+  InventoryUOM → Unidad; UpdateDate → Última actualización.
+- Documentos: DocNum → Folio; DocDate → Fecha; DocDueDate → Vencimiento;
+  DocTotal → Total; DocCurrency → Moneda; DocumentStatus → Estatus;
+  Quantity → Cantidad; Price → Precio unitario; LineTotal → Importe.
+- Otros: WarehouseName → Almacén; PriceListName → Lista de precios;
+  ValidFrom / ValidTo → Vigencia.
+Y los valores codificados: tYES → Activo y tNO → Inactivo; cSupplier o "S" →
+Proveedor; cCustomer o "C" → Cliente; cLid → Prospecto; bost_Open → Abierto
+y bost_Close → Cerrado; MXP → MXN, y los importes con separador de miles.
+
+Los identificadores internos (DocEntry, LineNum, códigos numéricos de grupo)
+no se muestran: usa el folio o el nombre; si solo tienes el código de un
+grupo o de un almacén, resuélvelo a su nombre con otra consulta antes de
+responder. Los códigos que el usuario sí maneja a diario —el del artículo y
+el del socio de negocio— sí se muestran, pero bajo su etiqueta en español.
+
+TOTALES Y RANKINGS (regla dura): TÚ NUNCA CUENTAS NI SUMAS FILAS. Para
+"cuánto en total", "cuántos", "el más/menos vendido", "el cliente que más
+compró", los totales se piden YA CALCULADOS:
+- Sobre documentos de SAP (facturas, pedidos, órdenes): agregar_sap, que
+  agrega la historia completa en una llamada.
+- Ventas por artículo o por cliente con filtros de fecha: consultar_retail
+  con la colección sapSales y agruparPor/sumar (quantity = unidades,
+  lineTotal = importe). Cubre todo el histórico de facturas de SAP.
+- Cifras del módulo Retail (unidades por marca, etc.): consultar_retail con
+  agruparPor/sumar.
+Responder un ranking o un total a partir de una muestra de filas está
+PROHIBIDO: si por alguna razón solo tienes una muestra (devueltas < total),
+dilo explícitamente y NO lo presentes como definitivo.
+
 NUNCA generalices desde una muestra parcial. Cada consulta te devuelve
-\`total\` (cuántos registros hay en total) y \`devueltas\` (cuántos viste). Si
-\`devueltas\` es menor que \`total\`, todavía NO conoces la respuesta: usa
-\`saltar\` para recorrer el resto, o filtra para que el propio SAP cuente. Si
-aun así no puedes cubrirlo todo, di explícitamente sobre cuántos registros
-estás hablando en vez de presentar el result como definitivo.
+\`total\` (cuántos registros hay en total) y \`devueltas\` (cuántos viste).
 
 REPORTES. Cuando pidan un reporte, informe, summary exportable o PDF:
 1. Consulta primero los datos reales con tus tools. Nunca inventes cifras.
@@ -91,6 +144,9 @@ REPORTES. Cuando pidan un reporte, informe, summary exportable o PDF:
    recibe como tarjeta descargable. En el chat solo confirma que está listo y
    di en una o dos frases qué incluye.
 El PDF no admite gráficas ni imágenes: solo texto, listas y tablas.
+6. Sé selectivo: el reporte se escribe token a token y uno muy largo tarda
+   minutos. Tablas con los totales y los primeros 10-20 renglones relevantes,
+   no catálogos enteros; el tope duro son 30,000 caracteres.
 
 Estilo de respuesta:
 - Nunca uses emojis (ni en texto, ni en encabezados, ni en viñetas).
@@ -99,7 +155,6 @@ Estilo de respuesta:
   ofrecer un siguiente paso, que sea sobre DATOS del negocio y solo cuando
   aporte algo concreto.
 - Ve al grano: la respuesta primero, el detalle después.`;
-}
 
 export interface HerramientaUsada {
   name: string;
@@ -145,6 +200,7 @@ export function chat(
       model: string;
       entrada: number;
       salida: number;
+      cache: { leidos: number; escritos: number };
       tools: HerramientaUsada[];
     }) => Promise<void> | void;
   }
@@ -153,8 +209,20 @@ export function chat(
   const model = esModeloValido(opciones?.model) ? opciones.model : MODELO_DEFECTO;
   return streamText({
     model: model, // formato creator/model-name (default: anthropic/claude-sonnet-4.6)
-    system: sistemaPrompt(), // incluye la fecha de hoy: se evalúa por petición
-    messages,
+    // El sistema va como mensaje (no como `system`) para poder marcarle
+    // cacheControl: Anthropic cachea el prefijo estático (~18,800 tokens de
+    // contexto SAP) y cada paso de la conversación paga solo lo nuevo. La
+    // fecha —que cambia a diario— va DESPUÉS del punto de corte del caché.
+    allowSystemInMessages: true,
+    messages: [
+      {
+        role: "system",
+        content: PROMPT_ESTATICO,
+        providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+      },
+      { role: "system", content: promptFecha() },
+      ...messages,
+    ],
     tools: {
       consultar_sap: tool({
         description:
@@ -192,11 +260,59 @@ export function chat(
           }
         },
       }),
+      agregar_sap: tool({
+        description:
+          "Totales, conteos, promedios y rankings calculados por SAP sobre TODA la " +
+          "historia de un entity set (no una muestra). Úsala SIEMPRE que pregunten " +
+          "'cuánto en total', 'cuántos', 'el que más/menos' sobre documentos: es una " +
+          "sola llamada y cubre los 8,900+ documentos. Solo campos de CABECERA " +
+          "(DocTotal, CardCode, DocDate…); NO acepta filtros: agrega la historia " +
+          "completa. Para ventas POR ARTÍCULO usa consultar_retail con la colección " +
+          "sapSales (agruparPor itemCode, sumar quantity o lineTotal).",
+        inputSchema: z.object({
+          entidad: z
+            .string()
+            .max(60)
+            .describe("Entity set de documentos, ej: Invoices, Orders, PurchaseOrders"),
+          agruparPor: z
+            .array(z.string().max(60))
+            .max(3)
+            .optional()
+            .describe("Campos de cabecera por los que agrupar; omite para un total global"),
+          metricas: z
+            .array(
+              z.object({
+                campo: z.string().max(60).describe("Campo numérico de cabecera, ej: DocTotal"),
+                operacion: z.enum(OPERACIONES_AGREGADO),
+              })
+            )
+            .max(3)
+            .optional()
+            .describe("Qué calcular por grupo; el conteo de documentos va incluido siempre"),
+          top: z
+            .number()
+            .int()
+            .min(1)
+            .max(100)
+            .optional()
+            .describe("Grupos a devolver, ordenados de mayor a menor (defecto 20)"),
+        }),
+        execute: async (consulta) => {
+          try {
+            return await agregarSap(consulta);
+          } catch (e) {
+            return { error: e instanceof Error ? e.message : "Error agregando en SAP" };
+          }
+        },
+      }),
       consultar_retail: tool({
         description:
           "Consulta datos EN VIVO del módulo Retail en MongoDB (SOLO lectura): ventas diarias, " +
           "pronósticos, forecast, stock de CEDIS y farmacias, órdenes de compra y cargas. " +
-          "Usa `agruparPor` + `sumar` para totales (ej: unidades por marca).",
+          "Incluye sapSales: TODAS las líneas de factura de SAP (histórico completo, " +
+          "campos itemCode, description, cardName, docDate, quantity, price, lineTotal). " +
+          "Usa `agruparPor` + `sumar` para totales exactos sobre todo el histórico " +
+          "(ej: el artículo más vendido = sapSales agrupado por itemCode sumando quantity).",
         inputSchema: z.object({
           coleccion: z.enum(COLECCIONES_RETAIL).describe("Colección a consultar"),
           filtros: z
@@ -235,7 +351,7 @@ export function chat(
           markdown: z
             .string()
             .min(40)
-            .max(80_000)
+            .max(30_000)
             .describe("Cuerpo del reporte: bloque ```portada, secciones ## y tablas"),
           fileName: z.string().max(80).optional().describe("Nombre de archivo sin extensión"),
           summary: z.string().max(300).optional().describe("Una frase de qué contiene"),
@@ -252,11 +368,17 @@ export function chat(
     },
     onFinish: async ({ text, totalUsage, steps }) => {
       // totalUsage suma todos los pasos (cada tool call es una llamada más).
+      // El desglose de caché viaja aparte: esos tokens cuestan 10% (leídos)
+      // o 125% (escritos) del precio pleno y costUSD lo necesita saber.
       await opciones?.onFinish?.({
         texto: text,
         model,
         entrada: totalUsage?.inputTokens ?? 0,
         salida: totalUsage?.outputTokens ?? 0,
+        cache: {
+          leidos: totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0,
+          escritos: totalUsage?.inputTokenDetails?.cacheWriteTokens ?? 0,
+        },
         tools: resumirHerramientas(steps ?? []),
       });
     },

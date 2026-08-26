@@ -4,6 +4,7 @@
 export const MODULES = [
   { id: "retail", name: "Retail" },
   { id: "cronos-ia", name: "KPS AI" },
+  { id: "proveedores", name: "Proveedores" },
   { id: "admin", name: "Administración" },
 ] as const;
 
