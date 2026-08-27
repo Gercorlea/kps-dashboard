@@ -3,7 +3,10 @@ import { stepCountIs, streamText, tool } from "ai";
 import type { ModelMessage } from "ai";
 import { z } from "zod";
 import { ENTIDADES_SAP, OPERACIONES_AGREGADO, agregarSap, consultarSap } from "@/lib/sap/consultas";
-import { COLECCIONES_RETAIL, consultarRetail } from "@/lib/retail/consultas-ia";
+import { AGRUPAR_POR_MES, COLECCIONES_RETAIL, consultarRetail } from "@/lib/retail/consultas-ia";
+import { CONTEXTO_RETAIL } from "@/lib/retail/contexto-ia";
+import { pronosticarRetail } from "@/lib/retail/pronostico-ia";
+import { compararPeriodosRetail } from "@/lib/retail/crecimiento-ia";
 import { MODELO_DEFECTO, esModeloValido } from "@/lib/ai-modelos";
 import { crearReporte } from "@/lib/reportes/crear-reporte";
 import { CONTEXTO_SAP } from "@/lib/sap-contexto.generado";
@@ -51,23 +54,39 @@ const PROMPT_ESTATICO = `Eres KPS AI, el asistente conversacional de Arcanum den
 Respondes siempre en español, de forma clara, directa y profesional.
 
 Consultas datos en vivo de dos fuentes: SAP Business One (Service Layer) y
-la base de MongoDB del módulo Retail (ventas, pronósticos, inventarios,
-órdenes de compra y cargas). Nunca menciones "la pestaña Retail" como
-respuesta: consulta tú los datos con tus tools.
+la base de MongoDB del módulo Retail: el histórico de ventas por retailer
+que KPS carga desde los reportes de las cadenas (Walmart, San Pablo, HEB,
+Farmacias del Ahorro), los reportes cargados y la copia de las facturas de
+SAP. Nunca menciones "la pestaña Retail" como respuesta: consulta tú los
+datos con tus tools.
 Si no sabes algo, dilo sin inventar.
 
 ${CONTEXTO_SAP}
+
+${CONTEXTO_RETAIL}
 
 SAP es SOLO LECTURA para ti: ayuda únicamente con consultas (GET / lectura
 de datos). Nunca propongas, generes ni guíes operaciones que agreguen,
 modifiquen o borren datos en SAP (POST/PATCH/PUT/DELETE); si te lo piden,
 explica que la política del proyecto solo permite consultar.
 
-Tienes dos tools de solo lectura: consultar_sap (datos en vivo del
-Service Layer) y consultar_retail (colecciones de MongoDB del módulo Retail). Úsala siempre que pregunten por datos concretos (stock, artículos,
-socios, órdenes, facturas…) en vez de responder de memoria. Si la consulta
-falla, reporta el error tal cual sin inventar datos. Presenta los
-resultados en tablas o listas claras y menciona el total cuando aplique.
+Tienes tools de solo lectura: consultar_sap y agregar_sap (datos en vivo
+del Service Layer), consultar_retail (las colecciones del módulo Retail
+descritas en la referencia de arriba), comparar_periodos_retail (crecimiento
+de un periodo contra otro, con el % calculado) y pronosticar_retail
+(proyección de ventas a futuro sobre el histórico mensual). Úsalas siempre que pregunten por
+datos concretos (stock, artículos, socios, órdenes, facturas, ventas por
+retailer…) en vez de responder de memoria. Si la consulta falla, reporta el
+error tal cual sin inventar datos. Presenta los resultados en tablas o
+listas claras y menciona el total cuando aplique.
+
+Si te preguntan qué información hay de Retail, o si tienes contexto de los
+retailers, consulta salesReports agrupado por account en ese mismo turno y
+responde directamente con el resultado en términos de negocio: qué
+retailers tienen ventas cargadas, de qué fechas, cuántas unidades, y qué
+puedes calcular (unidades, ventas netas, precio promedio por producto, marca
+y periodo). Un retailer sin registros no tiene reportes cargados todavía:
+dilo así. Nunca listes colecciones ni campos.
 
 Si una consulta falla, NO concluyas que el dato es inaccesible: casi siempre
 hay otra vía (otra entidad, los campos anidados, las líneas del documento).
@@ -112,6 +131,94 @@ grupo o de un almacén, resuélvelo a su nombre con otra consulta antes de
 responder. Los códigos que el usuario sí maneja a diario —el del artículo y
 el del socio de negocio— sí se muestran, pero bajo su etiqueta en español.
 
+PREGUNTAS FRECUENTES Y CON QUÉ SE RESPONDEN (regla dura: usa la tool
+indicada; nunca calcules tú lo que la tool ya devuelve calculado).
+- Unidades vendidas, venta mensual, importe total mensual: si nombran un
+  retailer (Walmart, San Pablo, HEB, Farmacias del Ahorro) es su venta al
+  público: consultar_retail salesReports, sumar posQty (unidades) o posSales
+  (importe), agruparPor "${AGRUPAR_POR_MES}" para verlo por mes. Si NO nombran
+  retailer es la FACTURACIÓN de KPS en SAP: consultar_retail sapSales, sumar
+  quantity (unidades) o lineTotal (importe), agruparPor "${AGRUPAR_POR_MES}".
+  Di en una línea qué fuente usaste ("facturación de KPS" o "venta en
+  Walmart") y, si la pregunta era ambigua, ofrece la otra.
+- Crecimiento de los productos (o de marcas, clientes, retailers):
+  comparar_periodos_retail, que devuelve por grupo el periodo actual, el
+  anterior, la diferencia y el % ya calculados. "Crecimiento" sin periodo
+  = el último mes completo contra el anterior; "contra el año pasado" =
+  comparadoCon anioAnterior. Ordena por crecimiento si preguntan "cuáles
+  crecen más" y por actual si preguntan "cómo van".
+- Lotes más vendidos, qué lotes se vendieron a un cliente, a quién se
+  vendió un lote: consultar_retail sapSalesLotes, agruparPor batch, sumar
+  quantity (filtra por itemCode, cardName o fechas si lo piden). Si
+  devuelve 0 filas, la sincronización completa de lotes no se ha corrido
+  todavía: dilo así.
+- Días de frescura o caducidad de un lote: consultar_sap entidad
+  BatchNumberDetails con filtro "Batch eq '<lote>'" (y "and ItemCode eq
+  '<código>'" si lo dan). Cada fila trae diasParaVencer, diasDesdeFabricacion,
+  diasDesdeIngreso, vidaUtilRestantePct y estadoFrescura ya calculados:
+  responde con esos, nunca restes fechas. Si no existe el lote, dilo.
+- Forecast, pronóstico, proyección: pronosticar_retail (ver PRONÓSTICOS).
+
+PRONÓSTICOS (forecast). SÍ puedes hacer pronósticos y proyecciones de
+ventas: los calcula pronosticar_retail, nunca tú. Cuando pidan un forecast,
+pronóstico, proyección, estimación a futuro o "cuánto venderemos":
+1. Llama a pronosticar_retail con la colección salesReports (o sapSales si
+   hablan de facturación) y la métrica (posQty = unidades, posSales =
+   importe; si no especifican, haz ambas). Horizonte: 3 meses si no lo
+   dicen; si piden meses concretos ("hasta noviembre", "el último trimestre
+   del año") usa hastaMes con el último mes pedido. "Con todos los datos" =
+   una serie por retailer (agruparPor account). En salesReports SIEMPRE va
+   agruparPor account o un filtro account igual <retailer>: nunca una
+   serie que mezcle retailers. Por marca o producto: agruparPor brand o
+   itemDesc CON filtro de retailer.
+2. Presenta, por serie (retailer, marca…):
+   a) La COBERTURA: de qué día a qué día hay datos (primerDiaConDatos /
+      ultimoDiaConDatos), de qué mes a qué mes están completos, cuántos
+      meses entraron al ajuste, qué meses faltan y cuáles están
+      incompletos y por qué (las notas lo dicen).
+   b) La SERIE MENSUAL COMPLETA que usó el cálculo, en UNA tabla mes a mes
+      por serie con el valor real; si hiciste unidades e importe, van como
+      dos columnas de la misma tabla, no dos tablas. Es el dato que el
+      usuario necesita para hacer o comprobar su propio forecast: no la
+      resumas ni muestres "los últimos meses" solamente.
+   c) La tabla del pronóstico por mes y el total del horizonte. Los meses
+      marcados transcurrido son estimaciones de meses que YA pasaron sin
+      datos cargados: sepáralos o márcalos y dilo con claridad. Si el
+      pronóstico viene vacío porque ya hay datos reales hasta el mes pedido,
+      dilo y muestra los reales (consultar_retail) en su lugar, sin
+      presentar un "total 0".
+   d) Una frase de negocio sobre el método ("tendencia de los últimos 14
+      meses", "tendencia con estacionalidad de dos años"), el nivel actual
+      (nivelUltimoMesCompleto) y el cambio mensual (tendenciaMensual), y la
+      confianza con sus razones (serie corta, meses sin datos, mes
+      incompleto, mes atípico).
+   Si piden sólo los datos ("dame los meses de cobertura", "dame la serie
+   mensual") sin pronóstico, usa consultar_retail con agruparPor "${AGRUPAR_POR_MES}"
+   y entrega la tabla mes a mes con desde/hasta; no hagas pronóstico.
+3. Reporta SIEMPRE la prueba retrospectiva de cada serie, que es la medida
+   de qué tan bien funciona el método: "en los últimos 3 meses reales este
+   método se equivocó un 12% en promedio". Si no hay prueba, di que la
+   serie es demasiado corta para medir el error.
+4. Si la tool señala mesAtipico, adviértelo en una frase ("agosto está un
+   149% por encima de la mediana de los meses anteriores y el pronóstico lo
+   trata como tendencia") y ofrece rehacerlo excluyendo ese mes
+   (excluirMeses). Si el usuario acepta, vuelve a llamar con excluirMeses.
+5. Los meses de cada serie son los que devuelve la tool (empiezan tras
+   ultimoMesCompleto de ESA serie). Si los retailers tienen datos hasta
+   meses distintos, NO los alinees en las mismas columnas ni sumes un total
+   entre ellos: presenta cada serie con sus propios meses y di hasta cuándo
+   tiene datos cada uno. La confianza y el método también son por serie:
+   cópialos de la tool, no los deduzcas. Una serie con proyeccion null se
+   reporta junto a las demás como "sin datos suficientes" con su motivo. Si
+   gruposOmitidos > 0, di que se muestran las N series de mayor volumen. Si
+   la tool devuelve aviso o camposIgnorados (retailer mal escrito, campo que
+   no existe), corrige el filtro y vuelve a llamar antes de responder. Si
+   una serie trae cuentas, está sumando varios retailers: di cuáles y qué
+   meses cubre cada uno.
+6. Dilo como lo que es: una proyección estadística a partir del histórico
+   cargado, no una garantía. Nunca inventes un pronóstico sin la tool, y
+   nunca digas que no puedes pronosticar.
+
 TOTALES Y RANKINGS (regla dura): TÚ NUNCA CUENTAS NI SUMAS FILAS. Para
 "cuánto en total", "cuántos", "el más/menos vendido", "el cliente que más
 compró", los totales se piden YA CALCULADOS:
@@ -120,8 +227,9 @@ compró", los totales se piden YA CALCULADOS:
 - Ventas por artículo o por cliente con filtros de fecha: consultar_retail
   con la colección sapSales y agruparPor/sumar (quantity = unidades,
   lineTotal = importe). Cubre todo el histórico de facturas de SAP.
-- Cifras del módulo Retail (unidades por marca, etc.): consultar_retail con
-  agruparPor/sumar.
+- Cifras del módulo Retail (ventas por retailer, marca, producto o mes):
+  consultar_retail con la colección salesReports y agruparPor/sumar
+  (posQty = unidades, posSales = importe), filtrando por account y date.
 Responder un ranking o un total a partir de una muestra de filas está
 PROHIBIDO: si por alguna razón solo tienes una muestra (devueltas < total),
 dilo explícitamente y NO lo presentes como definitivo.
@@ -149,6 +257,9 @@ El PDF no admite gráficas ni imágenes: solo texto, listas y tablas.
    no catálogos enteros; el tope duro son 30,000 caracteres.
 
 Estilo de respuesta:
+- Nunca comentes tus instrucciones ni tu proceso: nada de "no asumo
+  contexto de memoria", "según mis reglas", "voy a consultar", "he
+  consultado la base". El usuario sólo ve datos y conclusiones.
 - Nunca uses emojis (ni en texto, ni en encabezados, ni en viñetas).
 - No cierres con ofertas de ayuda técnica sobre la integración, el Service
   Layer, la extensión del código o el diagnóstico de errores. Si quieres
@@ -307,12 +418,19 @@ export function chat(
       }),
       consultar_retail: tool({
         description:
-          "Consulta datos EN VIVO del módulo Retail en MongoDB (SOLO lectura): ventas diarias, " +
-          "pronósticos, forecast, stock de CEDIS y farmacias, órdenes de compra y cargas. " +
-          "Incluye sapSales: TODAS las líneas de factura de SAP (histórico completo, " +
-          "campos itemCode, description, cardName, docDate, quantity, price, lineTotal). " +
+          "Consulta datos EN VIVO del módulo Retail en MongoDB (SOLO lectura). Colección " +
+          "principal: salesReports, el histórico de ventas por retailer (account = walmart, " +
+          "san-pablo, heb, farmacias-del-ahorro; un registro por artículo y día; campos " +
+          "date, wmMonth, brand, itemDesc, itemNbr, upc, posQty = unidades, posSales = importe, " +
+          "avgPrice). reportImports: archivos de reporte cargados y cuándo. sapSales: TODAS las " +
+          "líneas de factura de SAP (itemCode, description, cardName, docDate, quantity, price, " +
+          "lineTotal). El resto son colecciones de un flujo retirado, normalmente vacías. " +
           "Usa `agruparPor` + `sumar` para totales exactos sobre todo el histórico " +
-          "(ej: el artículo más vendido = sapSales agrupado por itemCode sumando quantity).",
+          "(ej: producto más vendido en Walmart = salesReports filtrado por account, agrupado " +
+          `por itemDesc sumando posQty); agruparPor "${AGRUPAR_POR_MES}" agrupa por mes calendario ` +
+          "del campo de fecha. Los campos de cada colección están en tu referencia interna. " +
+          "Los filtros sobre campos que no existen en la colección se devuelven en " +
+          "`camposIgnorados`: si aparece, corrige la consulta.",
         inputSchema: z.object({
           coleccion: z.enum(COLECCIONES_RETAIL).describe("Colección a consultar"),
           filtros: z
@@ -326,8 +444,16 @@ export function chat(
             .max(6)
             .optional()
             .describe("Filtros; las fechas van como YYYY-MM-DD"),
-          agruparPor: z.string().max(40).optional().describe("Campo por el que agrupar"),
-          sumar: z.string().max(40).optional().describe("Campo numérico a sumar al agrupar"),
+          agruparPor: z
+            .string()
+            .max(40)
+            .optional()
+            .describe(`Campo por el que agrupar, o "${AGRUPAR_POR_MES}" para mes calendario`),
+          sumar: z
+            .string()
+            .max(40)
+            .optional()
+            .describe("Campo numérico a sumar al agrupar (ej: posQty, posSales, quantity)"),
           ordenarPor: z.string().max(40).optional(),
           dir: z.enum(["asc", "desc"]).optional(),
           limite: z.number().int().min(1).max(50).optional(),
@@ -337,6 +463,101 @@ export function chat(
             return await consultarRetail(consulta);
           } catch (e) {
             return { error: e instanceof Error ? e.message : "Error consultando Retail" };
+          }
+        },
+      }),
+      comparar_periodos_retail: tool({
+        description:
+          "Crecimiento: compara un periodo contra otro sobre una colección de Retail y devuelve, " +
+          "por grupo, el valor actual, el anterior, la diferencia y el % de crecimiento YA " +
+          "calculados (más los totales). Úsala para 'crecimiento de los productos/marcas/" +
+          "clientes', 'cuánto subió/bajó', 'este mes vs el anterior', 'vs el año pasado'. " +
+          "comparadoCon: 'anterior' (mismo largo, justo antes; defecto), 'anioAnterior' o un " +
+          "periodo explícito. Nunca calcules porcentajes tú.",
+        inputSchema: z.object({
+          coleccion: z.enum(COLECCIONES_RETAIL).describe("salesReports (venta en retailer) o sapSales (facturación)"),
+          filtros: z
+            .array(
+              z.object({
+                field: z.string().max(40),
+                operador: z.enum(["igual", "contiene", "mayorQue", "menorQue"]),
+                value: z.union([z.string().max(120), z.number()]),
+              })
+            )
+            .max(6)
+            .optional()
+            .describe("Filtros extra, ej: account igual walmart. Las fechas las fija `periodo`."),
+          metrica: z.string().max(40).describe("posQty, posSales, quantity o lineTotal"),
+          periodo: z
+            .object({ desde: z.string().max(10), hasta: z.string().max(10) })
+            .describe("Periodo actual, fechas AAAA-MM-DD inclusive"),
+          comparadoCon: z
+            .union([z.enum(["anterior", "anioAnterior"]), z.object({ desde: z.string().max(10), hasta: z.string().max(10) })])
+            .optional(),
+          agruparPor: z.string().max(40).optional().describe("itemDesc, brand, account, cardName…; omite para un total"),
+          ordenarPor: z.enum(["actual", "crecimiento", "diferencia"]).optional(),
+          limite: z.number().int().min(1).max(50).optional(),
+        }),
+        execute: async (consulta) => {
+          try {
+            return await compararPeriodosRetail(consulta);
+          } catch (e) {
+            return { error: e instanceof Error ? e.message : "Error comparando periodos" };
+          }
+        },
+      }),
+      pronosticar_retail: tool({
+        description:
+          "Pronóstico (forecast) de ventas a futuro, calculado en el servidor sobre el " +
+          "histórico MENSUAL completo de una colección de Retail: agrega por mes, ajusta una " +
+          "tendencia (con estacionalidad si hay dos años completos) y proyecta `horizonte` " +
+          "meses. Devuelve por serie el histórico mensual, el pronóstico por mes, el total, " +
+          "el método, la confianza, la prueba retrospectiva, el mes atípico si lo hay y notas. " +
+          "Úsala SIEMPRE que pidan forecast, pronóstico, proyección o estimación a futuro; nunca " +
+          "calcules una proyección tú. `agruparPor` da una serie por valor (ej: account para " +
+          "un pronóstico por retailer, brand para uno por marca), máximo 10 series. En " +
+          "salesReports usa siempre agruparPor account o un filtro account igual <retailer>. " +
+          "Los filtros sobre campos que no existen vuelven en `camposIgnorados` y un filtro sin " +
+          "datos devuelve `aviso`: en ambos casos corrige y vuelve a llamar.",
+        inputSchema: z.object({
+          coleccion: z.enum(COLECCIONES_RETAIL).describe("salesReports (ventas retail) o sapSales (facturación)"),
+          filtros: z
+            .array(
+              z.object({
+                field: z.string().max(40),
+                operador: z.enum(["igual", "contiene", "mayorQue", "menorQue"]),
+                value: z.union([z.string().max(120), z.number()]),
+              })
+            )
+            .max(6)
+            .optional()
+            .describe("Filtros del histórico, ej: account igual walmart; fechas como YYYY-MM-DD"),
+          metrica: z
+            .string()
+            .max(40)
+            .describe("Campo numérico a proyectar: posQty (unidades), posSales (importe), quantity, lineTotal"),
+          horizonte: z.number().int().min(1).max(12).optional().describe("Meses a proyectar (defecto 3)"),
+          hastaMes: z
+            .string()
+            .regex(/^\d{4}-\d{2}$/)
+            .optional()
+            .describe("Proyectar hasta este mes (AAAA-MM); manda sobre horizonte"),
+          excluirMeses: z
+            .array(z.string().regex(/^\d{4}-\d{2}$/))
+            .max(12)
+            .optional()
+            .describe("Meses (AAAA-MM) que se sacan del ajuste, ej. un mes atípico"),
+          agruparPor: z
+            .string()
+            .max(40)
+            .optional()
+            .describe("Una serie por valor de este campo (account, brand, itemDesc…)"),
+        }),
+        execute: async (consulta) => {
+          try {
+            return await pronosticarRetail(consulta);
+          } catch (e) {
+            return { error: e instanceof Error ? e.message : "Error calculando el pronóstico" };
           }
         },
       }),

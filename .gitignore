@@ -42,3 +42,6 @@ next-env.d.ts
 
 # contexto SAP generado para Cronos IA (se regenera en dev/build)
 src/lib/sap-contexto.generado.ts
+
+
+*.md

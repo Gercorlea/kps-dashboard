@@ -4,6 +4,7 @@
 //  - Cualquier entity set del Service Layer (son ~332), salvo Login/Logout.
 //  - $top acotado y $select por defecto para no reventar tokens.
 import { camposPorDefecto, nombreEntidad } from "./campos";
+import { enriquecerFrescura } from "./frescura";
 import { sapFetch, sapFetchV2 } from "./service-layer";
 
 // Las más usadas, para orientar al modelo. NO es una lista de permisos:
@@ -74,7 +75,8 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
     headers: { Prefer: `odata.maxpagesize=${top}` },
   });
 
-  const filas = data.value ?? [];
+  // Lotes: los días de frescura se calculan aquí, nunca los resta el modelo.
+  const filas = enriquecerFrescura(data.value ?? []);
   const bruto = data["odata.count"] ?? data["@odata.count"];
   const total = bruto === undefined ? null : Number(bruto);
   return {

@@ -1,4 +1,5 @@
 import { connectDB } from "@/lib/db";
+import { SapInvoiceBatch } from "@/models/SapInvoiceBatch";
 import { SapInvoiceLine } from "@/models/SapInvoiceLine";
 import { sapFetch } from "./service-layer";
 
@@ -24,27 +25,45 @@ interface FacturaSap {
     Quantity?: number;
     Price?: number;
     LineTotal?: number;
+    // Lotes de los que salió la línea. El Service Layer los manda dentro de
+    // cada línea cuando se pide DocumentLines; vacío si el artículo no
+    // maneja lotes.
+    BatchNumbers?: Array<{
+      BatchNumber?: string | null;
+      Quantity?: number;
+      ExpiryDate?: string | null;
+    }>;
   }>;
 }
 
 export interface ResultadoSync {
   facturas: number;
   lineas: number;
+  lotes: number;
   desdeDocEntry: number;
 }
 
 /**
  * Trae de SAP las facturas con DocEntry mayor al último sincronizado y
- * upsertea sus líneas. Se saltan las canceladas y las líneas sin artículo
- * (documentos de "Saldo inicial", que no son ventas).
+ * upsertea sus líneas y sus lotes. Se saltan las canceladas y las líneas sin
+ * artículo (documentos de "Saldo inicial", que no son ventas).
+ *
+ * `desdeCero` recorre TODO el histórico aunque ya esté copiado: es idempotente
+ * (upsert por llave natural) y sirve para rellenar datos que se añadieron
+ * después del primer volcado, como los lotes.
  */
-export async function sincronizarFacturas(): Promise<ResultadoSync> {
+export async function sincronizarFacturas(
+  opciones: { desdeCero?: boolean } = {}
+): Promise<ResultadoSync> {
   await connectDB();
-  const ultimo = await SapInvoiceLine.findOne().sort({ docEntry: -1 }).select("docEntry").lean();
+  const ultimo = opciones.desdeCero
+    ? null
+    : await SapInvoiceLine.findOne().sort({ docEntry: -1 }).select("docEntry").lean();
   const desde = ultimo?.docEntry ?? 0;
 
   let facturas = 0;
   let lineas = 0;
+  let lotes = 0;
   // Paginacion por cursor de DocEntry, no por $skip: con $skip el Service
   // Layer re-ordena y re-recorre todo lo saltado en cada pagina (el volcado
   // completo se volvia cuadratico); con `gt cursor` cada pagina es una
@@ -95,12 +114,44 @@ export async function sincronizarFacturas(): Promise<ResultadoSync> {
       const r = await SapInvoiceLine.bulkWrite(ops, { ordered: false });
       lineas += r.upsertedCount + r.modifiedCount;
     }
+
+    const opsLotes = pagina.flatMap((f) =>
+      (f.DocumentLines ?? [])
+        .filter((l) => l.ItemCode)
+        .flatMap((l) =>
+          (l.BatchNumbers ?? [])
+            .filter((b) => b.BatchNumber)
+            .map((b) => ({
+              updateOne: {
+                filter: { docEntry: f.DocEntry, lineNum: l.LineNum, batch: b.BatchNumber! },
+                update: {
+                  $set: {
+                    docNum: f.DocNum,
+                    docDate: new Date(`${f.DocDate}T00:00:00.000Z`),
+                    cardCode: f.CardCode ?? "",
+                    cardName: f.CardName ?? "",
+                    itemCode: l.ItemCode!,
+                    description: l.ItemDescription ?? "",
+                    quantity: b.Quantity ?? 0,
+                    expiryDate: b.ExpiryDate ? new Date(`${b.ExpiryDate.slice(0, 10)}T00:00:00.000Z`) : null,
+                    syncedAt: ahora,
+                  },
+                },
+                upsert: true,
+              },
+            }))
+        )
+    );
+    if (opsLotes.length) {
+      const r = await SapInvoiceBatch.bulkWrite(opsLotes, { ordered: false });
+      lotes += r.upsertedCount + r.modifiedCount;
+    }
     facturas += pagina.length;
     cursor = pagina[pagina.length - 1].DocEntry;
     if (pagina.length < LOTE) break;
   }
 
-  return { facturas, lineas, desdeDocEntry: desde };
+  return { facturas, lineas, lotes, desdeDocEntry: desde };
 }
 
 // Frescura para el uso desde el chat: sincronizar como mucho una vez cada
