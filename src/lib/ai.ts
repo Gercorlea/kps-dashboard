@@ -112,7 +112,7 @@ Traduce siempre al presentar, y usa la etiqueta en español de encabezado:
   GroupCode → Grupo; Phone1 → Teléfono; EmailAddress → Correo;
   CurrentAccountBalance → Saldo; Currency → Moneda; Valid → Estatus.
 - Artículos: ItemCode → Código; ItemName → Artículo; U_Marca → Marca;
-  ItemsGroupCode → Grupo; BarCode → Código de barras;
+  ItemsGroupCode → Grupo; BarCode → Código de barras (UPC);
   QuantityOnStock → Existencia; QuantityOrderedFromVendors → Pedido a
   proveedor; QuantityOrderedByCustomers → Comprometido con clientes;
   InventoryUOM → Unidad; UpdateDate → Última actualización.
@@ -130,6 +130,11 @@ no se muestran: usa el folio o el nombre; si solo tienes el código de un
 grupo o de un almacén, resuélvelo a su nombre con otra consulta antes de
 responder. Los códigos que el usuario sí maneja a diario —el del artículo y
 el del socio de negocio— sí se muestran, pero bajo su etiqueta en español.
+Toda tabla o lista de artículos lleva SIEMPRE la columna Código, y toda lista
+de socios de negocio el suyo. El historial se poda: las consultas previas
+desaparecen del contexto y solo sobrevive el texto de la respuesta, así que
+un identificador que no quede escrito ahí se pierde —y las preguntas de
+seguimiento sobre esos mismos artículos ya no se pueden contestar.
 
 PREGUNTAS FRECUENTES Y CON QUÉ SE RESPONDEN (regla dura: usa la tool
 indicada; nunca calcules tú lo que la tool ya devuelve calculado).
@@ -577,7 +582,13 @@ export function chat(
           fileName: z.string().max(80).optional().describe("Nombre de archivo sin extensión"),
           summary: z.string().max(300).optional().describe("Una frase de qué contiene"),
         }),
-        execute: async (entrada) => crearReporte(entrada, `rep_${randomUUID().slice(0, 12)}`),
+        execute: async (entrada) => {
+          try {
+            return await crearReporte(entrada, `rep_${randomUUID().slice(0, 12)}`);
+          } catch (e) {
+            return { error: e instanceof Error ? e.message : "Error creando el reporte" };
+          }
+        },
       }),
     },
     stopWhen: stepCountIs(10), // encadenar varias consultas antes de responder

@@ -102,6 +102,17 @@ export async function POST(request: NextRequest) {
     // muestra tokens y costo sin una petición extra.
     const modeloUsado = esModeloValido(body.model) ? body.model : MODELO_DEFECTO;
     return result.toUIMessageStreamResponse({
+      // Un fallo posterior a la apertura del stream —consulta a SAP, límite del
+      // proveedor, timeout de la función— ya no puede volverse respuesta HTTP:
+      // las cabeceras salieron y el catch de abajo nunca lo ve. Sin esto el SDK
+      // lo enmascara y el cliente solo puede decir "intenta de nuevo". Se emite
+      // con el contrato { error: { message } } que espera motivoDelError.
+      onError: (error) => {
+        console.error("[chat] fallo durante el streaming", error);
+        const message =
+          error instanceof Error ? error.message : "Error generando la respuesta";
+        return JSON.stringify({ error: { message } });
+      },
       messageMetadata: ({ part }) => {
         if (part.type !== "finish") return undefined;
         const entrada = part.totalUsage?.inputTokens ?? 0;
