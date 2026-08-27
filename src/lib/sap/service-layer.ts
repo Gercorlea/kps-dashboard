@@ -29,6 +29,28 @@ function baseUrl(): string {
   return requiredEnv('SAP_SL_URL').replace(/\/+$/, '')
 }
 
+// Vercel mata la función al llegar a maxDuration (60 s en Hobby, sin importar
+// lo que declare el código) y una consulta que se pasa se lleva por delante
+// toda la petición: el stream del chat muere sin dejar excepción que registrar,
+// y el usuario solo ve "intenta de nuevo". Con un límite propio —bastante por
+// debajo del de la plataforma— la consulta falla primero, la tool devuelve el
+// error y el modelo puede pedir que se acote el periodo.
+const SAP_TIMEOUT_MS = Number(process.env.SAP_TIMEOUT_MS ?? 15_000)
+
+async function fetchSap(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(SAP_TIMEOUT_MS) })
+  } catch (e) {
+    const abortada = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
+    if (!abortada) throw e
+    throw new SapError(
+      `La consulta a SAP superó ${Math.round(SAP_TIMEOUT_MS / 1000)} segundos y se canceló. ` +
+        'Es demasiado pesada: acota el periodo, filtra por menos artículos o pide menos filas.',
+      504,
+    )
+  }
+}
+
 async function login(): Promise<SapSession> {
   const res = await fetch(`${baseUrl()}/Login`, {
     method: 'POST',
@@ -87,7 +109,7 @@ async function readErrorMessage(res: Response): Promise<string> {
  */
 export async function sapFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const doFetch = async (cookie: string) =>
-    fetch(`${baseUrl()}${path.startsWith('/') ? path : `/${path}`}`, {
+    fetchSap(`${baseUrl()}${path.startsWith('/') ? path : `/${path}`}`, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
@@ -125,7 +147,7 @@ export async function sapFetch<T>(path: string, init: RequestInit = {}): Promise
  */
 export async function sapUpload<T>(path: string, form: FormData): Promise<T> {
   const doFetch = async (cookie: string) =>
-    fetch(`${baseUrl()}${path.startsWith('/') ? path : `/${path}`}`, {
+    fetchSap(`${baseUrl()}${path.startsWith('/') ? path : `/${path}`}`, {
       method: 'POST',
       body: form,
       headers: { Cookie: cookie },
@@ -153,7 +175,7 @@ export async function sapUpload<T>(path: string, form: FormData): Promise<T> {
 export async function sapFetchV2<T>(path: string, init: RequestInit = {}): Promise<T> {
   const v2 = baseUrl().replace(/\/v1$/, '/v2')
   const doFetch = async (cookie: string) =>
-    fetch(`${v2}${path.startsWith('/') ? path : `/${path}`}`, {
+    fetchSap(`${v2}${path.startsWith('/') ? path : `/${path}`}`, {
       ...init,
       headers: { 'Content-Type': 'application/json', ...init.headers, Cookie: cookie },
       cache: 'no-store',
