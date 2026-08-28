@@ -53,13 +53,15 @@ export interface ResultadoSync {
  * después del primer volcado, como los lotes.
  */
 export async function sincronizarFacturas(
-  opciones: { desdeCero?: boolean } = {}
+  opciones: { desdeCero?: boolean; maxPaginas?: number; presupuestoMs?: number } = {}
 ): Promise<ResultadoSync> {
   await connectDB();
   const ultimo = opciones.desdeCero
     ? null
     : await SapInvoiceLine.findOne().sort({ docEntry: -1 }).select("docEntry").lean();
   const desde = ultimo?.docEntry ?? 0;
+  const inicio = Date.now();
+  let paginas = 0;
 
   let facturas = 0;
   let lineas = 0;
@@ -149,21 +151,43 @@ export async function sincronizarFacturas(
     facturas += pagina.length;
     cursor = pagina[pagina.length - 1].DocEntry;
     if (pagina.length < LOTE) break;
+    // Presupuesto para el uso desde el chat: lo que no quepa lo recoge la
+    // siguiente corrida (el cursor por DocEntry hace la sync reanudable).
+    paginas++;
+    if (opciones.maxPaginas && paginas >= opciones.maxPaginas) break;
+    if (opciones.presupuestoMs && Date.now() - inicio >= opciones.presupuestoMs) break;
   }
 
   return { facturas, lineas, lotes, desdeDocEntry: desde };
 }
 
 // Frescura para el uso desde el chat: sincronizar como mucho una vez cada
-// 5 minutos por proceso. La primera pregunta del día paga 1-2 peticiones a
-// SAP; las siguientes leen Mongo directo.
+// 5 minutos por proceso, y SOLO de forma incremental y acotada. El volcado
+// inicial (~450 páginas, varios minutos) es trabajo de `npm run sap:facturas`:
+// con la copia vacía, una pregunta del chat se quedaba 4-5 minutos colgada
+// recorriendo todo SAP dentro de la petición (y en Vercel no llegaba a
+// escribir nada, así que se repetía cada 5 minutos).
 const FRESCURA_MS = 5 * 60_000;
+const SYNC_CHAT_PRESUPUESTO_MS = 20_000;
+const SYNC_CHAT_MAX_PAGINAS = 10;
 let ultimaSync = 0;
 let syncEnCurso: Promise<ResultadoSync> | null = null;
 
 export async function asegurarFacturasFrescas(): Promise<void> {
   if (Date.now() - ultimaSync < FRESCURA_MS) return;
-  syncEnCurso ??= sincronizarFacturas().finally(() => {
+  await connectDB();
+  const hayCopia = await SapInvoiceLine.exists({});
+  if (!hayCopia) {
+    // Sin volcado inicial no hay nada que refrescar: se responde "sin datos"
+    // al instante y se deja constancia para quien opere el sistema.
+    ultimaSync = Date.now();
+    console.warn("[sapSales] copia vacía: falta correr `npm run sap:facturas -- --completo`; no se sincroniza desde el chat");
+    return;
+  }
+  syncEnCurso ??= sincronizarFacturas({
+    maxPaginas: SYNC_CHAT_MAX_PAGINAS,
+    presupuestoMs: SYNC_CHAT_PRESUPUESTO_MS,
+  }).finally(() => {
     syncEnCurso = null;
   });
   try {
