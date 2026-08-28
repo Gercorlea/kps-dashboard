@@ -335,5 +335,12 @@ export async function detalleRetailers(): Promise<DetalleRetailer[]> {
         ultimoArchivo: carga?.archivo ?? null,
       };
     })
-    .sort((a, b) => b.importe - a.importe || a.nombre.localeCompare(b.nombre));
+    .sort((a, b) => ordenRetailer(a.id) - ordenRetailer(b.id) || a.nombre.localeCompare(b.nombre));
+}
+
+const ORDEN_RETAILERS = ["walmart", "san-pablo", "farmacias-del-ahorro", "heb"];
+
+function ordenRetailer(id: string): number {
+  const i = ORDEN_RETAILERS.indexOf(id);
+  return i === -1 ? ORDEN_RETAILERS.length : i;
 }
