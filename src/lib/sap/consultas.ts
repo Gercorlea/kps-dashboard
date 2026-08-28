@@ -29,6 +29,45 @@ const PROHIBIDAS = new Set(["login", "logout"]);
 
 const TOP_MAX = 100;
 
+// Colecciones anidadas (DocumentLines, ItemPrices, BatchNumbers…): SAP
+// devuelve ~150 campos por línea. 52 órdenes con sus líneas completas fueron
+// ~280K tokens y reventaron la ventana del modelo (200K). Se dejan solo los
+// campos de negocio, sin nulos ni vacíos, y como mucho LINEAS_MAX por fila.
+const LINEAS_MAX = 40;
+const CAMPOS_LINEA = new Set([
+  "LineNum", "ItemCode", "ItemDescription", "Quantity", "RemainingOpenQuantity",
+  "OpenAmount", "Price", "UnitPrice", "PriceAfterVAT", "LineTotal", "Currency",
+  "LineStatus", "WarehouseCode", "ShipDate", "DiscountPercent", "MeasureUnit",
+  "UoMCode", "BaseEntry", "BaseLine", "PriceList", "BatchNumber", "ExpiryDate",
+  "TaxCode", "VatGroup",
+]);
+
+function vacio(v: unknown): boolean {
+  return v === null || v === undefined || v === "";
+}
+
+function compactarLinea(linea: Record<string, unknown>): Record<string, unknown> {
+  const conocidos = Object.entries(linea).filter(([k, v]) => CAMPOS_LINEA.has(k) && !vacio(v));
+  if (conocidos.length > 0) return Object.fromEntries(conocidos);
+  // Colección que no conocemos: los primeros campos con valor, para no cegar al modelo.
+  return Object.fromEntries(Object.entries(linea).filter(([, v]) => !vacio(v) && typeof v !== "object").slice(0, 8));
+}
+
+/** Recorta cada colección anidada de una fila a sus campos de negocio y a LINEAS_MAX renglones. */
+export function compactarAnidados(fila: Record<string, unknown>): Record<string, unknown> {
+  const salida: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fila)) {
+    if (Array.isArray(v) && v.length > 0 && v.every((x) => x && typeof x === "object" && !Array.isArray(x))) {
+      const lineas = (v as Record<string, unknown>[]).slice(0, LINEAS_MAX).map(compactarLinea);
+      salida[k] = lineas;
+      if (v.length > LINEAS_MAX) salida[`${k}Omitidas`] = v.length - LINEAS_MAX;
+    } else {
+      salida[k] = v;
+    }
+  }
+  return salida;
+}
+
 export interface ConsultaSap {
   entidad: string; // entity set del Service Layer, ej: "Items", "ChartOfAccounts"
   filtro?: string; // $filter OData, ej: "ItemCode eq '70006147'"
@@ -76,7 +115,7 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
   });
 
   // Lotes: los días de frescura se calculan aquí, nunca los resta el modelo.
-  const filas = enriquecerFrescura(data.value ?? []);
+  const filas = enriquecerFrescura(data.value ?? []).map(compactarAnidados);
   const bruto = data["odata.count"] ?? data["@odata.count"];
   const total = bruto === undefined ? null : Number(bruto);
   return {
