@@ -213,6 +213,7 @@ const TOP_GRUPOS = 1000; // tope de grupos que se traen para ordenar en JS
 // fuera el subconjunto (595 M "de julio" cuando julio eran 46 M).
 const PAGINA_FILTRADO = 100;
 const MAX_FILAS_FILTRADO = 3000;
+export const GRUPO_MES = "mes";
 
 async function agregarFiltrado(
   entidad: string,
@@ -221,7 +222,10 @@ async function agregarFiltrado(
   metricas: Array<{ campo: string; operacion: OperacionAgregado }>,
   aliasDe: (m: { campo: string; operacion: OperacionAgregado }) => string
 ): Promise<{ filas: Record<string, unknown>[]; considerados: number; truncado: boolean }> {
-  const select = [...new Set([...grupos, ...metricas.map((m) => m.campo)])].join(",");
+  // "mes" agrupa por el mes calendario de DocDate (AAAA-MM): "ventas por mes
+  // de 2025" era imposible y el modelo acababa infiriendo meses de una muestra.
+  const camposSelect = grupos.map((g) => (g === GRUPO_MES ? "DocDate" : g));
+  const select = [...new Set([...camposSelect, ...metricas.map((m) => m.campo)])].join(",");
   const acum = new Map<string, { clave: Record<string, unknown>; n: number; suma: Record<string, number>; max: Record<string, number>; min: Record<string, number> }>();
   let considerados = 0;
   let truncado = false;
@@ -237,7 +241,9 @@ async function agregarFiltrado(
     const pagina = data.value ?? [];
     for (const f of pagina) {
       considerados++;
-      const clave: Record<string, unknown> = Object.fromEntries(grupos.map((g) => [g, f[g] ?? null]));
+      const clave: Record<string, unknown> = Object.fromEntries(
+        grupos.map((g) => [g, g === GRUPO_MES ? String(f.DocDate ?? "").slice(0, 7) || null : (f[g] ?? null)])
+      );
       const k = JSON.stringify(clave);
       const g = acum.get(k) ?? { clave, n: 0, suma: {}, max: {}, min: {} };
       g.n++;
@@ -279,11 +285,18 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
   const grupos = (consulta.agruparPor ?? []).filter((c) => CAMPO_ODATA.test(c));
   const metricas = (consulta.metricas ?? []).filter((m) => CAMPO_ODATA.test(m.campo));
   const filtro = consulta.filtro?.trim();
+  const porMes = grupos.includes(GRUPO_MES);
+  if (porMes && !filtro) {
+    throw new Error(
+      "Agrupar por mes requiere acotar el periodo en `filtro`, ej: \"DocDate ge '2025-01-01' and DocDate le '2025-12-31'\"."
+    );
+  }
   if (filtro) {
     const aliasDe = (m: { campo: string; operacion: OperacionAgregado }) => `${m.operacion}_${m.campo}`;
     const { filas, considerados, truncado } = await agregarFiltrado(entidad, filtro, grupos, metricas, aliasDe);
     const claveOrden = metricas.length ? aliasDe(metricas[0]) : "documentos";
-    filas.sort((a, b) => (Number(b[claveOrden]) || 0) - (Number(a[claveOrden]) || 0));
+    if (porMes) filas.sort((a, b) => String(a[GRUPO_MES]).localeCompare(String(b[GRUPO_MES])));
+    else filas.sort((a, b) => (Number(b[claveOrden]) || 0) - (Number(a[claveOrden]) || 0));
     const top = Math.min(Math.max(consulta.top ?? 20, 1), 100);
     return {
       grupos: filas.length,

@@ -458,7 +458,11 @@ export function chat(
             .array(z.string().max(60))
             .max(3)
             .optional()
-            .describe("Campos de cabecera por los que agrupar; omite para un total global"),
+            .describe(
+              "Campos de cabecera por los que agrupar (CardName, DocCurrency…) o \"mes\" para el mes " +
+                "calendario de DocDate (requiere `filtro` con rango de fechas). Omite para un total global. " +
+                "Para 'ventas por mes' o 'el mes con más/menos' en SAP usa agruparPor [\"mes\"], nunca deduzcas meses de una muestra."
+            ),
           metricas: z
             .array(
               z.object({

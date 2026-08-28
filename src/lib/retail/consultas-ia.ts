@@ -455,7 +455,7 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
   const totalGlobal = !consulta.agruparPor && !!consulta.sumar && campoPermitido(consulta.coleccion, consulta.sumar);
   if ((consulta.agruparPor && clave) || totalGlobal) {
     const campoSuma = consulta.sumar ?? null;
-    const filas = await model.aggregate([
+    let filas = await model.aggregate([
       { $match: filtro },
       {
         $group: {
@@ -465,20 +465,37 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
           ...(def.fecha ? { desde: { $min: `$${def.fecha}` }, hasta: { $max: `$${def.fecha}` } } : {}),
         },
       },
-      // Por mes se lee en orden cronológico; el resto, de mayor a menor.
+      // Orden: si piden ordenar por la métrica sumada (o por registros) se
+      // respeta con su dirección; si no, por mes es cronológico y el resto de
+      // mayor a menor. Antes el orden pedido se ignoraba al agrupar por mes y
+      // el $limit de 10 dejaba solo los primeros 10 meses: "el mes con más
+      // ventas" salía febrero 2025 cuando era enero 2026.
       {
-        $sort:
-          consulta.agruparPor === AGRUPAR_POR_MES
-            ? { _id: 1 }
-            : campoSuma
-              ? { total: -1 }
-              : { registros: -1 },
+        $sort: ((): Record<string, 1 | -1> => {
+          const dir: 1 | -1 = consulta.dir === "asc" ? 1 : -1;
+          if (consulta.ordenarPor && campoSuma && consulta.ordenarPor === campoSuma) return { total: dir };
+          if (consulta.ordenarPor === "registros") return { registros: dir };
+          if (consulta.agruparPor === AGRUPAR_POR_MES) return { _id: 1 };
+          return campoSuma ? { total: -1 } : { registros: -1 };
+        })(),
       },
-      { $limit: limite },
+      // Agrupado no se recorta a 10 por defecto: 25 meses o 30 marcas caben
+      // completos (tope LIMITE_MAX) y así no se decide un máximo sobre un trozo.
+      {
+        $facet: {
+          filas: [{ $limit: consulta.limite ? limite : LIMITE_MAX }],
+          conteo: [{ $count: "n" }],
+        },
+      },
     ]);
+    const gruposTotales: number = filas[0]?.conteo?.[0]?.n ?? 0;
+    filas = filas[0]?.filas ?? [];
     return {
-      total: filas.length,
+      total: gruposTotales,
       devueltas: filas.length,
+      ...(gruposTotales > filas.length
+        ? { nota: `Se muestran ${filas.length} de ${gruposTotales} grupos: pide más con limite o afina el orden.` }
+        : {}),
       // La clave de grupo (`_id`) es un Date vivo cuando se agrupa por un
       // campo de fecha (p. ej. `agruparPor: "date"`); ver serializable().
       filas: filas.map(
