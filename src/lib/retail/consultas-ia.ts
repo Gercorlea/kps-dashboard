@@ -447,9 +447,13 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
   const limite = Math.min(Math.max(consulta.limite ?? 10, 1), LIMITE_MAX);
   const extra = ignorados.length ? { camposIgnorados: ignorados } : {};
 
-  // Modo agregado: totales por campo (ej. unidades por marca) o por mes.
+  // Modo agregado: totales por campo (ej. unidades por marca), por mes, o el
+  // TOTAL global del filtro cuando viene `sumar` sin `agruparPor`. Antes ese
+  // caso caía en la rama de detalle (10 filas de muestra) y el modelo sumaba la
+  // muestra y la presentaba como "importe total" ($88 K cuando eran $5.46 M).
   const clave = consulta.agruparPor ? claveDeGrupo(consulta.coleccion, consulta.agruparPor) : null;
-  if (consulta.agruparPor && clave) {
+  const totalGlobal = !consulta.agruparPor && !!consulta.sumar && campoPermitido(consulta.coleccion, consulta.sumar);
+  if ((consulta.agruparPor && clave) || totalGlobal) {
     const campoSuma = consulta.sumar ?? null;
     const filas = await model.aggregate([
       { $match: filtro },
@@ -480,7 +484,7 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
       filas: filas.map(
         (f) =>
           serializable({
-            [consulta.agruparPor!]: f._id,
+            ...(consulta.agruparPor ? { [consulta.agruparPor]: f._id } : {}),
             ...(campoSuma ? { [campoSuma]: f.total } : {}),
             registros: f.registros,
             ...(def.fecha ? { desde: fechaISO(f.desde), hasta: fechaISO(f.hasta) } : {}),

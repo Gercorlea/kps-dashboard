@@ -522,7 +522,11 @@ export function chat(
             .string()
             .max(40)
             .optional()
-            .describe("Campo numérico a sumar al agrupar (ej: posQty, posSales, quantity)"),
+            .describe(
+              "Campo numérico a sumar (ej: posQty, posSales, quantity). Con agruparPor da totales por grupo; " +
+                "SIN agruparPor da el TOTAL global de lo filtrado: úsalo para 'importe total', 'cuántas unidades'. " +
+                "Nunca sumes a mano las filas de detalle: son una muestra."
+            ),
           ordenarPor: z.string().max(40).optional(),
           dir: z.enum(["asc", "desc"]).optional(),
           limite: z.number().int().min(1).max(50).optional(),
