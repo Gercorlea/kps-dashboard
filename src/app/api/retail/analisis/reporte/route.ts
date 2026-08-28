@@ -4,7 +4,6 @@ import { ApiError, handleApiError, ok, parseQuery } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { columnasHistorico, plantillaPorId } from "@/lib/retail/analisis/plantillas";
-import { invalidarRetail } from "@/lib/retail/cache";
 import { filasDelArchivo } from "@/lib/retail/importaciones";
 import { fechaISO } from "@/lib/retail/normalize";
 import { usuariosPorId } from "@/lib/usuarios";
@@ -185,10 +184,6 @@ export async function DELETE(request: NextRequest) {
     if (reportes === 0 && deletedCount === 0 && modifiedCount === 0) {
       throw new ApiError(404, "NO_ENCONTRADO", "Ese reporte no está en el histórico");
     }
-    // Mismo motivo que al guardar: lo que hay agregado en memoria todavía
-    // cuenta las filas que se acaban de ir.
-    invalidarRetail();
-
     // `borradas` son las filas que desaparecieron de verdad; `conservadas`, las
     // que sobreviven porque otro reporte también las tiene. La suma es lo que
     // la ficha mostraba como "filas".

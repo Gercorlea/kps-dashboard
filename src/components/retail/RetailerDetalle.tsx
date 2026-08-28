@@ -131,8 +131,11 @@ function BarraVistas({
   useLayoutEffect(() => {
     const medir = () => {
       const activo = botonesRef.current[VISTAS.findIndex((v) => v.id === vista)];
-      if (!activo) return;
-      setPastilla({ x: activo.offsetLeft, w: activo.offsetWidth });
+      const pista = pistaRef.current;
+      if (!activo || !pista) return;
+      const caja = activo.getBoundingClientRect();
+      const cajaPista = pista.getBoundingClientRect();
+      setPastilla({ x: caja.left - cajaPista.left, w: caja.width });
       setMedido(true);
     };
     medir();
