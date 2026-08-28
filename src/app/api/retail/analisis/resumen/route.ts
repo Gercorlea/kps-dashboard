@@ -4,7 +4,6 @@ import type { z } from "zod";
 import { handleApiError, ok, parseQuery } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
-import { memoRetail } from "@/lib/retail/cache";
 import { granularidadPorRango, SIN_VALOR } from "@/lib/retail/analisis/agregar";
 import type { GrupoAcumulado, GrupoProducto } from "@/lib/retail/analisis/agregar";
 import { columnasMetrica } from "@/lib/retail/analisis/inferir-tipos";
@@ -135,11 +134,12 @@ function aProductos(
 type QueryResumen = z.infer<typeof resumenAnalisisQuerySchema>;
 
 /**
- * El cálculo, sin permisos ni envoltorio HTTP: es lo que se guarda en memoria.
+ * El cálculo, sin permisos ni envoltorio HTTP.
  *
- * Sale de GET para que `memoRetail` pueda envolverlo. La comprobación de acceso
- * se queda FUERA a propósito —se hace por petición, contra la sesión de quien
- * pregunta— porque lo que se cachea es el agregado, no el derecho a verlo.
+ * Sigue fuera de GET aunque ya nada lo envuelva: deja el handler en tres líneas
+ * —permiso, query, respuesta— y separa la comprobación de acceso, que se hace
+ * por petición contra la sesión de quien pregunta, del agregado, que es el mismo
+ * para todo el mundo.
  */
 async function calcularResumen(q: QueryResumen) {
   await connectDB();
@@ -337,22 +337,7 @@ export async function GET(request: NextRequest) {
   try {
     await requireModule("retail");
     const q = parseQuery(request.url, resumenAnalisisQuerySchema);
-    // La clave es la query entera ya validada, no la URL: así dos peticiones
-    // que sólo se distinguen en el orden de los parámetros —o en uno que el
-    // esquema rellena por defecto— comparten la misma entrada.
-    const clave = [
-      "resumen",
-      q.account ?? "",
-      q.sourceFile ?? "",
-      q.alcance,
-      q.parte,
-      q.granularidad ?? "",
-      // Sin el periodo en la clave, pedir un trimestre devolvería el agregado
-      // del histórico completo que dejó ahí la carga inicial.
-      q.desde ?? "",
-      q.hasta ?? "",
-    ].join("|");
-    return ok(await memoRetail(clave, () => calcularResumen(q)));
+    return ok(await calcularResumen(q));
   } catch (e) {
     return handleApiError(e);
   }

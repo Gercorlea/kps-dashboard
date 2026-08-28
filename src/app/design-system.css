@@ -628,10 +628,13 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
   display: flex; flex-wrap: wrap; gap: 12px;
   align-items: center; justify-content: space-between;
 }
-/* La barra de pestañas puede desbordar en móvil: scrollea sola en vez de
-   partirse en dos filas. */
+
 .cr-detalle-head__tabs { display: flex; align-items: center; gap: 16px; justify-content: space-between; }
-.cr-detalle-head__tabs > .cr-segment { overflow-x: auto; max-width: 100%; }
+.cr-detalle-head__tabs > .cr-segment {
+  overflow-x: auto; max-width: 100%;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.cr-detalle-head__tabs > .cr-segment::-webkit-scrollbar { display: none; }
 
 .cr-page-content { flex: 1; min-width: 0; padding: 16px; background: var(--cr-bg); }
 

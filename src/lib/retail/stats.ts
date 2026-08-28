@@ -2,7 +2,6 @@ import { connectDB } from "@/lib/db";
 import { ReportImport } from "@/models/ReportImport";
 import { SalesReport } from "@/models/SalesReport";
 import { DailySale } from "@/models/DailySale";
-import { memoRetail } from "./cache";
 import { RETAILERS, nombreRetailer } from "./retailers";
 import { fechaISO } from "./normalize";
 
@@ -255,29 +254,23 @@ interface AgregadoCuenta {
 }
 
 /**
- * Una fila por retailer para la portada del módulo.
+ * Ficha de cada retailer para la portada de /retail y para la cabecera de
+ * /retail/[retailer].
  *
  * Sin ventana de tiempo, a diferencia de `resumenDashboard`: la portada habla
  * de todo lo que se ha guardado del retailer, no de los últimos doce meses.
  * Sale sólo de SalesReport —la colección del analizador, la única con datos—
  * y los cuatro de RETAILERS aparecen siempre, tengan reportes o no.
- */
-/**
- * Ficha de cada retailer para la portada de /retail y para la cabecera de
- * /retail/[retailer].
  *
- * Va por `memoRetail` porque es lo primero que espera la navegación a la ficha:
- * el $group con dos $addToSet sobre la colección entera se midió en 2.9 s, 1.5 s
- * y 0.2 s en tres corridas seguidas, y hasta que contesta el navegador ni
- * siquiera ha empezado a pedir los datos de las gráficas. Es el mismo dato para
- * todo el mundo y sólo cambia al guardar o borrar un reporte, que es cuando se
- * invalida.
+ * Se paga entera en cada visita, y es lo primero que espera la navegación a la
+ * ficha: el $group con dos $addToSet recorre la colección completa y se midió
+ * en 2.9 s, 1.5 s y 0.2 s en tres corridas seguidas. Hubo aquí una memoria de
+ * proceso que escondía ese coste, pero invalidarla sólo alcanzaba a la instancia
+ * que atendía la escritura: en Vercel el POST cae en una lambda y el render en
+ * otra, así que la portada seguía contando reportes ya borrados y no veía los
+ * recién subidos. Antes de volver a cachear esto hay que medirlo de nuevo.
  */
 export async function detalleRetailers(): Promise<DetalleRetailer[]> {
-  return memoRetail("detalleRetailers", calcularDetalleRetailers);
-}
-
-async function calcularDetalleRetailers(): Promise<DetalleRetailer[]> {
   await connectDB();
 
   const filas = await SalesReport.aggregate<AgregadoCuenta>([
@@ -342,5 +335,12 @@ async function calcularDetalleRetailers(): Promise<DetalleRetailer[]> {
         ultimoArchivo: carga?.archivo ?? null,
       };
     })
-    .sort((a, b) => b.importe - a.importe || a.nombre.localeCompare(b.nombre));
+    .sort((a, b) => ordenRetailer(a.id) - ordenRetailer(b.id) || a.nombre.localeCompare(b.nombre));
+}
+
+const ORDEN_RETAILERS = ["walmart", "san-pablo", "farmacias-del-ahorro", "heb"];
+
+function ordenRetailer(id: string): number {
+  const i = ORDEN_RETAILERS.indexOf(id);
+  return i === -1 ? ORDEN_RETAILERS.length : i;
 }

@@ -7,6 +7,7 @@
 
 import { Clock, TriangleAlert } from "lucide-react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnalisisKpis } from "@/components/retail/AnalisisKpis";
 import { AnalisisTable } from "@/components/retail/AnalisisTable";
@@ -190,6 +191,7 @@ function fechaHora(iso: string | null): string | null {
  *   se puede cambiar aquí.
  */
 export function AnalisisExcel({ retailer }: { retailer: string }) {
+  const router = useRouter();
   // Arranca cargando: al entrar se busca el último reporte guardado antes de
   // decidir si la pestaña está vacía.
   const [estado, setEstado] = useState<Estado>("cargando");
@@ -402,6 +404,11 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
       }
 
       setGuardado({ insertadas, actualizadas, descartadas });
+      // Lo que pinta el servidor —las Cards de /retail y la cabecera de la
+      // ficha— acaba de quedarse corto. Volver con el botón Atrás restaura del
+      // Router Cache del cliente sin preguntar al servidor, así que sin esto se
+      // vería la página de antes de la subida.
+      router.refresh();
     } catch (error) {
       setMensajeError({
         titulo: "No se pudo guardar en el histórico",
@@ -413,7 +420,7 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
     } finally {
       setGuardando(false);
     }
-  }, [retailer]);
+  }, [retailer, router]);
 
   const alArchivo = useCallback(
     async (file: File) => {
