@@ -485,7 +485,20 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
   return {
     total,
     devueltas: filas.length,
-    filas: filas.map((f) => ({ ...f, _id: String((f as { _id: unknown })._id) })),
+    // .lean() deja objetos Date vivos (p. ej. `date`, `cutoffDate`). El AI SDK
+    // valida el contenido del tool-result y solo admite string/number/null:
+    // un Date lo rechaza con "expected string, received Date" y la respuesta
+    // muere a mitad del streaming (AI_InvalidPromptError). Por eso fallaba solo
+    // en consultas de detalle con fechas y no en las agregadas. Se serializan a
+    // ISO (YYYY-MM-DD), como el modelo ya ve las fechas en el resto.
+    filas: filas.map((f) =>
+      Object.fromEntries(
+        Object.entries({ ...f, _id: String((f as { _id: unknown })._id) }).map(([k, v]) => [
+          k,
+          v instanceof Date ? v.toISOString().slice(0, 10) : v,
+        ])
+      )
+    ),
     ...extra,
   };
 }
