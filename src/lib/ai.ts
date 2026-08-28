@@ -141,6 +141,9 @@ Traduce siempre al presentar, y usa la etiqueta en español de encabezado:
 Y los valores codificados: tYES → Activo y tNO → Inactivo; cSupplier o "S" →
 Proveedor; cCustomer o "C" → Cliente; cLid → Prospecto; bost_Open → Abierto
 y bost_Close → Cerrado; MXP → MXN, y los importes con separador de miles.
+Los importes en monedas distintas (MXN y USD) se presentan SIEMPRE por
+separado: nunca los sumes en una sola cifra ni los conviertas con un tipo de
+cambio inventado.
 
 Los identificadores internos (DocEntry, LineNum, códigos numéricos de grupo)
 no se muestran: usa el folio o el nombre; si solo tienes el código de un
@@ -392,7 +395,10 @@ export function chat(
           `(${ENTIDADES_SAP.join(", ")}); si necesitas otro, úsalo por su nombre. ` +
           "Devuelve filas y el conteo total. Usa $filter OData en `filtro` " +
           "(ej: \"ItemCode eq '70006147'\" o \"contains(ItemName,'GOLI')\"). " +
-          "Si omites `campos` se devuelven los campos clave de la entidad.",
+          "Si omites `campos` se devuelven los campos clave de la entidad. Si pides una " +
+          "colección anidada (DocumentLines…), el resultado incluye `resumenLineas` con " +
+          "las sumas por moneda (cantidad, pendiente, importe) ya calculadas: reporta " +
+          "esas cifras, nunca sumes líneas a mano.",
         inputSchema: z.object({
           entidad: z
             .string()
@@ -426,18 +432,28 @@ export function chat(
       }),
       agregar_sap: tool({
         description:
-          "Totales, conteos, promedios y rankings calculados por SAP sobre TODA la " +
-          "historia de un entity set (no una muestra). Úsala SIEMPRE que pregunten " +
-          "'cuánto en total', 'cuántos', 'el que más/menos' sobre documentos: es una " +
-          "sola llamada y cubre los 8,900+ documentos. Solo campos de CABECERA " +
-          "(DocTotal, CardCode, DocDate…); NO acepta filtros: agrega la historia " +
-          "completa. Para ventas POR ARTÍCULO usa consultar_retail con la colección " +
-          "sapSales (agruparPor itemCode, sumar quantity o lineTotal).",
+          "Totales, conteos, promedios y rankings calculados en el servidor sobre " +
+          "TODOS los documentos de un entity set (no una muestra). Úsala SIEMPRE que " +
+          "pregunten 'cuánto en total', 'cuántos', 'el que más/menos' sobre documentos. " +
+          "Si el total es de un SUBCONJUNTO (un mes, un cliente, solo las abiertas), " +
+          "pasa `filtro`: el servidor pagina y agrega solo eso. NUNCA respondas un " +
+          "total de un periodo o estado con el agregado sin filtro: sería el histórico " +
+          "completo. Solo campos de CABECERA (DocTotal, CardCode, DocDate…). Para " +
+          "ventas POR ARTÍCULO usa consultar_retail con la colección sapSales " +
+          "(agruparPor itemCode, sumar quantity o lineTotal).",
         inputSchema: z.object({
           entidad: z
             .string()
             .max(60)
             .describe("Entity set de documentos, ej: Invoices, Orders, PurchaseOrders"),
+          filtro: z
+            .string()
+            .max(500)
+            .optional()
+            .describe(
+              "$filter OData del subconjunto a agregar, ej: \"DocumentStatus eq 'bost_Open'\" o " +
+                "\"DocDate ge '2026-07-01' and DocDate le '2026-07-31'\". Obligatorio si el total es de un periodo o estado."
+            ),
           agruparPor: z
             .array(z.string().max(60))
             .max(3)

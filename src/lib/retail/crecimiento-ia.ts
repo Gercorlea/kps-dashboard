@@ -28,9 +28,20 @@ const DIA_MS = 86_400_000;
 
 function fechaUTC(iso: string): Date {
   if (!ISO.test(iso)) throw new Error(`Fecha inválida: "${iso}" (usa AAAA-MM-DD)`);
-  const d = new Date(`${iso}T00:00:00.000Z`);
+  const [y, m, dia] = iso.split("-").map(Number);
+  if (m < 1 || m > 12 || dia < 1) throw new Error(`Fecha inválida: "${iso}"`);
+  // Un día que no existe ("2026-02-29") se recorta al último del mes; antes
+  // se desbordaba al mes siguiente y febrero incluía el 1 de marzo.
+  const ultimoDia = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const d = new Date(Date.UTC(y, m - 1, Math.min(dia, ultimoDia)));
   if (Number.isNaN(d.getTime())) throw new Error(`Fecha inválida: "${iso}"`);
   return d;
+}
+
+/** true si el periodo abarca meses calendario completos (del día 1 al último). */
+function esMesesCompletos(desde: Date, hasta: Date): boolean {
+  const ultimo = new Date(Date.UTC(hasta.getUTCFullYear(), hasta.getUTCMonth() + 1, 0)).getUTCDate();
+  return desde.getUTCDate() === 1 && hasta.getUTCDate() === ultimo;
 }
 
 function iso(d: Date): string {
@@ -59,6 +70,16 @@ export function periodoAnterior(p: Periodo, modo: ModoComparacion): Periodo {
     d.setUTCFullYear(d.getUTCFullYear() - 1);
     h.setUTCFullYear(h.getUTCFullYear() - 1);
     return { desde: iso(d), hasta: iso(h) };
+  }
+  // Meses calendario completos se comparan contra los meses calendario
+  // previos (febrero contra TODO enero), no contra una ventana de 28 días
+  // que dejaba fuera el 1-3 de enero y se etiquetaba como "enero".
+  if (esMesesCompletos(desde, hasta)) {
+    const meses =
+      (hasta.getUTCFullYear() - desde.getUTCFullYear()) * 12 + (hasta.getUTCMonth() - desde.getUTCMonth()) + 1;
+    const desdeAnt = new Date(Date.UTC(desde.getUTCFullYear(), desde.getUTCMonth() - meses, 1));
+    const hastaAnt = new Date(Date.UTC(desde.getUTCFullYear(), desde.getUTCMonth(), 0));
+    return { desde: iso(desdeAnt), hasta: iso(hastaAnt) };
   }
   const duracion = Math.round((hasta.getTime() - desde.getTime()) / DIA_MS); // días - 1
   const hastaAnt = new Date(desde.getTime() - DIA_MS);

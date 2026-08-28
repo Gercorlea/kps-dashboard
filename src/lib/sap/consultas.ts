@@ -115,7 +115,9 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
   });
 
   // Lotes: los días de frescura se calculan aquí, nunca los resta el modelo.
-  const filas = enriquecerFrescura(data.value ?? []).map(compactarAnidados);
+  const crudas = data.value ?? [];
+  const resumenLineas = resumirLineas(crudas);
+  const filas = enriquecerFrescura(crudas).map(compactarAnidados);
   const bruto = data["odata.count"] ?? data["@odata.count"];
   const total = bruto === undefined ? null : Number(bruto);
   return {
@@ -123,7 +125,46 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
     devueltas: filas.length,
     filas,
     ...(porDefecto ? { campos: porDefecto } : {}),
+    ...(resumenLineas ? { resumenLineas } : {}),
   };
+}
+
+// Sumas de las colecciones anidadas calculadas AQUÍ, sobre todas las líneas
+// devueltas (antes del recorte a LINEAS_MAX) y por moneda del documento. El
+// modelo sumaba 114 líneas a mano y se equivocaba (724,618 piezas en vez de
+// 907,952): con esto reporta las cifras del servidor.
+const CAMPOS_SUMABLES_LINEA = ["Quantity", "RemainingOpenQuantity", "OpenAmount", "LineTotal"] as const;
+
+export function resumirLineas(filas: Record<string, unknown>[]): Record<string, unknown> | null {
+  const resumen: Record<string, unknown> = {};
+  for (const [k] of Object.entries(filas[0] ?? {})) {
+    let documentos = 0;
+    let lineas = 0;
+    const porMoneda: Record<string, Record<string, number>> = {};
+    for (const fila of filas) {
+      const v = fila[k];
+      if (!Array.isArray(v) || v.length === 0 || !v.every((x) => x && typeof x === "object" && !Array.isArray(x))) continue;
+      documentos++;
+      const moneda = typeof fila.DocCurrency === "string" && fila.DocCurrency ? fila.DocCurrency : "total";
+      const acum = (porMoneda[moneda] ??= {});
+      for (const linea of v as Record<string, unknown>[]) {
+        lineas++;
+        for (const c of CAMPOS_SUMABLES_LINEA) {
+          const n = Number(linea[c]);
+          if (linea[c] !== null && linea[c] !== undefined && Number.isFinite(n)) acum[c] = (acum[c] ?? 0) + n;
+        }
+      }
+    }
+    if (lineas === 0) continue;
+    for (const m of Object.values(porMoneda)) for (const c of Object.keys(m)) m[c] = Math.round(m[c] * 100) / 100;
+    resumen[k] = {
+      documentos,
+      lineas,
+      sumas: porMoneda,
+      nota: "Sumas calculadas por el servidor sobre las filas devueltas: úsalas tal cual, no sumes líneas a mano. Cada moneda va por separado: NUNCA sumes MXP con USD en una sola cifra.",
+    };
+  }
+  return Object.keys(resumen).length ? resumen : null;
 }
 
 // --- Agregación en el servidor (OData v4, /b1s/v2) ---------------------------
@@ -148,6 +189,7 @@ const OPERACION_ODATA: Record<OperacionAgregado, string> = {
 
 export interface AgregadoSap {
   entidad: string; // entity set de cabecera, ej: "Invoices", "Orders"
+  filtro?: string; // $filter OData; con él la agregación se hace en el servidor Node paginando
   agruparPor?: string[]; // campos de agrupación; sin ellos, un total global
   metricas?: Array<{ campo: string; operacion: OperacionAgregado }>;
   top?: number; // grupos a devolver tras ordenar (defecto 20)
@@ -157,10 +199,77 @@ export interface ResultadoAgregadoSap {
   grupos: number; // cuántos grupos existen en total
   devueltas: number;
   filas: Record<string, unknown>[];
+  filtro?: string; // el $filter aplicado (agregación filtrada)
+  documentosConsiderados?: number; // filas leídas para la agregación filtrada
+  truncado?: boolean; // true si se alcanzó el tope de filas y el total es parcial
 }
 
 const CAMPO_ODATA = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TOP_GRUPOS = 1000; // tope de grupos que se traen para ordenar en JS
+
+// SAP no acepta $filter dentro de $apply, así que un total "de las abiertas"
+// o "de julio" se calcula aquí: se pagina la entidad con $filter y $select y
+// se agrega en JS. Sin esto el modelo respondía el histórico completo como si
+// fuera el subconjunto (595 M "de julio" cuando julio eran 46 M).
+const PAGINA_FILTRADO = 100;
+const MAX_FILAS_FILTRADO = 3000;
+
+async function agregarFiltrado(
+  entidad: string,
+  filtro: string,
+  grupos: string[],
+  metricas: Array<{ campo: string; operacion: OperacionAgregado }>,
+  aliasDe: (m: { campo: string; operacion: OperacionAgregado }) => string
+): Promise<{ filas: Record<string, unknown>[]; considerados: number; truncado: boolean }> {
+  const select = [...new Set([...grupos, ...metricas.map((m) => m.campo)])].join(",");
+  const acum = new Map<string, { clave: Record<string, unknown>; n: number; suma: Record<string, number>; max: Record<string, number>; min: Record<string, number> }>();
+  let considerados = 0;
+  let truncado = false;
+  for (let skip = 0; ; skip += PAGINA_FILTRADO) {
+    const params = new URLSearchParams();
+    params.set("$filter", filtro);
+    if (select) params.set("$select", select);
+    params.set("$top", String(PAGINA_FILTRADO));
+    if (skip) params.set("$skip", String(skip));
+    const data = await sapFetch<{ value?: Record<string, unknown>[] }>(`/${entidad}?${params.toString()}`, {
+      headers: { Prefer: `odata.maxpagesize=${PAGINA_FILTRADO}` },
+    });
+    const pagina = data.value ?? [];
+    for (const f of pagina) {
+      considerados++;
+      const clave: Record<string, unknown> = Object.fromEntries(grupos.map((g) => [g, f[g] ?? null]));
+      const k = JSON.stringify(clave);
+      const g = acum.get(k) ?? { clave, n: 0, suma: {}, max: {}, min: {} };
+      g.n++;
+      for (const m of metricas) {
+        const v = Number(f[m.campo]);
+        if (!Number.isFinite(v)) continue;
+        g.suma[m.campo] = (g.suma[m.campo] ?? 0) + v;
+        g.max[m.campo] = Math.max(g.max[m.campo] ?? -Infinity, v);
+        g.min[m.campo] = Math.min(g.min[m.campo] ?? Infinity, v);
+      }
+      acum.set(k, g);
+    }
+    if (pagina.length < PAGINA_FILTRADO) break;
+    if (considerados >= MAX_FILAS_FILTRADO) {
+      truncado = true;
+      break;
+    }
+  }
+  const filas = [...acum.values()].map((g) => {
+    const fila: Record<string, unknown> = { ...g.clave };
+    for (const m of metricas) {
+      const valor =
+        m.operacion === "suma" ? g.suma[m.campo] :
+        m.operacion === "promedio" ? (g.n ? g.suma[m.campo] / g.n : undefined) :
+        m.operacion === "max" ? g.max[m.campo] : g.min[m.campo];
+      fila[aliasDe(m)] = valor === undefined || !Number.isFinite(valor) ? null : Math.round(valor * 100) / 100;
+    }
+    fila.documentos = g.n;
+    return fila;
+  });
+  return { filas, considerados, truncado };
+}
 
 export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgregadoSap> {
   const entidad = consulta.entidad.trim().replace(/^\/+/, "");
@@ -169,6 +278,22 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
   }
   const grupos = (consulta.agruparPor ?? []).filter((c) => CAMPO_ODATA.test(c));
   const metricas = (consulta.metricas ?? []).filter((m) => CAMPO_ODATA.test(m.campo));
+  const filtro = consulta.filtro?.trim();
+  if (filtro) {
+    const aliasDe = (m: { campo: string; operacion: OperacionAgregado }) => `${m.operacion}_${m.campo}`;
+    const { filas, considerados, truncado } = await agregarFiltrado(entidad, filtro, grupos, metricas, aliasDe);
+    const claveOrden = metricas.length ? aliasDe(metricas[0]) : "documentos";
+    filas.sort((a, b) => (Number(b[claveOrden]) || 0) - (Number(a[claveOrden]) || 0));
+    const top = Math.min(Math.max(consulta.top ?? 20, 1), 100);
+    return {
+      grupos: filas.length,
+      devueltas: Math.min(filas.length, top),
+      filas: filas.slice(0, top),
+      filtro,
+      documentosConsiderados: considerados,
+      ...(truncado ? { truncado: true } : {}),
+    };
+  }
 
   // $count siempre: "cuántos documentos" es la pregunta más común.
   const aliasDe = (m: { campo: string; operacion: OperacionAgregado }) =>
