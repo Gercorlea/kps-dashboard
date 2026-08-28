@@ -394,6 +394,24 @@ function fechaISO(v: unknown): string | null {
   return v instanceof Date ? v.toISOString().slice(0, 10) : null;
 }
 
+/**
+ * Deja un documento de `.lean()` apto para el contenido de un tool-result.
+ * El AI SDK solo admite string/number/boolean/null/array/objeto plano: un
+ * `Date` u `ObjectId` vivo lo rechaza ("expected string, received Date") y la
+ * respuesta muere a mitad del streaming (AI_InvalidPromptError). Recorre
+ * también subdocumentos y arrays (p. ej. `dcStock.appointments[].date`).
+ */
+function serializable(v: unknown): unknown {
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10);
+  if (Array.isArray(v)) return v.map(serializable);
+  if (v && typeof v === "object") {
+    if (typeof (v as { toHexString?: unknown }).toHexString === "function") return String(v);
+    if (typeof (v as { toJSON?: unknown }).toJSON === "function") return serializable((v as { toJSON: () => unknown }).toJSON());
+    return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, serializable(x)]));
+  }
+  return v;
+}
+
 /** Expresión de `$group._id` para `agruparPor`, o null si no se puede agrupar por eso. */
 function claveDeGrupo(coleccion: ColeccionRetail, agruparPor: string): unknown {
   if (agruparPor === AGRUPAR_POR_MES) {
@@ -457,12 +475,17 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
     return {
       total: filas.length,
       devueltas: filas.length,
-      filas: filas.map((f) => ({
-        [consulta.agruparPor!]: f._id,
-        ...(campoSuma ? { [campoSuma]: f.total } : {}),
-        registros: f.registros,
-        ...(def.fecha ? { desde: fechaISO(f.desde), hasta: fechaISO(f.hasta) } : {}),
-      })),
+      // La clave de grupo (`_id`) es un Date vivo cuando se agrupa por un
+      // campo de fecha (p. ej. `agruparPor: "date"`); ver serializable().
+      filas: filas.map(
+        (f) =>
+          serializable({
+            [consulta.agruparPor!]: f._id,
+            ...(campoSuma ? { [campoSuma]: f.total } : {}),
+            registros: f.registros,
+            ...(def.fecha ? { desde: fechaISO(f.desde), hasta: fechaISO(f.hasta) } : {}),
+          }) as Record<string, unknown>
+      ),
       ...extra,
     };
   }
@@ -485,20 +508,10 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
   return {
     total,
     devueltas: filas.length,
-    // .lean() deja objetos Date vivos (p. ej. `date`, `cutoffDate`). El AI SDK
-    // valida el contenido del tool-result y solo admite string/number/null:
-    // un Date lo rechaza con "expected string, received Date" y la respuesta
-    // muere a mitad del streaming (AI_InvalidPromptError). Por eso fallaba solo
-    // en consultas de detalle con fechas y no en las agregadas. Se serializan a
-    // ISO (YYYY-MM-DD), como el modelo ya ve las fechas en el resto.
-    filas: filas.map((f) =>
-      Object.fromEntries(
-        Object.entries({ ...f, _id: String((f as { _id: unknown })._id) }).map(([k, v]) => [
-          k,
-          v instanceof Date ? v.toISOString().slice(0, 10) : v,
-        ])
-      )
-    ),
+    // .lean() deja Date/ObjectId vivos (`date`, `cutoffDate`, anidados en
+    // `appointments[]`...). Por eso fallaba solo en consultas de detalle con
+    // fechas y no en las agregadas, que ya pasan por fechaISO(). Ver serializable().
+    filas: filas.map((f) => serializable(f) as Record<string, unknown>),
     ...extra,
   };
 }
