@@ -8,7 +8,7 @@ import { canAccess } from "@/lib/rbac";
 export default async function AdminEstadisticasPage() {
   const usuario = await getSessionUser();
   if (!usuario) redirect("/login");
-  if (!canAccess(usuario, "admin")) return <AccesoDenegado modulo="Administración" />;
+  if (!canAccess(usuario, "admin-estadisticas")) return <AccesoDenegado modulo="Estadísticas" />;
 
   return (
     <>

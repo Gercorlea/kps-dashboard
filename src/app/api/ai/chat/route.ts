@@ -3,6 +3,7 @@ import { isValidObjectId } from "mongoose";
 import type { NextRequest } from "next/server";
 import { ApiError, handleApiError, parseJson } from "@/lib/api";
 import { chat } from "@/lib/ai";
+import { coberturaRetailers } from "@/lib/retail/consultas-ia";
 import { MODELO_DEFECTO, costUSD, esModeloValido } from "@/lib/ai-modelos";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
@@ -78,6 +79,10 @@ export async function POST(request: NextRequest) {
     });
     const result = chat(mensajesModelo, {
       model: body.model,
+      // Qué retailers tienen datos, leído de Mongo (cacheado 5 min) en vez de
+      // enumerado en el prompt: así el modelo no puede llamar "cargados" a los
+      // que están en el catálogo sin un solo reporte.
+      cobertura: await coberturaRetailers(),
       onFinish: async ({ texto, model, entrada, salida, cache, tools }) => {
         try {
           await Message.create({

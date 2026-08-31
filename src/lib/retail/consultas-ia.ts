@@ -218,6 +218,13 @@ export const COLECCIONES_RETAIL = Object.keys(CATALOGO) as [ColeccionRetail, ...
 
 /** Agrupación especial: por mes calendario (AAAA-MM) del campo de fecha. */
 export const AGRUPAR_POR_MES = "mes";
+/**
+ * Agrupación especial: por año (AAAA) del campo de fecha. Sin ella, "qué año
+ * vendió más" obligaba al modelo a agrupar por mes y sumar 12 filas a mano:
+ * comparaba el MES más alto de cada año en vez del total y respondía el año
+ * equivocado (2025 en vez de 2026), distinto en cada intento.
+ */
+export const AGRUPAR_POR_ANIO = "año";
 
 function tipoDeInstancia(instancia: string | undefined): TipoCampo | null {
   switch (instancia) {
@@ -414,9 +421,10 @@ function serializable(v: unknown): unknown {
 
 /** Expresión de `$group._id` para `agruparPor`, o null si no se puede agrupar por eso. */
 function claveDeGrupo(coleccion: ColeccionRetail, agruparPor: string): unknown {
-  if (agruparPor === AGRUPAR_POR_MES) {
+  if (agruparPor === AGRUPAR_POR_MES || agruparPor === AGRUPAR_POR_ANIO) {
     const def: DefinicionColeccion = CATALOGO[coleccion];
-    return def.fecha ? { $dateToString: { format: "%Y-%m", date: `$${def.fecha}` } } : null;
+    const formato = agruparPor === AGRUPAR_POR_MES ? "%Y-%m" : "%Y";
+    return def.fecha ? { $dateToString: { format: formato, date: `$${def.fecha}` } } : null;
   }
   return campoPermitido(coleccion, agruparPor) ? `$${agruparPor}` : null;
 }
@@ -483,7 +491,8 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
           const dir: 1 | -1 = consulta.dir === "asc" ? 1 : -1;
           if (consulta.ordenarPor && campoSuma && consulta.ordenarPor === campoSuma) return { total: dir };
           if (consulta.ordenarPor === "registros") return { registros: dir };
-          if (consulta.agruparPor === AGRUPAR_POR_MES) return { _id: 1 };
+          if (consulta.agruparPor === AGRUPAR_POR_MES || consulta.agruparPor === AGRUPAR_POR_ANIO)
+            return { _id: 1 };
           return campoSuma ? { total: -1 } : { registros: -1 };
         })(),
       },
@@ -545,4 +554,42 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
     filas: filas.map((f) => serializable(f) as Record<string, unknown>),
     ...extra,
   };
+}
+
+/**
+ * Qué retailers tienen datos AHORA MISMO, en una línea por retailer, para
+ * inyectarlo en el prompt.
+ *
+ * El prompt enumeraba los cuatro identificadores del catálogo y el modelo los
+ * recitaba como "los retailers cargados" aunque dos no tuvieran ni una fila:
+ * ninguna regla ("no lo digas de memoria, consúltalo") lo evitó, porque tenía
+ * la lista delante. La única forma de que no afirme algo falso es que lo que
+ * tiene delante sea verdad.
+ */
+let coberturaCache: { texto: string; expira: number } | null = null;
+const COBERTURA_TTL_MS = 5 * 60_000;
+
+export async function coberturaRetailers(): Promise<string> {
+  if (coberturaCache && coberturaCache.expira > Date.now()) return coberturaCache.texto;
+  try {
+    const { filas } = await consultarRetail({
+      coleccion: "salesReports",
+      agruparPor: "account",
+      sumar: "posQty",
+    });
+    const texto = filas.length
+      ? filas
+          .map(
+            (f) =>
+              `- ${f.account}: ${Number(f.registros ?? 0).toLocaleString("es-MX")} registros, ` +
+              `del ${f.desde} al ${f.hasta}`
+          )
+          .join("\n")
+      : "- (ningún retailer tiene reportes cargados todavía)";
+    coberturaCache = { texto, expira: Date.now() + COBERTURA_TTL_MS };
+    return texto;
+  } catch {
+    // Si la consulta falla, mejor no decir nada que arriesgar una lista falsa.
+    return "- (no se pudo consultar la cobertura: averíguala con consultar_retail antes de responder)";
+  }
 }

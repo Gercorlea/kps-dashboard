@@ -8,7 +8,7 @@ import { User } from "@/models/User";
 
 export async function GET() {
   try {
-    await requireModule("admin");
+    await requireModule("admin-usuarios");
     await connectDB();
     const usuarios = await User.find()
       .sort({ createdAt: -1 })

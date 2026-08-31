@@ -3,7 +3,12 @@ import { stepCountIs, streamText, tool } from "ai";
 import type { ModelMessage } from "ai";
 import { z } from "zod";
 import { ENTIDADES_SAP, OPERACIONES_AGREGADO, agregarSap, consultarSap } from "@/lib/sap/consultas";
-import { AGRUPAR_POR_MES, COLECCIONES_RETAIL, consultarRetail } from "@/lib/retail/consultas-ia";
+import {
+  AGRUPAR_POR_ANIO,
+  AGRUPAR_POR_MES,
+  COLECCIONES_RETAIL,
+  consultarRetail,
+} from "@/lib/retail/consultas-ia";
 import { CONTEXTO_RETAIL } from "@/lib/retail/contexto-ia";
 import { pronosticarRetail } from "@/lib/retail/pronostico-ia";
 import { compararPeriodosRetail } from "@/lib/retail/crecimiento-ia";
@@ -55,11 +60,19 @@ Respondes siempre en español, de forma clara, directa y profesional.
 
 Consultas datos en vivo de dos fuentes: SAP Business One (Service Layer) y
 la base de MongoDB del módulo Retail: el histórico de ventas por retailer
-que KPS carga desde los reportes de las cadenas (Walmart, San Pablo, HEB,
-Farmacias del Ahorro), los reportes cargados y la copia de las facturas de
-SAP. Nunca menciones "la pestaña Retail" como respuesta: consulta tú los
-datos con tus tools.
+que KPS carga desde los reportes de las cadenas, los reportes cargados y la
+copia de las facturas de SAP. Nunca menciones "la pestaña Retail" como
+respuesta: consulta tú los datos con tus tools.
 Si no sabes algo, dilo sin inventar.
+
+QUÉ RETAILERS EXISTEN. El catálogo acepta los identificadores walmart,
+san-pablo, heb y farmacias-del-ahorro, pero estar en el catálogo NO es tener
+datos: el bloque "RETAILERS CON DATOS" que viene al final de este prompt dice
+cuáles tienen reportes cargados y de qué fechas. Ésa es la única lista que
+puedes dar por buena. Un retailer del catálogo que no aparezca ahí está dado
+de alta pero SIN reportes, y así se dice; uno que no esté en el catálogo
+—Soriana, Chedraui, Costco…— no existe en el sistema. Nunca llames "cargados"
+ni "disponibles" a los cuatro identificadores del catálogo.
 
 ${CONTEXTO_SAP}
 
@@ -158,8 +171,17 @@ seguimiento sobre esos mismos artículos ya no se pueden contestar.
 
 PREGUNTAS FRECUENTES Y CON QUÉ SE RESPONDEN (regla dura: usa la tool
 indicada; nunca calcules tú lo que la tool ya devuelve calculado).
+- Comparar AÑOS ("qué año vendió más", "ventas por año", "2025 vs 2026"):
+  agrupa por "${AGRUPAR_POR_ANIO}" (consultar_retail) o "${AGRUPAR_POR_ANIO}"
+  en agregar_sap, que devuelve UNA fila por año con el total ya sumado.
+  Nunca agrupes por mes para responder sobre años: sumar doce filas a mano se
+  equivoca, y comparar el mes más alto de un año contra el de otro NO dice qué
+  año vendió más. Compara los totales anuales entre sí, y si un año está
+  incompleto dilo (cuántos meses cubre) en vez de callarlo. Ojo con los meses
+  que concentran las facturas de todo un año (una carga en bloque al cierre,
+  con la misma DocDate): no son un mes excepcional y no se presentan como tal.
 - Unidades vendidas, venta mensual, importe total mensual: si nombran un
-  retailer (Walmart, San Pablo, HEB, Farmacias del Ahorro) es su venta al
+  retailer (walmart, san-pablo, heb, farmacias-del-ahorro) es su venta al
   público: consultar_retail salesReports, sumar posQty (unidades) o posSales
   (importe), agruparPor "${AGRUPAR_POR_MES}" para verlo por mes. Si NO nombran
   retailer es la FACTURACIÓN de KPS en SAP: consultar_retail sapSales, sumar
@@ -359,6 +381,12 @@ export function chat(
   messages: ModelMessage[],
   opciones?: {
     model?: string;
+    /**
+     * Retailers con datos y su rango de fechas, ya formateado. Va con la fecha
+     * (después del corte del caché) porque cambia al cargar un reporte, y el
+     * prompt estático no puede afirmarlo sin arriesgarse a mentir.
+     */
+    cobertura?: string;
     onFinish?: (datos: {
       texto: string;
       model: string;
@@ -385,6 +413,14 @@ export function chat(
         providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
       },
       { role: "system", content: promptFecha() },
+      ...(opciones?.cobertura
+        ? [
+            {
+              role: "system" as const,
+              content: `RETAILERS CON DATOS (consultado ahora, es la lista buena):\n${opciones.cobertura}`,
+            },
+          ]
+        : []),
       ...messages,
     ],
     tools: {
@@ -459,9 +495,12 @@ export function chat(
             .max(3)
             .optional()
             .describe(
-              "Campos de cabecera por los que agrupar (CardName, DocCurrency…) o \"mes\" para el mes " +
-                "calendario de DocDate (requiere `filtro` con rango de fechas). Omite para un total global. " +
-                "Para 'ventas por mes' o 'el mes con más/menos' en SAP usa agruparPor [\"mes\"], nunca deduzcas meses de una muestra."
+              "Campos de cabecera por los que agrupar (CardName, DocCurrency…), \"mes\" para el mes " +
+                "calendario de DocDate o \"año\" para el año (ambos requieren `filtro` con rango de " +
+                "fechas). Omite para un total global. Para 'ventas por mes' o 'el mes con más/menos' " +
+                "usa agruparPor [\"mes\"], nunca deduzcas meses de una muestra. Para 'qué año facturó " +
+                "más' o 'ventas por año' usa agruparPor [\"año\"], que devuelve una fila por año con el " +
+                "total sumado: NO sumes meses a mano ni compares el mes más alto de cada año."
             ),
           metricas: z
             .array(
@@ -501,7 +540,9 @@ export function chat(
           "Usa `agruparPor` + `sumar` para totales exactos sobre todo el histórico " +
           "(ej: producto más vendido en Walmart = salesReports filtrado por account, agrupado " +
           `por itemDesc sumando posQty); agruparPor "${AGRUPAR_POR_MES}" agrupa por mes calendario ` +
-          "del campo de fecha. Los campos de cada colección están en tu referencia interna. " +
+          `y "${AGRUPAR_POR_ANIO}" por año, cada uno con el total ya sumado (para comparar años usa ` +
+          `"${AGRUPAR_POR_ANIO}", NO sumes meses a mano). ` +
+          "Los campos de cada colección están en tu referencia interna. " +
           "Los filtros sobre campos que no existen en la colección se devuelven en " +
           "`camposIgnorados`: si aparece, corrige la consulta.",
         inputSchema: z.object({
@@ -521,7 +562,10 @@ export function chat(
             .string()
             .max(40)
             .optional()
-            .describe(`Campo por el que agrupar, o "${AGRUPAR_POR_MES}" para mes calendario`),
+            .describe(
+              `Campo por el que agrupar, "${AGRUPAR_POR_MES}" para mes calendario o ` +
+                `"${AGRUPAR_POR_ANIO}" para año`
+            ),
           sumar: z
             .string()
             .max(40)
@@ -595,7 +639,14 @@ export function chat(
           "un pronóstico por retailer, brand para uno por marca), máximo 10 series. En " +
           "salesReports usa siempre agruparPor account o un filtro account igual <retailer>. " +
           "Los filtros sobre campos que no existen vuelven en `camposIgnorados` y un filtro sin " +
-          "datos devuelve `aviso`: en ambos casos corrige y vuelve a llamar.",
+          "datos devuelve `aviso`: en ambos casos corrige y vuelve a llamar. " +
+          "MESES DEL PRONÓSTICO: el horizonte NO empieza en el mes de hoy sino justo después de " +
+          "`ultimoMesCompleto`, que puede ir meses atrasado si faltan reportes por cargar. Los " +
+          "meses que devuelve son los únicos válidos: preséntalos con la etiqueta que traen y NO " +
+          "los renombres, corras ni extrapoles a otros meses (`transcurrido` marca los que ya " +
+          "pasaron y `enCurso` el mes actual; TODOS son estimaciones, ninguno es un dato real). " +
+          "Si te piden explícitamente meses contados desde hoy, pide ese periodo con `hastaMes` " +
+          "(AAAA-MM) y responde con lo que devuelva; nunca calcules tú los meses que falten.",
         inputSchema: z.object({
           coleccion: z.enum(COLECCIONES_RETAIL).describe("salesReports (ventas retail) o sapSales (facturación)"),
           filtros: z

@@ -10,7 +10,7 @@ import { canAccess } from "@/lib/rbac";
 export default async function PeticionesPage() {
   const usuario = await getSessionUser();
   if (!usuario) redirect("/login");
-  if (!canAccess(usuario, "proveedores")) return <AccesoDenegado modulo="Proveedores" />;
+  if (!canAccess(usuario, "peticiones")) return <AccesoDenegado modulo="Peticiones" />;
 
   return (
     <>

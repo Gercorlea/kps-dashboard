@@ -24,7 +24,7 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    const usuario = await requireModule("proveedores");
+    const usuario = await requireModule("peticiones");
 
     // El cuerpo es opcional: un POST sin nada es "sincroniza todo". Un JSON
     // malformado se trata como ausente y no como error, porque la llamada

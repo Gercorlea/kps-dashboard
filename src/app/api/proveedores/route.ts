@@ -98,7 +98,7 @@ function normalizar(texto: string): string {
 
 export async function GET(req: Request) {
   try {
-    await requireModule("proveedores");
+    await requireModule("proveedores-alta");
 
     const url = new URL(req.url);
     const q = normalizar(url.searchParams.get("q")?.trim() ?? "");
@@ -187,7 +187,7 @@ const RFC_GENERICOS = ["XAXX010101000", "XEXX010101000"];
 
 export async function POST(req: Request) {
   try {
-    const usuario = await requireModule("proveedores");
+    const usuario = await requireModule("proveedores-alta");
     const { cardCode, type, email: emailBruto, password } = await parseJson(req, EsquemaAlta);
     const email = (emailBruto ?? "").trim().toLowerCase();
 

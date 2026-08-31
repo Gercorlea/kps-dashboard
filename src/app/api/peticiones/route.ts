@@ -22,7 +22,7 @@ function importe(v: unknown): string {
 
 export async function GET(req: Request) {
   try {
-    await requireModule("proveedores");
+    await requireModule("peticiones");
 
     const url = new URL(req.url);
     const estatus = url.searchParams.get("estatus")?.trim();

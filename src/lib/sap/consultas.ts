@@ -214,6 +214,15 @@ const TOP_GRUPOS = 1000; // tope de grupos que se traen para ordenar en JS
 const PAGINA_FILTRADO = 100;
 const MAX_FILAS_FILTRADO = 20_000;
 export const GRUPO_MES = "mes";
+/**
+ * Agrupar por año (AAAA) de DocDate. Sin esto, "qué año se facturó más"
+ * obligaba al modelo a agrupar por mes y sumarlos a mano: comparaba el MES más
+ * alto de cada año en vez del total anual y respondía el año equivocado. En
+ * SAP el error es doble, porque las 1,590 facturas de 2025 están cargadas en
+ * bloque con DocDate 2025-12-31: ese "diciembre" gana cualquier comparación
+ * mes a mes aunque 2026 facture casi el triple en el año.
+ */
+export const GRUPO_ANIO = "año";
 
 async function agregarFiltrado(
   entidad: string,
@@ -226,7 +235,7 @@ async function agregarFiltrado(
   // con $skip sin $orderby el Service Layer no garantiza páginas estables y
   // al superar el tope se cortaba un mes por la mitad (diciembre 2025 salía
   // con 1,289 de 1,590 facturas). Cada página es una consulta indexada nueva.
-  const camposSelect = grupos.map((g) => (g === GRUPO_MES ? "DocDate" : g));
+  const camposSelect = grupos.map((g) => (g === GRUPO_MES || g === GRUPO_ANIO ? "DocDate" : g));
   const select = [...new Set(["DocEntry", ...camposSelect, ...metricas.map((m) => m.campo)])].join(",");
   const acum = new Map<string, { clave: Record<string, unknown>; n: number; suma: Record<string, number>; max: Record<string, number>; min: Record<string, number> }>();
   let considerados = 0;
@@ -252,7 +261,13 @@ async function agregarFiltrado(
     for (const f of pagina) {
       considerados++;
       const clave: Record<string, unknown> = Object.fromEntries(
-        grupos.map((g) => [g, g === GRUPO_MES ? String(f.DocDate ?? "").slice(0, 7) || null : (f[g] ?? null)])
+        grupos.map((g) => {
+          if (g !== GRUPO_MES && g !== GRUPO_ANIO) return [g, f[g] ?? null];
+          // DocDate llega como texto ISO: el mes son sus 7 primeros caracteres
+          // y el año los 4 primeros.
+          const fecha = String(f.DocDate ?? "");
+          return [g, fecha.slice(0, g === GRUPO_MES ? 7 : 4) || null];
+        })
       );
       const k = JSON.stringify(clave);
       const g = acum.get(k) ?? { clave, n: 0, suma: {}, max: {}, min: {} };
@@ -294,20 +309,28 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
   if (!entidad || entidad.includes("..") || PROHIBIDAS.has(nombreEntidad(entidad))) {
     throw new Error(`Entidad no permitida: ${consulta.entidad}`);
   }
-  const grupos = (consulta.agruparPor ?? []).filter((c) => CAMPO_ODATA.test(c));
+  // `mes` y `año` no son campos de OData sino agrupaciones que se calculan
+  // aquí a partir de DocDate: la regex de campo las rechazaría ("año" ni
+  // siquiera es ASCII) y se caerían en silencio, devolviendo UN total global
+  // en vez de una fila por periodo.
+  const grupos = (consulta.agruparPor ?? []).filter(
+    (c) => c === GRUPO_MES || c === GRUPO_ANIO || CAMPO_ODATA.test(c)
+  );
   const metricas = (consulta.metricas ?? []).filter((m) => CAMPO_ODATA.test(m.campo));
   const filtro = consulta.filtro?.trim();
-  const porMes = grupos.includes(GRUPO_MES);
-  if (porMes && !filtro) {
+  const porPeriodo = grupos.includes(GRUPO_MES) || grupos.includes(GRUPO_ANIO);
+  if (porPeriodo && !filtro) {
     throw new Error(
-      "Agrupar por mes requiere acotar el periodo en `filtro`, ej: \"DocDate ge '2025-01-01' and DocDate le '2025-12-31'\"."
+      "Agrupar por mes o año requiere acotar el periodo en `filtro`, ej: \"DocDate ge '2025-01-01' and DocDate le '2026-12-31'\"."
     );
   }
   if (filtro) {
     const aliasDe = (m: { campo: string; operacion: OperacionAgregado }) => `${m.operacion}_${m.campo}`;
     const { filas, considerados, total, truncado } = await agregarFiltrado(entidad, filtro, grupos, metricas, aliasDe);
     const claveOrden = metricas.length ? aliasDe(metricas[0]) : "documentos";
-    if (porMes) filas.sort((a, b) => String(a[GRUPO_MES]).localeCompare(String(b[GRUPO_MES])));
+    const clavePeriodo = grupos.includes(GRUPO_MES) ? GRUPO_MES : GRUPO_ANIO;
+    if (porPeriodo)
+      filas.sort((a, b) => String(a[clavePeriodo]).localeCompare(String(b[clavePeriodo])));
     else filas.sort((a, b) => (Number(b[claveOrden]) || 0) - (Number(a[claveOrden]) || 0));
     const top = Math.min(Math.max(consulta.top ?? 20, 1), 100);
     return {

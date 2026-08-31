@@ -1,11 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, Pencil, ShieldOff, UserPlus } from "lucide-react";
+import { ChevronRight, KeyRound, Pencil, ShieldOff, UserPlus } from "lucide-react";
 import { api, ClientApiError } from "@/components/lib/api-client";
 import { fmtFecha } from "@/components/lib/fmt";
 import { Badge, Panel } from "@/components/ui/basicos";
-import { MODULES } from "@/lib/rbac";
+import {
+  expandirModulos,
+  MODULE_NAMES,
+  type ModuleId,
+  NAV_SECTIONS,
+  type NavSection,
+} from "@/lib/rbac";
 
 interface UsuarioFila {
   id: string;
@@ -35,12 +41,30 @@ const FORM_VACIO: Formulario = {
   active: true,
 };
 
+/** Los permisos que se pueden marcar en una sección, uno por página. */
+function permisosDeSeccion(seccion: NavSection): ModuleId[] {
+  return seccion.items.map((i) => i.module).filter((m): m is ModuleId => m !== null);
+}
+
+// Texto del contador que va en la cabecera de cada sección cerrada: sin abrirla
+// se ve de un vistazo a cuántas páginas entra el usuario.
+function resumenSeccion(seccion: NavSection, modules: string[]): string {
+  const permisos = permisosDeSeccion(seccion);
+  if (permisos.length === 0) return "siempre visible";
+  const dados = permisos.filter((m) => modules.includes(m)).length;
+  if (dados === 0) return "sin acceso";
+  return dados === permisos.length ? `todo (${dados})` : `${dados} de ${permisos.length}`;
+}
+
 export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
   const [usuarios, setUsuarios] = useState<UsuarioFila[]>([]);
   const [form, setForm] = useState<Formulario | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  // Secciones desplegadas del formulario; arrancan cerradas para que el alta se
+  // lea de corrido y se abra solo lo que se quiera revisar.
+  const [seccionesAbiertas, setSeccionesAbiertas] = useState<string[]>([]);
 
   const cargar = useCallback(async () => {
     try {
@@ -52,10 +76,37 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
   }, []);
 
   useEffect(() => {
-    // fetch-on-mount: el flag de carga se activa al iniciar la petición
-     
+    // fetch-on-mount: el flag de carga se activa al iniciar la petición.
+    // Los setState ocurren tras el await, ya fuera del render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void cargar();
   }, [cargar]);
+
+  // El formulario siempre abre con las secciones cerradas: se ve entero de un
+  // vistazo y se despliega sólo lo que se quiera revisar. El contador de cada
+  // cabecera ya dice si el usuario entra ahí sin necesidad de abrirla.
+  function abrirForm(valores: Formulario) {
+    setForm(valores);
+    setSeccionesAbiertas([]);
+  }
+
+  function alternarSeccion(id: string) {
+    setSeccionesAbiertas((abiertas) =>
+      abiertas.includes(id) ? abiertas.filter((x) => x !== id) : [...abiertas, id],
+    );
+  }
+
+  // Alta y baja de módulos siempre por esta vía: así una sección con varias
+  // páginas del mismo módulo no puede dejar el arreglo con duplicados.
+  function fijarModulos(ids: string[], activar: boolean) {
+    setForm((actual) => {
+      if (!actual) return actual;
+      const modules = activar
+        ? [...actual.modules.filter((m) => !ids.includes(m)), ...ids]
+        : actual.modules.filter((m) => !ids.includes(m));
+      return { ...actual, modules };
+    });
+  }
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -127,7 +178,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
           <button
             type="button"
             className="cr-btn cr-btn--primary"
-            onClick={() => setForm({ ...FORM_VACIO })}
+            onClick={() => abrirForm({ ...FORM_VACIO })}
           >
             <UserPlus strokeWidth={1.75} />
             Nuevo usuario
@@ -154,7 +205,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                 <th>Nombre</th>
                 <th>Correo</th>
                 <th>Rol</th>
-                <th>Módulos</th>
+                <th>Accesos</th>
                 <th>Estado</th>
                 <th>Alta</th>
                 {esSuperadmin ? <th>Acciones</th> : null}
@@ -173,7 +224,9 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                       {u.role === "superadmin" ? (
                         <span className="cr-small">todos</span>
                       ) : (
-                        u.modules.map((m) => <Badge key={m}>{m}</Badge>)
+                        expandirModulos(u.modules).map((m) => (
+                          <Badge key={m}>{MODULE_NAMES.get(m) ?? m}</Badge>
+                        ))
                       )}
                     </span>
                   </td>
@@ -189,12 +242,15 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                           className="cr-btn cr-btn--ghost cr-btn--sm"
                           title="Editar"
                           onClick={() =>
-                            setForm({
+                            abrirForm({
                               id: u.id,
                               email: u.email,
                               name: u.name,
                               password: "",
-                              modules: u.modules,
+                              // Expandidos: un usuario guardado con el
+                              // permiso viejo de sección aparece con sus
+                              // páginas marcadas, y al guardar queda migrado.
+                              modules: expandirModulos(u.modules),
                               active: u.active,
                             })
                           }
@@ -237,10 +293,12 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
       </Panel>
 
       {form ? (
-        <div className="cr-backdrop z-50 flex items-center justify-center p-4">
-          <form onSubmit={guardar} className="cr-card w-full max-w-md p-6">
-            <h2 className="cr-h2 mb-4">{form.id === null ? "Nuevo usuario" : "Editar usuario"}</h2>
-            <div className="flex flex-col gap-4">
+        <div className="cr-modal">
+          <form onSubmit={guardar} className="cr-modal__caja">
+            <div className="cr-modal__head">
+              <h2 className="cr-h2">{form.id === null ? "Nuevo usuario" : "Editar usuario"}</h2>
+            </div>
+            <div className="cr-modal__cuerpo">
               <label className="cr-field">
                 <span className="cr-label">Nombre</span>
                 <input
@@ -275,25 +333,73 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                 </label>
               ) : null}
               <fieldset className="cr-field">
-                <span className="cr-label">Módulos con acceso</span>
-                <div className="flex flex-col gap-2">
-                  {MODULES.map((m) => (
-                    <label key={m.id} className="flex items-center gap-2 text-[13px]">
-                      <input
-                        type="checkbox"
-                        checked={form.modules.includes(m.id)}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            modules: e.target.checked
-                              ? [...form.modules, m.id]
-                              : form.modules.filter((x) => x !== m.id),
-                          })
-                        }
-                      />
-                      {m.name}
-                    </label>
-                  ))}
+                <span className="cr-label">Qué puede ver este usuario</span>
+                <div className="cr-accesos">
+                  {NAV_SECTIONS.map((seccion) => {
+                    const permisos = permisosDeSeccion(seccion);
+                    // Una sección sin permisos —General— la ve cualquiera con
+                    // sesión: se muestra para que se entienda el menú completo,
+                    // pero no hay nada que marcar.
+                    const fija = permisos.length === 0;
+                    const abierta = seccionesAbiertas.includes(seccion.id);
+                    const todos = permisos.every((m) => form.modules.includes(m));
+                    const algunos = permisos.some((m) => form.modules.includes(m));
+                    return (
+                      <div key={seccion.id} className="cr-acceso">
+                        <div className="cr-acceso__head">
+                          <input
+                            type="checkbox"
+                            className="cr-acceso__check"
+                            checked={fija || todos}
+                            disabled={fija}
+                            aria-label={`Dar acceso a toda la sección ${seccion.name}`}
+                            ref={(el) => {
+                              if (el) el.indeterminate = !fija && algunos && !todos;
+                            }}
+                            onChange={(e) => fijarModulos(permisos, e.target.checked)}
+                          />
+                          <button
+                            type="button"
+                            className="cr-acceso__toggle"
+                            aria-expanded={abierta}
+                            onClick={() => alternarSeccion(seccion.id)}
+                          >
+                            <span className="cr-acceso__nombre">{seccion.name}</span>
+                            <span className="cr-acceso__resumen">
+                              {resumenSeccion(seccion, form.modules)}
+                            </span>
+                            <ChevronRight
+                              strokeWidth={1.75}
+                              className={`cr-acceso__chevron${abierta ? " cr-acceso__chevron--abierto" : ""}`}
+                            />
+                          </button>
+                        </div>
+                        {abierta ? (
+                          <div className="cr-acceso__cuerpo">
+                            {seccion.items.map((item) => {
+                              const permiso = item.module;
+                              return permiso === null ? (
+                                <p key={item.href} className="cr-acceso__fija">
+                                  {item.label} <span className="cr-acceso__ruta">{item.href}</span>
+                                  <span className="cr-acceso__nota">Visible para todos</span>
+                                </p>
+                              ) : (
+                                <label key={item.href} className="cr-acceso__pagina">
+                                  <input
+                                    type="checkbox"
+                                    checked={form.modules.includes(permiso)}
+                                    onChange={(e) => fijarModulos([permiso], e.target.checked)}
+                                  />
+                                  {item.label}
+                                  <span className="cr-acceso__ruta">{item.href}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               </fieldset>
               <label className="flex items-center gap-2 text-[13px]">
@@ -304,18 +410,18 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                 />
                 Usuario activo
               </label>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="cr-btn cr-btn--ghost"
-                  onClick={() => setForm(null)}
-                >
-                  Cancelar
-                </button>
-                <button type="submit" className="cr-btn cr-btn--primary" disabled={guardando}>
-                  Guardar
-                </button>
-              </div>
+            </div>
+            <div className="cr-modal__pie">
+              <button
+                type="button"
+                className="cr-btn cr-btn--ghost"
+                onClick={() => setForm(null)}
+              >
+                Cancelar
+              </button>
+              <button type="submit" className="cr-btn cr-btn--primary" disabled={guardando}>
+                Guardar
+              </button>
             </div>
           </form>
         </div>

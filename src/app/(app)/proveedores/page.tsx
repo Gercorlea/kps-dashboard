@@ -13,7 +13,7 @@ import { canAccess } from "@/lib/rbac";
 export default async function ProveedoresPage() {
   const usuario = await getSessionUser();
   if (!usuario) redirect("/login");
-  if (!canAccess(usuario, "proveedores")) return <AccesoDenegado modulo="Proveedores" />;
+  if (!canAccess(usuario, "proveedores-alta")) return <AccesoDenegado modulo="Proveedores" />;
 
   return (
     <>

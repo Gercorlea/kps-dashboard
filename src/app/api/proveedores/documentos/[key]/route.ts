@@ -18,7 +18,7 @@ export const runtime = "nodejs";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ key: string }> }) {
   try {
-    await requireModule("proveedores");
+    await requireModule("proveedores-alta");
     const { key } = await params;
 
     const doc = await StoredDocument().findById(key).lean();

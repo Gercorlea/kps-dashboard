@@ -22,7 +22,7 @@ export const runtime = "nodejs";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ folio: string }> }) {
   try {
-    const usuario = await requireModule("proveedores");
+    const usuario = await requireModule("peticiones");
     const { folio } = await params;
 
     const pago = await simularPago({ folio, actorId: usuario.id, actorRole: usuario.role });

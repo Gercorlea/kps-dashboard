@@ -15,7 +15,7 @@ import { DailySale } from "@/models/DailySale";
 // Estadísticas del sistema para el módulo de administración (§0).
 export async function GET() {
   try {
-    await requireModule("admin");
+    await requireModule("admin-estadisticas");
     await connectDB();
 
     const [usuarios, usuariosActivos, cargas, porStatus, chats, mensajes] = await Promise.all([

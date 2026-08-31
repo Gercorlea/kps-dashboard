@@ -51,6 +51,12 @@ export interface PuntoMes {
   ultimoDia?: number;
   /** Sólo en el pronóstico: el mes ya pasó respecto a hoy. */
   transcurrido?: boolean;
+  /**
+   * Sólo en el pronóstico: es el mes en curso. Sin esta marca, el único mes
+   * del horizonte sin `transcurrido` parecía el dato real de hoy y se
+   * presentaba como "real" en vez de como estimación.
+   */
+  enCurso?: boolean;
 }
 
 export type MetodoProyeccion = "estacional" | "tendencia" | "promedio";
@@ -91,6 +97,13 @@ export interface Proyeccion {
   pruebaRetrospectiva: PruebaRetrospectiva | null;
   /** Último mes completo que se sale de la mediana de los anteriores. */
   mesAtipico?: { mes: string; desviacionPct: number };
+  /**
+   * Cuánto se desvía la mediana de ajustado/real sobre los meses que
+   * entrenaron el ajuste (0 = la recta pasa por en medio de la serie; +200 =
+   * el triple de lo real). Mide EL MISMO ajuste que se proyecta, mientras que
+   * `pruebaRetrospectiva` mide otro entrenado sin los últimos meses.
+   */
+  sesgoAjustePct?: number;
   /** Meses entre el último completo y el mes actual (0 = está al día). */
   mesesDesdeUltimoDato?: number;
   notas: string[];
@@ -100,6 +113,12 @@ export interface Proyeccion {
 const MIN_TENDENCIA = 6;
 /** Meses completos mínimos para estimar estacionalidad (dos vueltas al año). */
 const MIN_ESTACIONAL = 24;
+/**
+ * Meses recientes sobre los que se mide el nivel y la tendencia cuando hay
+ * más histórico que eso. Doce = una vuelta entera del calendario, así que la
+ * recta desestacionalizada no queda sesgada por qué meses del ciclo entraron.
+ */
+const VENTANA_TENDENCIA = 12;
 /** Día a partir del cual un mes se da por completo por su final. */
 const DIA_MES_COMPLETO = 28;
 /** Día hasta el cual un mes se da por completo por su inicio. */
@@ -109,6 +128,21 @@ const MESES_PRUEBA = 3;
 /** Error de la prueba a partir del cual la confianza baja un escalón / dos. */
 const ERROR_MEDIO_PCT = 15;
 const ERROR_ALTO_PCT = 30;
+/** Vueltas máximas de índices → recta → índices, y cuándo darla por convergida. */
+const MAX_ITERACIONES_AJUSTE = 10;
+const TOLERANCIA_AJUSTE = 1e-10;
+/**
+ * Desviación de la mediana de ajustado/real a partir de la cual el ajuste se
+ * considera sesgado (la recta pasa por encima o por debajo de casi toda la
+ * serie, no por en medio) y la confianza se rebaja.
+ */
+const SESGO_AJUSTE_PCT = 25;
+/**
+ * Fracción del nivel reciente por debajo de la cual los PRIMEROS meses del
+ * histórico se consideran arranque (despliegue del producto) y se dejan fuera
+ * del ajuste.
+ */
+const ARRANQUE_PCT = 0.25;
 /** Desviación del último mes frente a la mediana previa para llamarlo atípico. */
 const ATIPICO_PCT = 50;
 const HORIZONTE_MAX = 12;
@@ -142,11 +176,38 @@ export function mesActualMX(ahora: Date = new Date()): string {
     .slice(0, 7);
 }
 
+/**
+ * Cuánto se desvía, en porcentaje, la MEDIANA de ajustado/real sobre los meses
+ * dados: 0 = la curva pasa por en medio de la serie, +200 = por el triple.
+ * Mediana y no media para que los meses de arranque de un producto —que
+ * ninguna recta puede seguir— no disparen solos la alarma. `null` si ningún
+ * mes es medible (todos en cero).
+ */
+function sesgoMediano(puntos: PuntoMes[], ajustadoEn: (indice: number) => number): number | null {
+  // El índice que recibe `ajustadoEn` es el del punto en `puntos`: se mapea
+  // ANTES de descartar los meses en cero, o los índices se desplazarían.
+  const razones = puntos
+    .map((p, i) => (Math.abs(p.valor) > 1e-9 ? ajustadoEn(i) / p.valor : null))
+    .filter((r): r is number => r !== null)
+    .sort((x, y) => x - y);
+  if (!razones.length) return null;
+  const medio = Math.floor(razones.length / 2);
+  const mediana = razones.length % 2 ? razones[medio] : (razones[medio - 1] + razones[medio]) / 2;
+  return (mediana - 1) * 100;
+}
+
 interface Ajuste {
   metodo: MetodoProyeccion;
   promedio: number;
   pendiente: number;
   indices: number[] | null;
+  /**
+   * Meses (de los completos, contando desde el final) que ajustaron la recta.
+   * Es menor que el total cuando la tendencia se reancla a la ventana
+   * reciente, y es sobre esos meses sobre los que tiene sentido medir si el
+   * ajuste describe los datos.
+   */
+  mesesTendencia: number;
   /** Tendencia sin estacionalidad en un índice de mes absoluto. */
   nivel: (indiceAbsoluto: number) => number;
   /** Valor proyectado (tendencia × estacionalidad, nunca negativo). */
@@ -183,6 +244,9 @@ function ajustar(completos: PuntoMes[], objetivo?: MetodoProyeccion): Ajuste {
   let a = promedio;
   let b = 0;
   let metodo: MetodoProyeccion = "promedio";
+  // Meses (desde el final) que acaban ajustando la recta: todos, salvo cuando
+  // la tendencia se reancla a la ventana reciente.
+  let mesesTendencia = n;
   if (n >= MIN_TENDENCIA) {
     b = bOLS;
     a = promedio - b * mx;
@@ -237,57 +301,135 @@ function ajustar(completos: PuntoMes[], objetivo?: MetodoProyeccion): Ajuste {
         brutos[m] = Number.isNaN(brutos[izq]) || Number.isNaN(brutos[der]) ? 1 : (brutos[izq] + brutos[der]) / 2;
       }
       interpolados = vacios;
-      conUnAnio = cuentas.map((c, m) => (c === 1 && !forzarEstacional ? m : -1)).filter((m) => m >= 0);
+      // Se avisa SIEMPRE, también con el método forzado. La excepción existía
+      // porque forzar era cosa de la prueba retrospectiva, cuyas notas se
+      // descartan; desde que el método se elige por acierto medido, el ajuste
+      // forzado puede ser el que se proyecta, y entonces callar que el factor
+      // de un mes se apoya en un solo año esconde justo lo que hay que saber.
+      conUnAnio = cuentas.map((c, m) => (c === 1 ? m : -1)).filter((m) => m >= 0);
       const media = brutos.reduce((s, v) => s + v, 0) / 12;
       return media > 0 ? brutos.map((v) => v / media) : null;
     };
 
     // El nivel NO puede ser la media cruda: si la muestra no cubre vueltas
     // enteras (21 meses en la prueba retrospectiva), la media queda sesgada
-    // por qué meses del ciclo entraron. Se estima sobre la serie
-    // desestacionalizada y se itera nivel → índices → nivel → pendiente
-    // (las diferencias interanuales también se desestacionalizan), que
-    // converge en dos pasadas (exacto para una serie periódica).
+    // por qué meses del ciclo entraron. La diferencia interanual sólo sirve
+    // para ARRANCAR (sobre una serie con estacionalidad la recta cruda toma el
+    // pico de fin de año como crecimiento); de ahí se itera
+    // índices → desestacionalizar → recta → índices.
+    //
+    // La recta se ajusta por mínimos cuadrados sobre la serie DESESTACIONALIZADA
+    // (cada mes dividido entre el factor del suyo). Antes el nivel se sacaba
+    // igualando sumas y la pendiente dividiendo la diferencia interanual entre
+    // ese factor: con factores pequeños (julio 0.51 en Walmart) esa división
+    // inflaba la pendiente, la recta se empinaba, el nivel se iba por debajo de
+    // cero, los meses con tendencia <= 0 se caían del cálculo de índices
+    // (`t <= 0`) y la vuelta siguiente empeoraba. Divergía en tres pasadas a una
+    // recta 3.3x por encima de TODOS los meses reales. Sobre la serie
+    // desestacionalizada la recta no puede alejarse de los datos que la ajustan,
+    // y para un patrón multiplicativo exacto recupera la pendiente exacta.
+    //
+    // `cuales` son las posiciones que entran a la recta: la iteración usa
+    // todas (el patrón estacional necesita las dos vueltas del calendario) y
+    // el ajuste final solo las recientes (ver VENTANA_TENDENCIA abajo).
+    const rectaSobre = (cuales: number[], factores: number[]) => {
+      // Un factor <= 0 (métrica con devoluciones) no puede dividir: ese mes se
+      // queda con su valor crudo en vez de irse a infinito.
+      const zs = cuales.map((i) => {
+        const factor = factores[calendario[i]];
+        return factor > 0 ? completos[i].valor / factor : completos[i].valor;
+      });
+      const xv = cuales.map((i) => xs[i]);
+      const m = cuales.length;
+      const mxv = xv.reduce((s, x) => s + x, 0) / m;
+      const mzv = zs.reduce((s, z) => s + z, 0) / m;
+      const sxxv = xv.reduce((s, x) => s + (x - mxv) ** 2, 0);
+      const pend =
+        sxxv === 0 ? 0 : xv.reduce((s, x, k) => s + (x - mxv) * (zs[k] - mzv), 0) / sxxv;
+      return { nivel: mzv - pend * mxv, pendiente: pend };
+    };
+    const todos = completos.map((_, i) => i);
+
     let pendiente = bInteranual;
     let nivel0 = promedio - pendiente * mx;
     let candidatos = calcularIndices(nivel0, pendiente);
     if (candidatos) {
-      const porIndicePunto = new Map(completos.map((p, i) => [indiceMes(p.mes), i]));
-      for (let k = 0; k < 3 && candidatos; k++) {
-        const den = calendario.reduce((s, c) => s + candidatos![c], 0);
-        const num = completos.reduce(
-          (s, p, i) => s + p.valor - pendiente * xs[i] * candidatos![calendario[i]],
-          0
-        );
-        if (den > 0) nivel0 = num / den;
-        if (diferencias.length) {
-          let suma = 0;
-          let cuenta = 0;
-          for (const [i, idx] of porIndicePunto) {
-            const previo = porIndicePunto.get(i - 12);
-            if (previo === undefined) continue;
-            const factor = candidatos![calendario[idx]];
-            if (factor > 0) {
-              suma += (completos[idx].valor - completos[previo].valor) / factor;
-              cuenta += 1;
-            }
-          }
-          if (cuenta) pendiente = suma / cuenta / 12;
-        }
-        candidatos = calcularIndices(nivel0, pendiente) ?? candidatos;
+      for (let k = 0; k < MAX_ITERACIONES_AJUSTE && candidatos; k++) {
+        const recta = rectaSobre(todos, candidatos);
+        const movimiento =
+          Math.abs(recta.pendiente - pendiente) + Math.abs(recta.nivel - nivel0);
+        pendiente = recta.pendiente;
+        nivel0 = recta.nivel;
+        const siguientes = calcularIndices(nivel0, pendiente);
+        if (!siguientes) break;
+        candidatos = siguientes;
+        if (movimiento <= TOLERANCIA_AJUSTE * (Math.abs(nivel0) + 1)) break;
       }
-      indices = candidatos;
-      a = nivel0;
-      b = pendiente;
-      metodo = "estacional";
+
+      // Los factores estacionales ya están: se estiman con TODO el histórico
+      // porque necesitan ver cada mes calendario varias veces. El nivel y la
+      // tendencia, en cambio, se reanclan a los últimos VENTANA_TENDENCIA
+      // meses.
+      //
+      // Por qué: una serie de dos años puede ser dos regímenes pegados. En
+      // Walmart el primer año es el despliegue del producto (411 → 12,644
+      // unidades) y el segundo la operación ya estable (~26–33 mil). Una sola
+      // recta sobre los 24 meses sale demasiado empinada y demasiado alta
+      // justo en el tramo reciente, que es el único desde el que se proyecta:
+      // el importe se iba un 11–25% por encima de todos los meses de 2026.
+      // Una ventana de 12 meses cubre una vuelta entera del calendario, así
+      // que la recta desestacionalizada no queda sesgada por qué meses entran.
+      const ventana = todos.slice(-Math.min(VENTANA_TENDENCIA, n));
+      if (ventana.length >= MIN_TENDENCIA && ventana.length < n) {
+        const anclada = rectaSobre(ventana, candidatos);
+        nivel0 = anclada.nivel;
+        pendiente = anclada.pendiente;
+        mesesTendencia = ventana.length;
+        notas.push(
+          `La tendencia se mide sobre los últimos ${ventana.length} meses; los anteriores ` +
+            "solo aportan al patrón estacional."
+        );
+      }
+      // La iteración converge cuando la serie ES nivel lineal × estacionalidad.
+      // Cuando no lo es (un arranque de producto que se multiplica por 65 en dos
+      // años no es una recta), puede quedarse en un punto fijo que no describe
+      // los datos: la recta acaba por encima —o por debajo— de casi todos los
+      // meses. Eso no se devuelve como pronóstico: se comprueba y, si está
+      // sesgado, se usa la recta sola, que por mínimos cuadrados sobre los
+      // valores crudos siempre pasa por en medio de la nube.
+      // Se mide sobre los meses que ajustaron la recta, no sobre todos: los del
+      // arranque quedan lejos a propósito (son otro régimen) y harían saltar la
+      // alarma justo en las series que la ventana viene a arreglar.
+      const usados = todos.slice(-mesesTendencia);
+      const sesgo = sesgoMediano(
+        usados.map((i) => completos[i]),
+        (k) => {
+          const i = usados[k];
+          return (nivel0 + pendiente * xs[i]) * candidatos![calendario[i]];
+        }
+      );
+      const sesgado = sesgo !== null && Math.abs(sesgo) > SESGO_AJUSTE_PCT;
+      if (sesgado) {
+        notas.push(
+          `El ajuste estacional quedaba un ${Math.abs(redondear(sesgo!))}% ` +
+            `${sesgo! > 0 ? "por encima" : "por debajo"} de la mitad de los meses reales: ` +
+            "la serie no sigue un nivel lineal con estacionalidad y se proyecta sólo la tendencia."
+        );
+      } else {
+        indices = candidatos;
+        a = nivel0;
+        b = pendiente;
+        metodo = "estacional";
+      }
+      // Cómo se estimaron los factores sólo importa si se van a usar.
       const nombre = (m: number) => String(m + 1).padStart(2, "0");
-      if (interpolados.length) {
+      if (!sesgado && interpolados.length) {
         notas.push(
           `Sin datos de ${interpolados.map(nombre).join(" y ")} en ningún año: su factor ` +
             "estacional se estimó a partir de los meses vecinos."
         );
       }
-      if (conUnAnio.length) {
+      if (!sesgado && conUnAnio.length) {
         notas.push(`El factor estacional de ${conUnAnio.map(nombre).join(", ")} se estimó con un solo año.`);
       }
     } else if (abarca >= MIN_ESTACIONAL) {
@@ -304,6 +446,7 @@ function ajustar(completos: PuntoMes[], objetivo?: MetodoProyeccion): Ajuste {
     promedio,
     pendiente: b,
     indices,
+    mesesTendencia,
     nivel,
     en: (i) => Math.max(0, nivel(i) * (indices ? indices[i % 12] : 1)),
     notas,
@@ -383,9 +526,44 @@ export function proyectarSerie(
     .map((p) =>
       excluir.has(p.mes) ? { ...p, parcial: true, motivoParcial: "excluido a petición del usuario" } : p
     );
-  const completos = orden.filter((p) => !p.parcial);
+  let completos = orden.filter((p) => !p.parcial);
   if (completos.length === 0) {
     throw new Error("No hay ningún mes completo en el histórico para proyectar.");
+  }
+
+  // ARRANQUE. Los primeros meses de un producto que aún se está desplegando no
+  // describen el negocio de hoy y no son comparables con el mismo mes de un
+  // año normal: en Walmart junio de 2024 son 411 unidades y junio de 2025 son
+  // 13,766. Metidos en el ajuste envenenan sobre todo la ESTACIONALIDAD, que
+  // compara cada mes con el mismo mes del otro año: el factor de julio salía
+  // 0.51 —una caída de verano que no existe, porque 2025 sube de 12,644 en
+  // enero a 29,474 en diciembre sin bajón— y hundía el pronóstico de junio a
+  // agosto. Se recortan sólo los meses INICIALES y sólo mientras estén muy por
+  // debajo del nivel reciente; se dicen aparte, no se ocultan.
+  let arranque: PuntoMes[] = [];
+  if (completos.length >= VENTANA_TENDENCIA + MIN_TENDENCIA) {
+    const recientes = completos
+      .slice(-VENTANA_TENDENCIA)
+      .map((p) => p.valor)
+      .sort((x, y) => x - y);
+    const mitad = Math.floor(recientes.length / 2);
+    const nivelReciente =
+      recientes.length % 2 ? recientes[mitad] : (recientes[mitad - 1] + recientes[mitad]) / 2;
+    const umbral = ARRANQUE_PCT * Math.abs(nivelReciente);
+    let corte = 0;
+    // Nunca se recorta por debajo de lo que hace falta para ajustar.
+    const maximo = completos.length - VENTANA_TENDENCIA;
+    while (corte < maximo && Math.abs(completos[corte].valor) < umbral) corte++;
+    if (corte > 0) {
+      arranque = completos.slice(0, corte);
+      completos = completos.slice(corte);
+      notas.push(
+        `Los ${corte} primeros meses (${arranque[0].mes} a ${arranque[corte - 1].mes}) están por ` +
+          `debajo del ${Math.round(ARRANQUE_PCT * 100)}% del nivel reciente: son el arranque del ` +
+          "histórico y no entran al ajuste (falsearían la estacionalidad al comparar cada mes con " +
+          "el mismo mes de ese periodo)."
+      );
+    }
   }
   const ultimo = indiceMes(completos[completos.length - 1].mes);
   const primero = indiceMes(completos[0].mes);
@@ -414,7 +592,34 @@ export function proyectarSerie(
   }
 
   const n = completos.length;
-  const ajuste = ajustar(completos);
+  // Qué método se usa lo decide la PRUEBA, no el calendario. Antes bastaba con
+  // tener 24 meses para dar por buena la estacionalidad, y en una serie que en
+  // realidad solo crece eso inventa un patrón: en Walmart el factor de julio
+  // salía 0.51 comparando julio de 2024 (492 unidades, en pleno despliegue del
+  // producto) contra la recta, cuando 2025 —el único año completo ya estable—
+  // sube de 12,644 a 29,474 sin ninguna caída de verano. Con esa estacionalidad
+  // falsa el pronóstico se hundía en junio y julio. Ahora se ajustan los tres
+  // métodos, se mide cada uno sobre los últimos meses reales ocultos y gana el
+  // que menos se equivoca; si la serie es corta para medir, se queda el que
+  // elijan los umbrales.
+  const candidatos: MetodoProyeccion[] = ["estacional", "tendencia", "promedio"];
+  // El que sale por umbrales, sin forzar nada: pedirle un `objetivo` a
+  // `ajustar` activa el modo de la prueba retrospectiva, que se calla algunos
+  // avisos (un factor estimado con un solo año). Para ese método se reutiliza
+  // este ajuste y así conserva sus notas.
+  const natural = ajustar(completos);
+  let elegido: { ajuste: Ajuste; prueba: PruebaRetrospectiva; error: number } | null = null;
+  for (const objetivo of candidatos) {
+    const candidato = objetivo === natural.metodo ? natural : ajustar(completos, objetivo);
+    // El objetivo no siempre se alcanza (serie corta para estacionalidad).
+    if (candidato.metodo !== objetivo) continue;
+    const suPrueba = pruebaRetrospectiva(completos, objetivo);
+    if (!suPrueba || suPrueba.errorMedioPct === null || suPrueba.metodo !== objetivo) continue;
+    if (!elegido || suPrueba.errorMedioPct < elegido.error) {
+      elegido = { ajuste: candidato, prueba: suPrueba, error: suPrueba.errorMedioPct };
+    }
+  }
+  const ajuste = elegido ? elegido.ajuste : natural;
   notas.push(...ajuste.notas);
   if (ajuste.metodo === "promedio") {
     notas.push(`Serie corta (${n} meses completos): se proyecta el promedio mensual.`);
@@ -470,7 +675,17 @@ export function proyectarSerie(
     const i = ultimo + k;
     const punto: PuntoMes = { mes: mesDeIndice(i), valor: redondear(ajuste.en(i)) };
     if (mesActual !== null && i < mesActual) punto.transcurrido = true;
+    if (mesActual !== null && i === mesActual) punto.enCurso = true;
     pronostico.push(punto);
+  }
+  // TODOS los meses de `pronostico` son estimaciones: el histórico real
+  // termina en `ultimoMesCompleto`. Se dice explícitamente porque el mes en
+  // curso, al ser el único sin marca, se leía como cifra real.
+  if (horizonte > 0) {
+    notas.push(
+      `Los ${horizonte} meses de \`pronostico\` son estimaciones, ninguno es un dato real: ` +
+        `el histórico cargado termina en ${mesDeIndice(ultimo)}.`
+    );
   }
   let mesesDesdeUltimoDato: number | undefined;
   if (mesActual !== null) {
@@ -483,10 +698,34 @@ export function proyectarSerie(
     }
   }
 
+  // Sesgo del ajuste FINAL sobre los meses que lo entrenaron. La prueba
+  // retrospectiva entrena sin los últimos meses, así que mide otro ajuste:
+  // cuando el del pronóstico se iba 3.3x por encima de TODA la serie, la
+  // prueba seguía diciendo 11% y la confianza salía "alta". La mediana (y no
+  // la media) para que los meses de arranque de un producto, que ninguna recta
+  // puede seguir, no disparen solos la alarma.
+  // Sólo sobre los meses que ajustaron la recta: si la tendencia se reancló a
+  // la ventana reciente, los del arranque quedan lejos A PROPÓSITO (son otro
+  // régimen) y medirlos aquí marcaría como sesgado justo el ajuste bueno.
+  const usadosPorLaRecta = completos.slice(-ajuste.mesesTendencia);
+  const sesgoFinal = sesgoMediano(usadosPorLaRecta, (i) =>
+    ajuste.en(indiceMes(usadosPorLaRecta[i].mes))
+  );
+  const sesgoAjustePct = sesgoFinal === null ? undefined : redondear(sesgoFinal);
+
   // Confianza: la que da el método, rebajada por lo que diga la prueba.
   const niveles: Confianza[] = ["baja", "media", "alta"];
   let nivel = ajuste.metodo === "estacional" ? 2 : n >= 12 ? 1 : 0;
-  const prueba = pruebaRetrospectiva(completos, ajuste.metodo);
+  if (sesgoAjustePct !== undefined && Math.abs(sesgoAjustePct) > SESGO_AJUSTE_PCT) {
+    nivel = 0;
+    notas.push(
+      `El ajuste queda un ${Math.abs(sesgoAjustePct)}% ` +
+        `${sesgoAjustePct > 0 ? "por encima" : "por debajo"} de la mitad de los meses reales: ` +
+        "no sigue la forma de la serie y el pronóstico es poco fiable. Trátalo como orden de " +
+        "magnitud, no como cifra."
+    );
+  }
+  const prueba = elegido ? elegido.prueba : pruebaRetrospectiva(completos, ajuste.metodo);
   if (prueba && prueba.errorMedioPct !== null) {
     const escalones = prueba.errorMedioPct > ERROR_ALTO_PCT ? 2 : prueba.errorMedioPct > ERROR_MEDIO_PCT ? 1 : 0;
     if (escalones) {
@@ -517,6 +756,7 @@ export function proyectarSerie(
     totalPronostico: redondear(pronostico.reduce((s, p) => s + p.valor, 0)),
     pruebaRetrospectiva: prueba,
     ...(mesAtipico ? { mesAtipico } : {}),
+    ...(sesgoAjustePct !== undefined ? { sesgoAjustePct } : {}),
     ...(mesesDesdeUltimoDato !== undefined ? { mesesDesdeUltimoDato } : {}),
     notas,
   };

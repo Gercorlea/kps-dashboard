@@ -1332,3 +1332,102 @@ a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tin
   border-top: 2px solid var(--cr-line-2);
   font-weight: 600;
 }
+
+/* ================ Accesos por sección (alta de usuarios) ================
+   Los permisos se agrupan igual que el menú lateral —General, Módulos,
+   Proveedores, Sistema— y cada sección se despliega para ver las páginas
+   que abre. Quien da de alta decide mirando lo mismo que verá el usuario,
+   no una lista suelta de ids de módulo. */
+.cr-accesos { display: flex; flex-direction: column; gap: 6px; }
+
+.cr-acceso {
+  border: 1px solid var(--cr-line);
+  border-radius: var(--cr-r-sm);
+  background: #fff;
+  overflow: hidden;
+}
+.cr-acceso__head { display: flex; align-items: center; gap: 10px; padding: 9px 10px; }
+.cr-acceso__check { flex: none; width: 14px; height: 14px; cursor: pointer; }
+.cr-acceso__check:disabled { cursor: default; opacity: .5; }
+
+/* Toda la fila abre y cierra; la casilla queda fuera del botón para que
+   marcar la sección no la despliegue de rebote. */
+.cr-acceso__toggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  padding: 0; border: 0; background: none; font: inherit; text-align: left;
+  color: var(--cr-ink); cursor: pointer; user-select: none;
+}
+.cr-acceso__nombre { font-size: 13px; font-weight: 500; }
+.cr-acceso__resumen {
+  margin-left: auto; flex: none;
+  font-family: var(--cr-font-mono); font-size: 10.5px; color: var(--cr-ink-3);
+}
+.cr-acceso__chevron {
+  flex: none; width: 14px; height: 14px; color: var(--cr-ink-3);
+  transition: transform .12s;
+}
+.cr-acceso__chevron--abierto { transform: rotate(90deg); }
+
+.cr-acceso__cuerpo {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 10px 12px 34px;
+  border-top: 1px solid var(--cr-line-soft);
+  background: var(--cr-surface-2);
+}
+/* Una casilla por PÁGINA: dentro de Sistema se puede dar Estadísticas sin dar
+   Usuarios. La casilla de la cabecera marca y desmarca la sección entera. */
+.cr-acceso__pagina {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--cr-ink); cursor: pointer;
+}
+.cr-acceso__pagina input { flex: none; width: 14px; height: 14px; cursor: pointer; }
+
+/* Página sin permiso que dar —el Dashboard—: se lista para que el menú se
+   entienda completo, pero no hay nada que marcar. */
+.cr-acceso__fija { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--cr-ink-2); }
+.cr-acceso__nota {
+  margin-left: auto; font-family: var(--cr-font-mono); font-size: 10.5px; color: var(--cr-ink-3);
+}
+.cr-acceso__ruta { font-family: var(--cr-font-mono); font-size: 10.5px; color: var(--cr-ink-3); }
+
+/* ================== Diálogo de alta y edición de usuario ==================
+   Con las secciones de accesos desplegadas el formulario crece más que la
+   pantalla. La caja se topa a la altura del viewport y sólo el cuerpo rueda:
+   el título y los botones de Guardar y Cancelar quedan siempre a la vista, sin
+   tener que bajar a ciegas. En móvil ocupa la pantalla entera. */
+.cr-modal {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  background: rgba(10, 12, 18, 0.32);
+}
+.cr-modal__caja {
+  display: flex; flex-direction: column;
+  width: min(560px, 100%);
+  max-height: 100%;
+  background: var(--cr-bg);
+  border: 1px solid var(--cr-line-2);
+  border-radius: var(--cr-r-sm);
+  box-shadow: 0 16px 48px rgba(10, 12, 18, 0.24);
+}
+.cr-modal__head { flex: none; padding: 18px 20px 12px; }
+/* `min-height: 0` es lo que deja encoger a un hijo flex por debajo de su
+   contenido; sin él la caja crece y el scroll nunca aparece. */
+.cr-modal__cuerpo {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 2px 20px 16px;
+}
+.cr-modal__pie {
+  flex: none; display: flex; justify-content: flex-end; gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--cr-line-soft);
+}
+
+@media (max-width: 640px) {
+  .cr-modal { padding: 0; }
+  .cr-modal__caja {
+    width: 100%; height: 100dvh; max-height: 100dvh;
+    border: 0; border-radius: 0;
+  }
+}

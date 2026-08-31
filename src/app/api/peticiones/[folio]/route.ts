@@ -105,7 +105,7 @@ async function coberturaDe(
 
 export async function GET(_req: Request, { params }: { params: Promise<{ folio: string }> }) {
   try {
-    await requireModule("proveedores");
+    await requireModule("peticiones");
     const { folio } = await params;
 
     const f = await Invoice().findOne({ folio }).lean();
@@ -188,7 +188,7 @@ const EsquemaDecision = z.object({
 
 export async function POST(req: Request, { params }: { params: Promise<{ folio: string }> }) {
   try {
-    const usuario = await requireModule("proveedores");
+    const usuario = await requireModule("peticiones");
     const { folio } = await params;
     const { decision, motivo } = await parseJson(req, EsquemaDecision);
 
@@ -323,7 +323,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ folio: 
  * append-only, y un `deleteOne` dejaría eventos de auditoría apuntando a un
  * folio inexistente.
  *
- * Va con `requireSuperadmin` y no con `requireModule("proveedores")`: quien
+ * Va con `requireSuperadmin` y no con `requireModule("peticiones")`: quien
  * revisa aprueba y rechaza —decisiones que el proveedor ve y puede responder—,
  * mientras que archivar esconde la petición de la vista de todos los demás.
  */
@@ -413,7 +413,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ folio:
  */
 export async function PUT(_req: Request, { params }: { params: Promise<{ folio: string }> }) {
   try {
-    const usuario = await requireModule("proveedores");
+    const usuario = await requireModule("peticiones");
     const { folio } = await params;
 
     const f = await Invoice().findOne({ folio }).lean();

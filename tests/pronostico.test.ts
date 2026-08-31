@@ -136,6 +136,48 @@ describe("proyectarSerie", () => {
     expect(p.tendenciaMensual).toBeCloseTo(20, 0);
   });
 
+  it("no diverge cuando la estacionalidad tiene factores bajos (caso Walmart)", () => {
+    // El ajuste re-estimaba la pendiente como diferencia interanual ENTRE el
+    // factor del mes: con un verano de 0.5 la división la inflaba, la recta se
+    // empinaba, el nivel se iba a negativo y los meses con tendencia <= 0 se
+    // caían del cálculo de índices. En Walmart la recta acabó 3.3x por encima
+    // de LOS 24 meses reales y el pronóstico de agosto (69,866) doblaba el mes
+    // más alto jamás registrado (33,791).
+    const VERANO_BAJO = [100, 90, 110, 100, 120, 66, 50, 68, 80, 115, 120, 116];
+    const media = VERANO_BAJO.reduce((a, b) => a + b, 0) / 12;
+    const serie = meses(
+      "2024-06",
+      Array.from({ length: 24 }, (_, t) => (1000 + 500 * t) * (VERANO_BAJO[(t + 5) % 12] / media))
+    );
+    const p = proyectarSerie(serie, 3);
+
+    expect(p.metodo).toBe("estacional");
+    // La recta es la real, no una empinada 3x.
+    expect(p.tendenciaMensual).toBeCloseTo(500, 0);
+    // Y pasa por en medio de la serie, no por encima de toda ella.
+    expect(Math.abs(p.sesgoAjustePct!)).toBeLessThan(1);
+
+    // Ningún mes proyectado se dispara por encima de lo que da la tendencia.
+    const maxHistorico = Math.max(...serie.map((s) => s.valor));
+    for (const punto of p.pronostico) {
+      expect(punto.valor, punto.mes).toBeLessThan(maxHistorico * 1.5);
+    }
+  });
+
+  it("marca el mes en curso y dice que ningún mes proyectado es real", () => {
+    // El mes en curso era el único del horizonte sin `transcurrido`, así que
+    // se leía como el dato real de hoy y se presentaba como "real".
+    const serie = meses("2025-01", Array.from({ length: 12 }, () => 100));
+    const p = proyectarSerie(serie, { horizonte: 3, mesActual: "2026-02" });
+
+    expect(p.pronostico.map((x) => x.mes)).toEqual(["2026-01", "2026-02", "2026-03"]);
+    expect(p.pronostico[0].transcurrido).toBe(true);
+    expect(p.pronostico[1].enCurso).toBe(true);
+    expect(p.pronostico[1].transcurrido).toBeUndefined();
+    expect(p.pronostico[2].enCurso).toBeUndefined();
+    expect(p.notas.join(" ")).toContain("ninguno es un dato real");
+  });
+
   it("señala un último mes atípico (caso San Pablo) y permite excluirlo", () => {
     const serie = meses("2026-01", [100, 100, 100, 100, 100, 100, 100, 250]);
     const p = proyectarSerie(serie, 3);
