@@ -421,6 +421,13 @@ function claveDeGrupo(coleccion: ColeccionRetail, agruparPor: string): unknown {
   return campoPermitido(coleccion, agruparPor) ? `$${agruparPor}` : null;
 }
 
+// La copia local de facturas puede no existir aún (falta `npm run sap:facturas`).
+// Sin esta nota el modelo respondía "no puedo" en vez de ir a SAP en vivo.
+const NOTA_COPIA_SAP_VACIA =
+  "La copia local de facturas de SAP está vacía (falta la sincronización). NO concluyas que no hay ventas: " +
+  "consulta SAP en vivo con agregar_sap sobre Invoices (filtro por DocDate; agruparPor [\"mes\"] o [\"CardName\"]) " +
+  "o consultar_sap para el detalle.";
+
 export async function consultarRetail(consulta: ConsultaRetail): Promise<ResultadoRetail> {
   // Un `sumar` que no se puede sumar no se ignora: devolver filas sin total
   // y sin aviso lleva al modelo a presentar el conteo como si fuera la cifra.
@@ -437,7 +444,8 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
   await connectDB();
   // sapSales es una copia de SAP: se refresca incremental (throttle de 5 min)
   // para que "toda la historia" incluya también las facturas de hoy.
-  if (consulta.coleccion === "sapSales" || consulta.coleccion === "sapSalesLotes") {
+  const esCopiaSap = consulta.coleccion === "sapSales" || consulta.coleccion === "sapSalesLotes";
+  if (esCopiaSap) {
     await asegurarFacturasFrescas();
   }
   const def: DefinicionColeccion = CATALOGO[consulta.coleccion];
@@ -493,6 +501,7 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
     return {
       total: gruposTotales,
       devueltas: filas.length,
+      ...(esCopiaSap && gruposTotales === 0 ? { nota: NOTA_COPIA_SAP_VACIA } : {}),
       ...(gruposTotales > filas.length
         ? { nota: `Se muestran ${filas.length} de ${gruposTotales} grupos: pide más con limite o afina el orden.` }
         : {}),
@@ -529,6 +538,7 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
   return {
     total,
     devueltas: filas.length,
+    ...(esCopiaSap && total === 0 ? { nota: NOTA_COPIA_SAP_VACIA } : {}),
     // .lean() deja Date/ObjectId vivos (`date`, `cutoffDate`, anidados en
     // `appointments[]`...). Por eso fallaba solo en consultas de detalle con
     // fechas y no en las agregadas, que ya pasan por fechaISO(). Ver serializable().

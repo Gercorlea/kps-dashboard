@@ -212,7 +212,7 @@ const TOP_GRUPOS = 1000; // tope de grupos que se traen para ordenar en JS
 // se agrega en JS. Sin esto el modelo respondía el histórico completo como si
 // fuera el subconjunto (595 M "de julio" cuando julio eran 46 M).
 const PAGINA_FILTRADO = 100;
-const MAX_FILAS_FILTRADO = 3000;
+const MAX_FILAS_FILTRADO = 20_000;
 export const GRUPO_MES = "mes";
 
 async function agregarFiltrado(
@@ -221,23 +221,33 @@ async function agregarFiltrado(
   grupos: string[],
   metricas: Array<{ campo: string; operacion: OperacionAgregado }>,
   aliasDe: (m: { campo: string; operacion: OperacionAgregado }) => string
-): Promise<{ filas: Record<string, unknown>[]; considerados: number; truncado: boolean }> {
-  // "mes" agrupa por el mes calendario de DocDate (AAAA-MM): "ventas por mes
-  // de 2025" era imposible y el modelo acababa infiriendo meses de una muestra.
+): Promise<{ filas: Record<string, unknown>[]; considerados: number; total: number | null; truncado: boolean }> {
+  // Paginación por cursor de DocEntry (como la sincronización de facturas):
+  // con $skip sin $orderby el Service Layer no garantiza páginas estables y
+  // al superar el tope se cortaba un mes por la mitad (diciembre 2025 salía
+  // con 1,289 de 1,590 facturas). Cada página es una consulta indexada nueva.
   const camposSelect = grupos.map((g) => (g === GRUPO_MES ? "DocDate" : g));
-  const select = [...new Set([...camposSelect, ...metricas.map((m) => m.campo)])].join(",");
+  const select = [...new Set(["DocEntry", ...camposSelect, ...metricas.map((m) => m.campo)])].join(",");
   const acum = new Map<string, { clave: Record<string, unknown>; n: number; suma: Record<string, number>; max: Record<string, number>; min: Record<string, number> }>();
   let considerados = 0;
   let truncado = false;
-  for (let skip = 0; ; skip += PAGINA_FILTRADO) {
+  let total: number | null = null;
+  let cursor = 0;
+  for (;;) {
     const params = new URLSearchParams();
-    params.set("$filter", filtro);
-    if (select) params.set("$select", select);
+    params.set("$filter", `(${filtro}) and DocEntry gt ${cursor}`);
+    params.set("$select", select);
+    params.set("$orderby", "DocEntry asc");
     params.set("$top", String(PAGINA_FILTRADO));
-    if (skip) params.set("$skip", String(skip));
-    const data = await sapFetch<{ value?: Record<string, unknown>[] }>(`/${entidad}?${params.toString()}`, {
-      headers: { Prefer: `odata.maxpagesize=${PAGINA_FILTRADO}` },
-    });
+    if (total === null) params.set("$inlinecount", "allpages");
+    const data = await sapFetch<{ value?: Record<string, unknown>[]; "odata.count"?: string | number; "@odata.count"?: number }>(
+      `/${entidad}?${params.toString()}`,
+      { headers: { Prefer: `odata.maxpagesize=${PAGINA_FILTRADO}` } }
+    );
+    if (total === null) {
+      const bruto = data["odata.count"] ?? data["@odata.count"];
+      total = bruto === undefined ? null : Number(bruto);
+    }
     const pagina = data.value ?? [];
     for (const f of pagina) {
       considerados++;
@@ -257,6 +267,8 @@ async function agregarFiltrado(
       acum.set(k, g);
     }
     if (pagina.length < PAGINA_FILTRADO) break;
+    cursor = Number(pagina[pagina.length - 1].DocEntry);
+    if (!Number.isFinite(cursor)) break;
     if (considerados >= MAX_FILAS_FILTRADO) {
       truncado = true;
       break;
@@ -274,7 +286,7 @@ async function agregarFiltrado(
     fila.documentos = g.n;
     return fila;
   });
-  return { filas, considerados, truncado };
+  return { filas, considerados, total, truncado };
 }
 
 export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgregadoSap> {
@@ -293,7 +305,7 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
   }
   if (filtro) {
     const aliasDe = (m: { campo: string; operacion: OperacionAgregado }) => `${m.operacion}_${m.campo}`;
-    const { filas, considerados, truncado } = await agregarFiltrado(entidad, filtro, grupos, metricas, aliasDe);
+    const { filas, considerados, total, truncado } = await agregarFiltrado(entidad, filtro, grupos, metricas, aliasDe);
     const claveOrden = metricas.length ? aliasDe(metricas[0]) : "documentos";
     if (porMes) filas.sort((a, b) => String(a[GRUPO_MES]).localeCompare(String(b[GRUPO_MES])));
     else filas.sort((a, b) => (Number(b[claveOrden]) || 0) - (Number(a[claveOrden]) || 0));
@@ -304,7 +316,15 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
       filas: filas.slice(0, top),
       filtro,
       documentosConsiderados: considerados,
-      ...(truncado ? { truncado: true } : {}),
+      ...(total !== null ? { documentosEnSap: total } : {}),
+      ...(truncado
+        ? {
+            truncado: true,
+            nota:
+              `RESULTADO PARCIAL: solo se leyeron ${considerados} de ${total ?? "?"} documentos y los grupos ` +
+              "están incompletos. NO lo presentes como total: acota el periodo (p. ej. un mes) y vuelve a consultar.",
+          }
+        : {}),
     };
   }
 
