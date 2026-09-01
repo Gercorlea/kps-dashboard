@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { stepCountIs, streamText, tool } from "ai";
 import type { ModelMessage } from "ai";
 import { z } from "zod";
-import { ENTIDADES_SAP, OPERACIONES_AGREGADO, agregarSap, consultarSap } from "@/lib/sap/consultas";
+import {
+  ENTIDADES_SAP,
+  OPERACIONES_AGREGADO,
+  agregarSap,
+  buscarSocios,
+  consultarSap,
+} from "@/lib/sap/consultas";
 import {
   AGRUPAR_POR_ANIO,
   AGRUPAR_POR_MES,
@@ -64,6 +70,58 @@ que KPS carga desde los reportes de las cadenas, los reportes cargados y la
 copia de las facturas de SAP. Nunca menciones "la pestaña Retail" como
 respuesta: consulta tú los datos con tus tools.
 Si no sabes algo, dilo sin inventar.
+
+NUNCA AFIRMES UNA AUSENCIA SIN HABERLA CONSULTADO. "No hay", "no existe", "no
+le vendemos a X", "no tenemos datos de Y" son afirmaciones sobre los datos
+igual que un total: sólo puedes decirlas después de una tool que haya
+devuelto cero en ESE MISMO turno, y entonces dices dónde buscaste. Es el error
+más caro que puedes cometer, porque el usuario se va creyendo que un cliente
+no existe. Si no lo has consultado, consúltalo; si no puedes, di "déjame
+verificarlo" y verifícalo, nunca "no hay". Vale igual para nombres que no
+reconoces: que no te suene un cliente, un retailer o un producto no es un dato,
+es que no lo has buscado — búscalo antes de negar nada, probando variantes del
+nombre (mayúsculas y minúsculas: en SAP el operador contains distingue, así que
+contains(CardName,'oppel') NO encuentra 'COPPEL').
+
+CLIENTES Y PROVEEDORES SE BUSCAN CON buscar_socio, NUNCA con un contains() a
+mano sobre CardName. El filtro de SAP distingue mayúsculas y no admite
+toupper(), así que escribir el nombre "como suena" devuelve cero o solo la
+mitad de la verdad: contains(CardName,'Liverpool') encuentra el PROVEEDOR
+P0070 y contains(CardName,'LIVERPOOL') encuentra el CLIENTE C000084 — son dos
+registros distintos y ninguna de las dos búsquedas los ve juntos. buscar_socio
+recorre el catálogo completo sin distinguir mayúsculas ni acentos y devuelve
+TODAS las coincidencias con su tipo. Un mismo nombre puede estar dado de alta
+como cliente Y como proveedor: cuando pase, dilo (las facturas de venta cuelgan
+del cliente y las de compra del proveedor), no elijas uno y calles el otro.
+Sólo puedes decir que un socio no existe si buscar_socio devolvió cero coincidencias
+Y cero parecidos. Si trae una lista de parecidos, enséñalos y pregunta cuál es;
+responder "no existe" teniendo un parecido delante es el peor error posible,
+porque el usuario se va creyendo que perdió a un cliente.
+
+NO SUMES NI CALCULES A MANO. Un total, un promedio, un porcentaje o un conteo
+se piden a la tool que los calcula en el servidor (agregar_sap con la métrica
+suma, o consultar_retail con el campo sumar), aunque tengas las filas delante y
+parezca fácil sumarlas. Sumar de cabeza una lista que ya mostraste produce una
+cifra que contradice tu propia tabla, y eso destruye la confianza en todo lo
+demás. Si de verdad no hay forma de pedir el total, no lo des.
+
+LAS PREGUNTAS DE SEGUIMIENTO NO SON UNA EXCEPCIÓN: SON DONDE MÁS FALLAS. Que
+vengan de una respuesta tuya no las hace gratis. Si lo que te piden lleva una
+cifra que no está TAL CUAL en un resultado de tool de esta conversación,
+CONSULTA OTRA VEZ. Los cuatro casos que más se equivocan:
+  - "y de febrero?", "¿y el mes pasado?", "¿y ese otro cliente?" — es la MISMA
+    consulta con otro parámetro: relánzala. Deducir el dato nuevo del anterior
+    se inventa números que parecen razonables y no lo son.
+  - "¿cuánto suman esos?" — vuelve a pedir el total con la métrica suma; no
+    sumes las filas de tu tabla.
+  - "¿qué porcentaje representa?" — necesitas DOS cifras consultadas (la parte
+    y el total). Si no tienes el total consultado, pídelo; jamás lo estimes.
+  - "¿cuánto creció o cayó?" — eso es comparar_periodos_retail, que ya devuelve
+    la diferencia y el porcentaje calculados. No restes tú dos meses.
+Cuando repitas una cifra que ya diste antes en la conversación, tiene que ser
+IDÉNTICA a la de aquella tool. Si no la recuerdas exacta, vuelve a consultar en
+vez de aproximar: dos cifras distintas para la misma pregunta es el fallo que
+hace que nadie se fíe del asistente.
 
 QUÉ RETAILERS EXISTEN. El catálogo acepta los identificadores walmart,
 san-pablo, heb y farmacias-del-ahorro, pero estar en el catálogo NO es tener
@@ -188,6 +246,21 @@ indicada; nunca calcules tú lo que la tool ya devuelve calculado).
   quantity (unidades) o lineTotal (importe), agruparPor "${AGRUPAR_POR_MES}".
   Di en una línea qué fuente usaste ("facturación de KPS" o "venta en
   Walmart") y, si la pregunta era ambigua, ofrece la otra.
+- POR PRODUCTO o POR MARCA ("el artículo más vendido", "top 5 productos",
+  "ventas de <producto>", "importe total de <marca>", "cuánto ha vendido X"):
+  SIEMPRE consultar_retail sobre salesReports, filtrando o agrupando por
+  itemDesc (producto) o brand (marca) y sumando posQty o posSales, nombren
+  retailer o no. NO vayas a SAP a por esto: por producto NO se puede agregar
+  allí y acabas leyendo una muestra de facturas y citando importes sueltos como
+  si fueran el total. Si la primera consulta no devuelve nada, mira el campo
+  valoresDisponibles de la respuesta —trae los valores que existen de verdad en
+  ese campo— y corrige el nombre; nunca respondas un total sin filas. El desglose por
+  artículo de la facturación vive en la copia local sapSales, y cuando está
+  vacía NO hay forma de sacarlo de SAP en vivo: agregar_sap sólo agrega campos
+  de CABECERA (DocTotal, CardName, DocDate), no líneas, y pedirle Quantity o
+  DocumentLines devuelve error. Si acabas en facturas cuyas líneas dicen
+  "Saldo inicial" son asientos contables de cierre, no ventas: cambia a
+  salesReports en vez de responder que no se puede.
 - Crecimiento de los productos (o de marcas, clientes, retailers):
   comparar_periodos_retail, que devuelve por grupo el periodo actual, el
   anterior, la diferencia y el % ya calculados. "Crecimiento" sin periodo
@@ -466,6 +539,34 @@ export function chat(
           }
         },
       }),
+      buscar_socio: tool({
+        description:
+          "Busca clientes y proveedores por nombre o código, SIN distinguir mayúsculas ni acentos, " +
+          "sobre el catálogo completo de socios de negocio. ÚSALA SIEMPRE que el usuario nombre a un " +
+          "cliente, proveedor o cadena (\"¿le vendemos a X?\", \"datos de X\", \"facturas de X\") en vez " +
+          "de montar un contains(CardName,...) a mano: el $filter de SAP distingue mayúsculas y no " +
+          "admite toupper(), así que un contains con la capitalización equivocada devuelve cero o " +
+          "sólo uno de los registros. Devuelve TODAS las coincidencias con su CardCode, su tipo " +
+          "(cliente/proveedor), saldo y estatus; un mismo nombre puede aparecer como cliente Y como " +
+          "proveedor, con códigos distintos. Tolera erratas, plurales y espacios: \"walmart\" encuentra " +
+          "\"NUEVA WAL MART DE MEXICO\" y \"copel\" encuentra \"COPPEL\". Si no hay coincidencia firme pero " +
+          "algo se parece, viene en `parecidos`: NO digas que no existe, enséñalos y pregunta a cuál se " +
+          "refiere. Sólo cuando no haya ni coincidencias ni parecidos puedes decir que no existe.",
+        inputSchema: z.object({
+          nombre: z
+            .string()
+            .min(2)
+            .max(80)
+            .describe("Nombre o parte del nombre del socio, o su código. Ej: \"liverpool\", \"coppel\""),
+        }),
+        execute: async ({ nombre }) => {
+          try {
+            return acotarSalida(await buscarSocios(nombre));
+          } catch (e) {
+            return { error: e instanceof Error ? e.message : "Error buscando el socio de negocio" };
+          }
+        },
+      }),
       agregar_sap: tool({
         description:
           "Totales, conteos, promedios y rankings calculados en el servidor sobre " +
@@ -476,7 +577,12 @@ export function chat(
           "total de un periodo o estado con el agregado sin filtro: sería el histórico " +
           "completo. Solo campos de CABECERA (DocTotal, CardCode, DocDate…). Para " +
           "ventas POR ARTÍCULO usa consultar_retail con la colección sapSales " +
-          "(agruparPor itemCode, sumar quantity o lineTotal).",
+          "(agruparPor itemCode, sumar quantity o lineTotal). " +
+          "Al agrupar devuelve `totalGeneral`: la suma sobre TODOS los grupos del filtro, no sólo sobre " +
+          "las filas devueltas. Ése es el denominador de cualquier porcentaje y el total de verdad; " +
+          "sumar las filas de un top N y llamarlo total da cifras falsas. " +
+          "Los documentos CANCELADOS se excluyen solos (una factura cancelada conserva estado " +
+          "'bost_Close' y sumarla inventa facturación); si los quieres dentro, dilo en `filtro`.",
         inputSchema: z.object({
           entidad: z
             .string()
@@ -557,7 +663,12 @@ export function chat(
             )
             .max(6)
             .optional()
-            .describe("Filtros; las fechas van como YYYY-MM-DD"),
+            .describe(
+              "Filtros; las fechas van como YYYY-MM-DD. `mayorQue` y `menorQue` son ESTRICTOS " +
+                "(> y <, no >= ni <=): para un periodo cerrado usa el día ANTERIOR al inicio y el " +
+                "SIGUIENTE al final. Todo 2026 = mayorQue 2025-12-31 y menorQue 2027-01-01; " +
+                "mayorQue 2026-01-01 se comería el 1 de enero sin avisar."
+            ),
           agruparPor: z
             .string()
             .max(40)
@@ -739,3 +850,4 @@ export function chat(
     },
   });
 }
+

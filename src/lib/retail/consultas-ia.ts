@@ -217,6 +217,9 @@ export type ColeccionRetail = keyof typeof CATALOGO;
 export const COLECCIONES_RETAIL = Object.keys(CATALOGO) as [ColeccionRetail, ...ColeccionRetail[]];
 
 /** Agrupación especial: por mes calendario (AAAA-MM) del campo de fecha. */
+/** Cuántos valores distintos se ofrecen como pista cuando un filtro no encuentra nada. */
+const VALORES_SUGERIDOS_MAX = 40;
+
 export const AGRUPAR_POR_MES = "mes";
 /**
  * Agrupación especial: por año (AAAA) del campo de fecha. Sin ella, "qué año
@@ -387,7 +390,20 @@ export function construirFiltro(consulta: ConsultaRetail): {
     } else if (f.operador === "menorQue") {
       (rangos[f.field] ??= {}).$lt = normalizarValor(f.value);
     } else {
-      filtro[f.field] = normalizarValor(f.value);
+      // `igual` sobre TEXTO ignora mayúsculas y acentos sobrantes. Las marcas
+      // están guardadas en mayúsculas ("BLOOM"), así que un filtro brand="Bloom"
+      // —como lo escribe cualquiera— devolvía CERO filas en silencio, y con cero
+      // filas delante el modelo publicó un total de 33,627,515.90 inventado
+      // (el real de BLOOM en Walmart es 32,618,924.77 en 3,556 registros).
+      const def = campoDe(consulta.coleccion, f.field);
+      if (def?.tipo === "texto" && typeof f.value === "string") {
+        filtro[f.field] = {
+          $regex: `^${f.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+          $options: "i",
+        };
+      } else {
+        filtro[f.field] = normalizarValor(f.value);
+      }
     }
   }
   // Un `igual` o `contiene` sobre el mismo campo manda sobre el rango.
@@ -435,6 +451,42 @@ const NOTA_COPIA_SAP_VACIA =
   "La copia local de facturas de SAP está vacía (falta la sincronización). NO concluyas que no hay ventas: " +
   "consulta SAP en vivo con agregar_sap sobre Invoices (filtro por DocDate; agruparPor [\"mes\"] o [\"CardName\"]) " +
   "o consultar_sap para el detalle.";
+
+/**
+ * Cuando una consulta no devuelve NADA y el filtro va sobre texto, lo más
+ * probable es que el valor esté mal escrito, no que no haya ventas: "multilbue"
+ * o "Bloom" daban cero filas y el modelo publicaba igualmente un total
+ * inventado. Se le devuelven los valores que existen de verdad en ese campo
+ * para que corrija o pregunte.
+ */
+async function pistaSinResultados(
+  consulta: ConsultaRetail,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  model: Model<any>,
+  total: number
+): Promise<Record<string, unknown>> {
+  if (total !== 0) return {};
+  const sugerencias: Record<string, string[]> = {};
+  for (const f of consulta.filtros ?? []) {
+    if (f.operador !== "igual" || typeof f.value !== "string") continue;
+    if (campoDe(consulta.coleccion, f.field)?.tipo !== "texto") continue;
+    try {
+      const valores = (await model.distinct(f.field, {})) as unknown[];
+      const textos = valores.filter((v): v is string => typeof v === "string").sort();
+      if (textos.length && textos.length <= VALORES_SUGERIDOS_MAX) sugerencias[f.field] = textos;
+    } catch {
+      // Si el distinct falla no se rompe la consulta: simplemente no hay pista.
+    }
+  }
+  if (!Object.keys(sugerencias).length) return {};
+  return {
+    valoresDisponibles: sugerencias,
+    notaSinResultados:
+      "La consulta no devolvió NADA y filtra por texto: lo más probable es que el valor esté mal escrito, " +
+      "no que no haya ventas. En `valoresDisponibles` están los que existen de verdad. Corrige y vuelve a " +
+      "consultar, o pregunta cuál quería; NO respondas un total.",
+  };
+}
 
 export async function consultarRetail(consulta: ConsultaRetail): Promise<ResultadoRetail> {
   // Un `sumar` que no se puede sumar no se ignora: devolver filas sin total
@@ -511,6 +563,7 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
       total: gruposTotales,
       devueltas: filas.length,
       ...(esCopiaSap && gruposTotales === 0 ? { nota: NOTA_COPIA_SAP_VACIA } : {}),
+      ...(await pistaSinResultados(consulta, model, gruposTotales)),
       ...(gruposTotales > filas.length
         ? { nota: `Se muestran ${filas.length} de ${gruposTotales} grupos: pide más con limite o afina el orden.` }
         : {}),
@@ -548,6 +601,7 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
     total,
     devueltas: filas.length,
     ...(esCopiaSap && total === 0 ? { nota: NOTA_COPIA_SAP_VACIA } : {}),
+    ...(await pistaSinResultados(consulta, model, total)),
     // .lean() deja Date/ObjectId vivos (`date`, `cutoffDate`, anidados en
     // `appointments[]`...). Por eso fallaba solo en consultas de detalle con
     // fechas y no en las agregadas, que ya pasan por fechaISO(). Ver serializable().

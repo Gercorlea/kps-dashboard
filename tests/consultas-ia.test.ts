@@ -82,7 +82,36 @@ describe("construirFiltro", () => {
       ],
     });
     expect(ignorados).toEqual(["brand"]);
-    expect(filtro).toEqual({ cardName: "FARMACIA" });
+    // Igualdad sobre texto: sin distinguir mayúsculas (ver la prueba de abajo).
+    expect(filtro).toEqual({ cardName: { $regex: "^FARMACIA$", $options: "i" } });
+  });
+
+  it("un `igual` sobre texto no distingue mayúsculas", () => {
+    // Las marcas están guardadas en mayúsculas ("BLOOM"), así que brand="Bloom"
+    // —como lo escribe cualquiera— devolvía CERO filas en silencio; con esas
+    // cero filas delante el modelo publicó un total inventado de 33,627,515.90
+    // cuando BLOOM en Walmart son 32,618,924.77 en 3,556 registros.
+    const { filtro } = construirFiltro({
+      coleccion: "salesReports",
+      filtros: [{ field: "brand", operador: "igual", value: "Bloom" }],
+    });
+    expect(filtro).toEqual({ brand: { $regex: "^Bloom$", $options: "i" } });
+  });
+
+  it("un `igual` sobre texto escapa los caracteres de expresión regular", () => {
+    const { filtro } = construirFiltro({
+      coleccion: "salesReports",
+      filtros: [{ field: "itemDesc", operador: "igual", value: "SV VIT C (EFER)" }],
+    });
+    expect(filtro).toEqual({ itemDesc: { $regex: "^SV VIT C \\(EFER\\)$", $options: "i" } });
+  });
+
+  it("un `igual` sobre un campo NO textual sigue siendo exacto", () => {
+    const { filtro } = construirFiltro({
+      coleccion: "salesReports",
+      filtros: [{ field: "posQty", operador: "igual", value: 12 }],
+    });
+    expect(filtro).toEqual({ posQty: 12 });
   });
 });
 
@@ -119,7 +148,7 @@ describe("construirFiltro: rangos y métricas sumables", () => {
       ],
     });
     expect(filtro).toEqual({
-      account: "walmart",
+      account: { $regex: "^walmart$", $options: "i" },
       date: { $gt: new Date("2026-02-28T00:00:00.000Z"), $lt: new Date("2026-04-01T00:00:00.000Z") },
     });
   });

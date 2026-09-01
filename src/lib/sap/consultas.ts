@@ -93,7 +93,16 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
   // Sin $select explícito, pedimos los campos clave: SAP devuelve la entidad
   // completa (311 campos en Items) y eso se come la ventana de contexto.
   const porDefecto = consulta.campos?.length ? undefined : camposPorDefecto(entidad);
-  const select = consulta.campos?.length ? consulta.campos.join(",") : porDefecto;
+  let select = consulta.campos?.length ? consulta.campos.join(",") : porDefecto;
+
+  // `Cancelled` se cuela SIEMPRE en los documentos, aunque pidan campos
+  // concretos. Una cancelada conserva DocumentStatus 'bost_Close', así que sin
+  // este campo las filas parecen cerradas normales: pidiendo
+  // DocNum/DocDate/DocTotal/DocumentStatus se respondió que 12 de 13 facturas
+  // de Coppel estaban canceladas cuando son 6.
+  if (select && DOCS_CANCELABLES.has(nombreEntidad(entidad)) && !/\bCancelled\b/.test(select)) {
+    select = `${select},Cancelled`;
+  }
 
   const params = new URLSearchParams();
   if (consulta.filtro) params.set("$filter", consulta.filtro);
@@ -120,10 +129,12 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
   const filas = enriquecerFrescura(crudas).map(compactarAnidados);
   const bruto = data["odata.count"] ?? data["@odata.count"];
   const total = bruto === undefined ? null : Number(bruto);
+  const resumenDocumentos = resumirDocumentos(crudas, filas.length, Number.isFinite(total) ? total : null);
   return {
     total: Number.isFinite(total) ? total : null,
     devueltas: filas.length,
     filas,
+    ...(resumenDocumentos ? { resumenDocumentos } : {}),
     ...(porDefecto ? { campos: porDefecto } : {}),
     ...(resumenLineas ? { resumenLineas } : {}),
   };
@@ -134,6 +145,52 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
 // modelo sumaba 114 líneas a mano y se equivocaba (724,618 piezas en vez de
 // 907,952): con esto reporta las cifras del servidor.
 const CAMPOS_SUMABLES_LINEA = ["Quantity", "RemainingOpenQuantity", "OpenAmount", "LineTotal"] as const;
+
+/**
+ * Conteos e importes de una lista de DOCUMENTOS, calculados aquí. El modelo
+ * sumaba las filas de su propia tabla y se equivocaba: con las 13 facturas de
+ * Coppel delante dijo "5 canceladas" (son 6) y "27,922.16 facturado de verdad"
+ * (son 29,340.91). Además avisa cuando la lista viene recortada, que es como
+ * acabó extrapolando lo que no había visto.
+ */
+function resumirDocumentos(
+  filas: Record<string, unknown>[],
+  devueltas: number,
+  total: number | null
+): Record<string, unknown> | null {
+  if (!filas.length || !("DocTotal" in filas[0])) return null;
+  const acum = { vigentes: { n: 0, importe: 0 }, cancelados: { n: 0, importe: 0 }, abiertos: { n: 0, importe: 0 } };
+  for (const f of filas) {
+    const v = Number(f.DocTotal);
+    if (!Number.isFinite(v)) continue;
+    if (f.Cancelled === "tYES") {
+      acum.cancelados.n++;
+      acum.cancelados.importe += v;
+      continue; // un cancelado no es facturación: no entra en vigentes
+    }
+    acum.vigentes.n++;
+    acum.vigentes.importe += v;
+    if (f.DocumentStatus === "bost_Open") {
+      acum.abiertos.n++;
+      acum.abiertos.importe += v;
+    }
+  }
+  const r = (x: number) => Math.round(x * 100) / 100;
+  const parcial = total !== null && devueltas < total;
+  return {
+    documentos: filas.length,
+    vigentes: { documentos: acum.vigentes.n, importe: r(acum.vigentes.importe) },
+    cancelados: { documentos: acum.cancelados.n, importe: r(acum.cancelados.importe) },
+    abiertos: { documentos: acum.abiertos.n, importe: r(acum.abiertos.importe) },
+    nota:
+      (parcial
+        ? `CUIDADO: esto resume sólo los ${devueltas} documentos devueltos de ${total} que hay. NO son ` +
+          "los totales del cliente ni del periodo: sube `top` o usa agregar_sap antes de dar cifras. "
+        : "Cubre los documentos devueltos, que son todos los del filtro. ") +
+      "Los importes ya están sumados aquí: úsalos tal cual, no sumes las filas. `vigentes` excluye los " +
+      "CANCELADOS, que conservan estado 'bost_Close' pero no son facturación real.",
+  };
+}
 
 export function resumirLineas(filas: Record<string, unknown>[]): Record<string, unknown> | null {
   const resumen: Record<string, unknown> = {};
@@ -215,6 +272,21 @@ const PAGINA_FILTRADO = 100;
 const MAX_FILAS_FILTRADO = 20_000;
 export const GRUPO_MES = "mes";
 /**
+ * Entidades de documento en las que una fila cancelada NO es facturación real.
+ * SAP deja `DocumentStatus` en "bost_Close" al cancelar, así que sin mirar
+ * `Cancelled` una cancelada parece una cerrada normal y su importe se suma.
+ */
+const DOCS_CANCELABLES = new Set([
+  "invoices",
+  "purchaseinvoices",
+  "orders",
+  "purchaseorders",
+  "deliverynotes",
+  "purchasedeliverynotes",
+  "creditnotes",
+  "quotations",
+]);
+/**
  * Agrupar por año (AAAA) de DocDate. Sin esto, "qué año se facturó más"
  * obligaba al modelo a agrupar por mes y sumarlos a mano: comparaba el MES más
  * alto de cada año en vez del total anual y respondía el año equivocado. En
@@ -230,7 +302,13 @@ async function agregarFiltrado(
   grupos: string[],
   metricas: Array<{ campo: string; operacion: OperacionAgregado }>,
   aliasDe: (m: { campo: string; operacion: OperacionAgregado }) => string
-): Promise<{ filas: Record<string, unknown>[]; considerados: number; total: number | null; truncado: boolean }> {
+): Promise<{
+  filas: Record<string, unknown>[];
+  considerados: number;
+  total: number | null;
+  truncado: boolean;
+  totalGeneral: Record<string, number>;
+}> {
   // Paginación por cursor de DocEntry (como la sincronización de facturas):
   // con $skip sin $orderby el Service Layer no garantiza páginas estables y
   // al superar el tope se cortaba un mes por la mitad (diciembre 2025 salía
@@ -301,7 +379,27 @@ async function agregarFiltrado(
     fila.documentos = g.n;
     return fila;
   });
-  return { filas, considerados, total, truncado };
+
+  // Total sobre TODOS los grupos, no sólo los que se devuelven. Sin esto, al
+  // pedir "el top 5" el modelo tomaba la suma de esas 5 filas como si fuera el
+  // total de la empresa y calculaba porcentajes sobre un denominador que no
+  // existe (Costco salía al 70.7% del total cuando es el 61.5%).
+  const totalGeneral: Record<string, number> = {};
+  for (const m of metricas) {
+    const alias = aliasDe(m);
+    let acumulado = 0;
+    for (const g of acum.values()) {
+      const v =
+        m.operacion === "suma" ? g.suma[m.campo] :
+        m.operacion === "promedio" ? (g.n ? g.suma[m.campo] / g.n : undefined) :
+        m.operacion === "max" ? g.max[m.campo] : g.min[m.campo];
+      if (v !== undefined && Number.isFinite(v)) acumulado += v;
+    }
+    totalGeneral[alias] = Math.round(acumulado * 100) / 100;
+  }
+  totalGeneral.documentos = considerados;
+
+  return { filas, considerados, total, truncado, totalGeneral };
 }
 
 export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgregadoSap> {
@@ -317,7 +415,24 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
     (c) => c === GRUPO_MES || c === GRUPO_ANIO || CAMPO_ODATA.test(c)
   );
   const metricas = (consulta.metricas ?? []).filter((m) => CAMPO_ODATA.test(m.campo));
-  const filtro = consulta.filtro?.trim();
+  let filtro = consulta.filtro?.trim();
+
+  // Las canceladas se quedan FUERA salvo que se pidan explícitamente: sumarlas
+  // infla la facturación (Coppel: 46,106.14 con ellas frente a 29,340.91 reales;
+  // 94 documentos y 19.3 M en toda la base). Se avisa siempre, para que la
+  // respuesta pueda decir de dónde sale la cifra.
+  const cancelables = DOCS_CANCELABLES.has(nombreEntidad(entidad));
+  const yaFiltraCanceladas = /\bCancelled\b/i.test(filtro ?? "");
+  let excluidasCanceladas = false;
+  if (cancelables && !yaFiltraCanceladas) {
+    // `ne 'tYES'` y NO `eq 'tNO'`: 94 documentos válidos (las facturas de
+    // reemplazo de la serie 1000xx) tienen Cancelled nulo, y `eq 'tNO'` los
+    // dejaba fuera — 2026 caía de 435.8 M a 397.3 M, excluyendo 38 M reales.
+    const sinCancelar = "Cancelled ne 'tYES'";
+    filtro = filtro ? `(${filtro}) and ${sinCancelar}` : sinCancelar;
+    excluidasCanceladas = true;
+  }
+
   const porPeriodo = grupos.includes(GRUPO_MES) || grupos.includes(GRUPO_ANIO);
   if (porPeriodo && !filtro) {
     throw new Error(
@@ -326,7 +441,9 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
   }
   if (filtro) {
     const aliasDe = (m: { campo: string; operacion: OperacionAgregado }) => `${m.operacion}_${m.campo}`;
-    const { filas, considerados, total, truncado } = await agregarFiltrado(entidad, filtro, grupos, metricas, aliasDe);
+    const { filas, considerados, total, truncado, totalGeneral } = await agregarFiltrado(
+      entidad, filtro, grupos, metricas, aliasDe
+    );
     const claveOrden = metricas.length ? aliasDe(metricas[0]) : "documentos";
     const clavePeriodo = grupos.includes(GRUPO_MES) ? GRUPO_MES : GRUPO_ANIO;
     if (porPeriodo)
@@ -338,6 +455,22 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
       devueltas: Math.min(filas.length, top),
       filas: filas.slice(0, top),
       filtro,
+      ...(grupos.length && totalGeneral
+        ? {
+            totalGeneral,
+            notaTotalGeneral:
+              "`totalGeneral` es la suma sobre TODOS los grupos del filtro, no sólo sobre las filas " +
+              "devueltas: úsalo como denominador para porcentajes y como total, en vez de sumar las filas.",
+          }
+        : {}),
+      ...(excluidasCanceladas
+        ? {
+            notaCanceladas:
+              "Las facturas/documentos CANCELADOS quedan fuera de este total (se filtró Cancelled eq 'tNO'): " +
+              "sumarlos daría facturación que no existió. Si el usuario quiere incluirlos, pásalo tú en `filtro`. " +
+              "Menciona que la cifra excluye cancelados sólo si es relevante para lo que preguntaron.",
+          }
+        : {}),
       documentosConsiderados: considerados,
       ...(total !== null ? { documentosEnSap: total } : {}),
       ...(truncado
@@ -378,5 +511,257 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
   filas.sort((a, b) => (Number(b[claveOrden]) || 0) - (Number(a[claveOrden]) || 0));
 
   const top = Math.min(Math.max(consulta.top ?? 20, 1), 100);
-  return { grupos: filas.length, devueltas: Math.min(filas.length, top), filas: filas.slice(0, top) };
+  return {
+    grupos: filas.length,
+    devueltas: Math.min(filas.length, top),
+    filas: filas.slice(0, top),
+      ...(excluidasCanceladas
+        ? {
+            notaCanceladas:
+              "Las facturas/documentos CANCELADOS quedan fuera de este total (se filtró Cancelled eq 'tNO'): " +
+              "sumarlos daría facturación que no existió. Si el usuario quiere incluirlos, pásalo tú en `filtro`. " +
+              "Menciona que la cifra excluye cancelados sólo si es relevante para lo que preguntaron.",
+          }
+        : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Búsqueda de socios de negocio por nombre
+// ---------------------------------------------------------------------------
+//
+// El $filter del Service Layer distingue mayúsculas y NO soporta toupper() ni
+// tolower() ("invalid function parameter"), así que buscar un socio por nombre
+// era una lotería que daba respuestas contradictorias sobre los MISMOS datos:
+//
+//   contains(CardName,'Liverpool') -> P0070  Distribuidora Liverpool  PROVEEDOR
+//   contains(CardName,'LIVERPOOL') -> C000084 DISTRIBUIDORA LIVERPOOL CLIENTE
+//   contains(CardName,'liverpool') -> nada
+//   contains(CardName,'Coppel')    -> nada     (el socio se llama 'COPPEL')
+//
+// Con eso, "¿Liverpool es cliente o proveedor?" se contestaba según cómo se
+// hubieran escrito las mayúsculas, y "¿le surtimos a Coppel?" que no existía.
+// Peor: Liverpool es AMBAS cosas y ninguna de las dos búsquedas lo dice.
+//
+// Tampoco basta con ignorar mayúsculas: el mayor cliente está dado de alta como
+// "NUEVA WAL MART DE MEXICO", así que buscar "walmart" —lo que escribe
+// cualquiera— seguía dando cero. Por eso se compara también sin espacios y
+// tolerando erratas.
+//
+// Como el catálogo es pequeño (cientos de socios), se trae entero y se filtra
+// aquí. Devuelve SIEMPRE todas las coincidencias, de los dos tipos.
+
+const SOCIOS_CAMPOS = "CardCode,CardName,CardType,CurrentAccountBalance,Currency,Valid,Phone1,EmailAddress";
+const SOCIOS_PAGINA = 100;
+/** Tope de seguridad por si el catálogo creciera: no vaciamos SAP en un chat. */
+const SOCIOS_MAX = 3000;
+const SOCIOS_TTL_MS = 5 * 60_000;
+
+let cacheSocios: { filas: Record<string, unknown>[]; expira: number } | null = null;
+
+/** Sin acentos, en mayúsculas, sin puntuación y con los espacios colapsados. */
+function normalizarNombre(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Lo mismo pero sin espacios: "walmart" tiene que encontrar "WAL MART". */
+function compactar(texto: string): string {
+  return normalizarNombre(texto).replace(/ /g, "");
+}
+
+/** Distancia de edición, para tolerar erratas ("copel" -> "COPPEL"). */
+function distancia(a: string, b: string): number {
+  if (a === b) return 0;
+  const m = a.length;
+  const n = b.length;
+  if (!m || !n) return m || n;
+  let previa = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const actual = [i];
+    for (let j = 1; j <= n; j++) {
+      const coste = a[i - 1] === b[j - 1] ? 0 : 1;
+      actual[j] = Math.min(previa[j] + 1, actual[j - 1] + 1, previa[j - 1] + coste);
+    }
+    previa = actual;
+  }
+  return previa[n];
+}
+
+/** Dos palabras son "la misma" si difieren en poco respecto a su longitud. */
+function pareceLoMismo(a: string, b: string): boolean {
+  if (a === b) return true;
+  const corta = Math.min(a.length, b.length);
+  if (corta < 4) return false;
+  return distancia(a, b) <= (corta >= 8 ? 2 : 1);
+}
+
+/**
+ * Distancia de `aguja` al TROZO más parecido de `texto` (inicio y fin libres).
+ * Con esto "wallmart" encuentra "NUEVAWALMARTDEMEXICO": la errata está dentro
+ * de un nombre mucho más largo y comparar los dos enteros no la ve.
+ */
+function distanciaEnSubcadena(aguja: string, texto: string): number {
+  const m = aguja.length;
+  const n = texto.length;
+  if (!m) return 0;
+  if (!n) return m;
+  let previa = new Array<number>(n + 1).fill(0); // fila 0 a cero: el inicio es libre
+  for (let i = 1; i <= m; i++) {
+    const actual = [i];
+    for (let j = 1; j <= n; j++) {
+      const coste = aguja[i - 1] === texto[j - 1] ? 0 : 1;
+      actual[j] = Math.min(previa[j] + 1, actual[j - 1] + 1, previa[j - 1] + coste);
+    }
+    previa = actual;
+  }
+  return Math.min(...previa); // el final también es libre
+}
+
+/**
+ * Una coincidencia con errata sólo es FIRME si además de parecerse EXPLICA el
+ * nombre: o la aguja cubre casi todo ("COPEL" sobre "COPPEL"), o es larga de
+ * por sí ("WALLMART", "LIVERPUL"). Sin esta condición "bayer" casaba con
+ * "Logistica Industrial BACER" —una letra— y se respondía como si fuera él.
+ */
+function coincidenciaAproximadaFirme(aguja: string, nombre: string): boolean {
+  const tolerancia = aguja.length >= 9 ? 2 : 1;
+  if (distanciaEnSubcadena(aguja, nombre) > tolerancia) return false;
+  return aguja.length / Math.max(nombre.length, 1) >= 0.6 || aguja.length >= 7;
+}
+
+/**
+ * Cuánto se parece la búsqueda a un socio. 0 = nada. Por encima de
+ * COINCIDENCIA_FIRME es una coincidencia de verdad; por debajo es sólo un
+ * parecido que hay que OFRECER, nunca descartar en silencio: ahí es donde se
+ * colaba el "no existe" sobre clientes reales.
+ */
+const COINCIDENCIA_FIRME = 60;
+
+function puntuar(aguja: string, nombre: string, codigo: string): number {
+  const ac = compactar(aguja);
+  const nc = compactar(nombre);
+  if (!ac) return 0;
+  if (compactar(codigo) === ac) return 100;
+  if (nc.includes(ac)) return 95; // "walmart" dentro de "NUEVAWALMARTDEMEXICO"
+  if (ac.includes(nc) && nc.length >= 4) return 85;
+
+  const palabrasAguja = normalizarNombre(aguja).split(" ").filter((w) => w.length >= 3);
+  const palabrasNombre = normalizarNombre(nombre).split(" ").filter(Boolean);
+  if (palabrasAguja.length > 1) {
+    // Varias palabras: que estén TODAS (admitiendo plural o errata) ya es firme,
+    // porque acertar dos por casualidad no pasa.
+    const encajan = palabrasAguja.filter((w) => palabrasNombre.some((v) => pareceLoMismo(w, v)));
+    if (encajan.length === palabrasAguja.length) return 75;
+    if (encajan.length) return 40;
+  }
+  if (coincidenciaAproximadaFirme(ac, nc)) return 70;
+  // Se parece, pero poco: sugerencia, nunca respuesta.
+  if (distanciaEnSubcadena(ac, nc) <= (ac.length >= 6 ? 2 : 1)) return 40;
+  for (const v of palabrasNombre) if (v.length >= 4 && pareceLoMismo(ac, v)) return 40;
+  return 0;
+}
+
+async function todosLosSocios(): Promise<Record<string, unknown>[]> {
+  if (cacheSocios && cacheSocios.expira > Date.now()) return cacheSocios.filas;
+  const filas: Record<string, unknown>[] = [];
+  for (let saltar = 0; saltar < SOCIOS_MAX; saltar += SOCIOS_PAGINA) {
+    const params = new URLSearchParams({
+      $select: SOCIOS_CAMPOS,
+      $top: String(SOCIOS_PAGINA),
+      $skip: String(saltar),
+      $orderby: "CardCode",
+    });
+    const data = await sapFetch<{ value?: Record<string, unknown>[] }>(
+      `/BusinessPartners?${params.toString()}`,
+      { headers: { Prefer: `odata.maxpagesize=${SOCIOS_PAGINA}` } }
+    );
+    const pagina = data.value ?? [];
+    filas.push(...pagina);
+    if (pagina.length < SOCIOS_PAGINA) break;
+  }
+  cacheSocios = { filas, expira: Date.now() + SOCIOS_TTL_MS };
+  return filas;
+}
+
+export interface ResultadoBusquedaSocios {
+  buscado: string;
+  encontrados: number;
+  socios: Array<Record<string, unknown>>;
+  clientes: number;
+  proveedores: number;
+  /** Parecidos que NO son coincidencia firme: hay que ofrecerlos, no ignorarlos. */
+  parecidos?: Array<Record<string, unknown>>;
+  /** Explica el resultado en los términos que el modelo debe repetir. */
+  nota: string;
+}
+
+export async function buscarSocios(texto: string): Promise<ResultadoBusquedaSocios> {
+  const aguja = String(texto ?? "").trim();
+  if (!normalizarNombre(aguja)) throw new Error("Falta el nombre o código a buscar.");
+  const todos = await todosLosSocios();
+
+  const etiquetar = (f: Record<string, unknown>, puntos: number): Record<string, unknown> => ({
+    ...f,
+    tipo:
+      f.CardType === "cSupplier"
+        ? "proveedor"
+        : f.CardType === "cCustomer"
+          ? "cliente"
+          : String(f.CardType ?? ""),
+    parecido: puntos,
+  });
+
+  const puntuados = todos
+    .map((f) => ({ f, puntos: puntuar(aguja, String(f.CardName ?? ""), String(f.CardCode ?? "")) }))
+    .filter((x) => x.puntos > 0)
+    .sort((a, b) => b.puntos - a.puntos);
+
+  const firmes = puntuados.filter((x) => x.puntos >= COINCIDENCIA_FIRME);
+  const flojos = puntuados.filter((x) => x.puntos < COINCIDENCIA_FIRME).slice(0, 8);
+
+  const socios = firmes.map((x) => etiquetar(x.f, x.puntos));
+  const parecidos = flojos.map((x) => etiquetar(x.f, x.puntos));
+  const clientes = firmes.filter((x) => x.f.CardType === "cCustomer").length;
+  const proveedores = firmes.filter((x) => x.f.CardType === "cSupplier").length;
+
+  let nota: string;
+  if (!socios.length && parecidos.length) {
+    // NUNCA presentar esto como "no existe": es lo que hacía que se negara un
+    // cliente real por una errata o un espacio de más en el nombre.
+    nota =
+      `No hay coincidencia exacta con "${texto}", pero SÍ hay socios parecidos (mira "parecidos"). ` +
+      "NO respondas que no existe: enséñalos y pregunta al usuario a cuál se refiere.";
+  } else if (!socios.length) {
+    nota =
+      `Ningún socio de negocio se parece a "${texto}". Se revisó el catálogo COMPLETO ` +
+      `(${todos.length} socios) ignorando mayúsculas, acentos, espacios y erratas, así que esto sí es ` +
+      "una ausencia real. Aun así, si el nombre pudiera estar dado de alta por su razón social en vez " +
+      "de por su nombre comercial, prueba esa variante antes de cerrar el tema.";
+  } else if (clientes && proveedores) {
+    nota =
+      `Ojo: "${texto}" está dado de alta DOS veces, como cliente y como proveedor, con códigos ` +
+      "distintos. Son registros separados: las facturas de venta cuelgan del cliente y las de compra " +
+      "del proveedor. Dilo así en vez de elegir uno.";
+  } else {
+    nota =
+      `Se revisó el catálogo completo (${todos.length} socios) ignorando mayúsculas, acentos, espacios ` +
+      "y erratas. Si el nombre encontrado difiere del que escribió el usuario (razón social frente a " +
+      "nombre comercial), dilo al responder.";
+  }
+
+  return {
+    buscado: texto,
+    encontrados: socios.length,
+    socios,
+    clientes,
+    proveedores,
+    ...(parecidos.length ? { parecidos } : {}),
+    nota,
+  };
 }

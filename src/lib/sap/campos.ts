@@ -6,8 +6,12 @@
 // Los nombres están verificados contra el Service Layer real. Si añades uno
 // que no existe, SAP responde 400 y la entidad ENTERA deja de funcionar.
 
+// `Cancelled` va SIEMPRE: una factura cancelada sigue teniendo DocumentStatus
+// "bost_Close", así que sin este campo se presentaba como cerrada normal y su
+// importe se contaba como facturación real. Coppel tiene 6 de 13 canceladas y
+// en toda la base hay 94 por 19.3 millones.
 export const CAMPOS_DOC =
-  "DocEntry,DocNum,DocDate,DocDueDate,CardCode,CardName,DocTotal,DocCurrency,DocumentStatus";
+  "DocEntry,DocNum,DocDate,DocDueDate,CardCode,CardName,DocTotal,DocCurrency,DocumentStatus,Cancelled";
 
 export const CAMPOS_CLAVE: Record<string, string> = {
   items:
