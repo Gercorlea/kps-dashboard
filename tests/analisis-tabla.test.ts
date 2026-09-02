@@ -21,6 +21,7 @@ import {
   WALMART_MENSUAL,
 } from "@/lib/retail/analisis/plantillas";
 import { formatearCeldaNormalizada } from "@/lib/retail/analisis/formato";
+import { anchosUniformes, huecosPorColumna } from "@/components/retail/AnalisisTable";
 import type { FilaCruda, MetaColumna } from "@/lib/retail/analisis/tipos";
 
 function col(parcial: Partial<MetaColumna> & { indice: number }): MetaColumna {
@@ -151,6 +152,86 @@ describe("paginar", () => {
     expect(totalPaginas(100, 100)).toBe(1);
     expect(totalPaginas(101, 100)).toBe(2);
     expect(totalPaginas(15_344, 100)).toBe(154);
+  });
+});
+
+// ------------------------------------------------------------- anchos
+
+describe("huecosPorColumna", () => {
+  // false = alineada a la izquierda (texto), true = a la derecha (números).
+  it("cada hueco lo paga UNA columna: la que tiene el espacio libre de ese lado", () => {
+    // El catálogo: cuatro de texto y tres de números.
+    const huecos = huecosPorColumna([false, false, false, false, true, true, true]);
+    // "Unidades" (la primera de números) no paga nada: el hueco que la separa
+    // de "Marca" ya lo paga "Marca" por su derecha. Sin esto ese hueco salía
+    // del doble que los demás, que es el bug que esto arregla.
+    expect(huecos).toEqual([1, 1, 1, 1, 0, 1, 1]);
+  });
+
+  it("reparte tantos huecos como separaciones hay en la fila", () => {
+    for (const alineaciones of [
+      [false, false, false, false, true, true, true],
+      [true, true, true],
+      [false, false, false],
+      [false, true, false, true],
+    ]) {
+      const suma = huecosPorColumna(alineaciones).reduce((a, b) => a + b, 0);
+      expect(suma, alineaciones.join(",")).toBe(alineaciones.length - 1);
+    }
+  });
+
+  it("ni la primera paga por su izquierda ni la última por su derecha", () => {
+    // Todo texto: la última no paga, así que la tabla no termina en un hueco.
+    expect(huecosPorColumna([false, false, false])).toEqual([1, 1, 0]);
+    // Todo números: la primera no paga, así que no empieza con uno.
+    expect(huecosPorColumna([true, true, true])).toEqual([0, 1, 1]);
+  });
+
+  it("una sola columna no tiene huecos", () => {
+    expect(huecosPorColumna([false])).toEqual([0]);
+    expect(huecosPorColumna([])).toEqual([]);
+  });
+});
+
+describe("anchosUniformes", () => {
+  // El catálogo de productos tal como queda: columnas de identidad primero y
+  // las de números después, con contenidos de largos muy distintos.
+  const columnas = [
+    col({ indice: 0, nombre: "Nombre del producto" }),
+    col({ indice: 1, nombre: "Código del producto", tipo: "numero", esIdentificador: true }),
+    col({ indice: 2, nombre: "UPC", esIdentificador: true }),
+    col({ indice: 3, nombre: "Marca" }),
+    col({ indice: 4, nombre: "Unidades", tipo: "numero" }),
+    col({ indice: 5, nombre: "Ventas netas", tipo: "numero" }),
+  ];
+  const filas: FilaCruda[] = [
+    ["TALLARIN CHINO 200G", 552704178, "0007501234567", "KPS", 1234, 987654],
+  ];
+
+  const pixeles = (ancho: string) => Number(ancho.match(/^(?:calc\()?(\d+)px/)![1]);
+
+  it("el sobrante se reparte en partes iguales entre los huecos", () => {
+    const { anchos, minimo } = anchosUniformes(columnas, filas);
+    const sobrante = `(100% - ${minimo}px) / ${columnas.length - 1}`;
+    // Una parte para cada columna que paga un hueco…
+    expect(anchos.filter((a) => a.endsWith(`+ ${sobrante})`))).toHaveLength(5);
+    // …y ninguna para "Unidades", que no paga ninguno.
+    expect(anchos[4]).toMatch(/^\d+px$/);
+  });
+
+  it("el suelo es la suma de los contenidos: ahí el sobrante es cero", () => {
+    const { anchos, minimo } = anchosUniformes(columnas, filas);
+    expect(anchos.map(pixeles).reduce((a, b) => a + b, 0)).toBe(minimo);
+  });
+
+  it("una columna con más contenido se lleva más pixeles propios", () => {
+    const { anchos } = anchosUniformes(columnas, filas);
+    // El nombre del producto contra la marca, que son tres letras.
+    expect(pixeles(anchos[0])).toBeGreaterThan(pixeles(anchos[3]));
+  });
+
+  it("sin columnas no divide entre cero", () => {
+    expect(anchosUniformes([], [])).toEqual({ anchos: [], minimo: 0 });
   });
 });
 

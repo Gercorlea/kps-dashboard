@@ -15,7 +15,7 @@ export const MAX_COLUMNAS = 60;
 // padding y la letra, y el encabezado fluye en varias líneas porque con nowrap
 // "Avg Sales $ per Store" fijaba el ancho de toda su columna.
 //
-// La normal es el catálogo de productos: seis columnas y el padding del design
+// La normal es el catálogo de productos: siete columnas y el padding del design
 // system. Si se aprieta, la letra y los espacios dejan de concordar con el
 // resto del módulo.
 //
@@ -85,37 +85,112 @@ const MINIMO = 8;
 const MAXIMO = 26;
 
 /**
- * Anchos en porcentaje, proporcionales a lo que cada columna tiene que mostrar.
+ * Ancho aproximado de un carácter, en px.
  *
- * El catálogo son seis columnas cortas en un panel muy ancho: sobran cientos de
- * pixeles y hay que meterlos en algún lado. Dárselos a una sola la deja enorme;
- * dejarlos al final deja media tabla vacía; repartirlos a partes iguales ignora
- * que "Marca" necesita nueve caracteres y "Ventas netas" catorce, y abre un
- * hueco enorme justo entre las dos. Repartirlos en proporción reparte también
- * el sobrante: cada columna queda holgada en la misma medida y la tabla llega
- * al borde derecho.
- *
- * La medida es en caracteres —del encabezado o del dato más largo de la página,
- * el que mande— y no en pixeles: no hay forma de medir texto sin renderizarlo,
- * y para repartir un porcentaje basta con la proporción.
+ * El dato va a 13px y el encabezado en mono a 11 con tracking: los dos rondan
+ * los 7px por carácter, así que una sola constante mide las dos cosas. Es una
+ * estimación a propósito —medir texto de verdad obliga a renderizarlo y a un
+ * ResizeObserver— y por eso las celdas recortan con elipsis: si una fila se
+ * pasa de lo estimado se corta, en vez de descuadrar la tabla.
  */
-function anchosProporcionales(
+const PX_POR_CARACTER = 7.2;
+
+/** El padding lateral del design system (14px por lado), los dos juntos. */
+const PADDING_CELDA = 28;
+
+/**
+ * Lo que pide el encabezado, medido en caracteres.
+ *
+ * No es su largo entero: se parte en varias líneas (ver `ENCABEZADO_NORMAL`),
+ * así que "Código del producto" no necesita diecinueve caracteres de ancho
+ * sino la mitad en dos renglones —o su palabra más larga, que es lo único que
+ * no puede quebrarse—. Medirlo entero le daba a esa columna casi tanto sitio
+ * como al nombre del producto para enseñar nueve dígitos, y dejaba el hueco
+ * justo donde más falta hace el nombre.
+ */
+function anchoEncabezado(nombre: string): number {
+  const palabras = nombre.split(/\s+/);
+  const masLarga = palabras.reduce((max, p) => Math.max(max, p.length), 0);
+  return Math.max(masLarga, nombre.length / 2);
+}
+
+/** Si la columna alinea su contenido a la derecha: las de números y nada más. */
+function alineadaDerecha(col: MetaColumna): boolean {
+  return col.tipo === "numero" && !col.esIdentificador;
+}
+
+/**
+ * Cuántos huecos paga cada columna.
+ *
+ * El sobrante de una columna NO se ve donde está, sino del lado por el que su
+ * contenido no llega al borde: una columna alineada a la izquierda lo deja a la
+ * derecha de su texto y una de números lo deja a la izquierda de su cifra. Por
+ * eso repartirlo a partes iguales por columna no empareja los huecos: justo
+ * entre "Marca" y "Unidades" —la última de texto y la primera de números— se
+ * juntaban los dos sobrantes y ese hueco salía del doble que los demás.
+ *
+ * Lo que se reparte a partes iguales es EL HUECO, entonces, y no la columna:
+ * cada uno de los n-1 huecos de la fila se lo carga la columna que tiene el
+ * espacio libre de ese lado —la de la izquierda si alinea a la izquierda, la de
+ * la derecha si alinea a la derecha—, así que ninguno paga dos veces y ninguno
+ * queda sin pagar. La primera columna nunca paga por su izquierda y la última
+ * nunca por su derecha: el texto arranca pegado al borde y la última cifra
+ * termina pegada al otro, que es como se espera que cierre una tabla.
+ */
+export function huecosPorColumna(derecha: boolean[]): number[] {
+  const huecos = derecha.map(() => 0);
+  for (let i = 0; i + 1 < derecha.length; i++) {
+    huecos[derecha[i] ? i + 1 : i]++;
+  }
+  return huecos;
+}
+
+/**
+ * Ancho de cada columna: lo que ocupa su contenido MÁS los huecos que le tocan.
+ *
+ * El catálogo son siete columnas cortas en un panel muy ancho: sobran cientos
+ * de pixeles y hay que meterlos en algún lado. Repartirlos en proporción al
+ * contenido le da los pixeles gordos a la columna que ya era la más ancha y
+ * cada separación acaba de un tamaño distinto; repartirlos por columna deja el
+ * hueco doble en la frontera entre el texto y los números (ver
+ * `huecosPorColumna`). Repartirlos por hueco deja los n-1 iguales, que es lo
+ * que se ve como una tabla pareja.
+ *
+ * El reparto lo hace el navegador y no este código: el sobrante depende del
+ * ancho del panel, que aquí no se conoce, y `calc()` con el 100% de la tabla lo
+ * resuelve a cualquier tamaño de ventana sin volver a medir nada. Los pixeles
+ * de contenido salen de una estimación por carácter (ver `PX_POR_CARACTER`) y
+ * el `minimo` es su suma: por debajo de eso ya no hay sobrante que repartir y
+ * la tabla se desborda dentro de `.cr-table-scroll`, que es preferible a
+ * aplastar siete columnas hasta la ilegibilidad.
+ */
+export function anchosUniformes(
   columnas: MetaColumna[],
   filas: FilaCruda[]
-): string[] {
-  const largos = columnas.map((col) => {
-    // El encabezado va en versalitas mono con tracking, así que ocupa más por
-    // carácter que el dato aunque ahora midan los mismos 13px; el 1.2 lo
-    // compensa a ojo.
-    let largo = col.nombre.length * 1.2;
+): { anchos: string[]; minimo: number } {
+  const contenidos = columnas.map((col) => {
+    let largo = anchoEncabezado(col.nombre);
     for (const fila of filas) {
       largo = Math.max(largo, formatearCeldaNormalizada(fila[col.indice], col).length);
     }
-    return Math.min(MAXIMO, Math.max(MINIMO, largo));
+    const acotado = Math.min(MAXIMO, Math.max(MINIMO, largo));
+    return Math.round(acotado * PX_POR_CARACTER) + PADDING_CELDA;
   });
 
-  const total = largos.reduce((a, b) => a + b, 0);
-  return largos.map((l) => `${((l / total) * 100).toFixed(3)}%`);
+  const minimo = contenidos.reduce((a, b) => a + b, 0);
+  const huecos = huecosPorColumna(columnas.map(alineadaDerecha));
+  // Con una sola columna no hay huecos que repartir y el divisor sería cero.
+  const total = Math.max(1, columnas.length - 1);
+  const sobrante = `(100% - ${minimo}px) / ${total}`;
+
+  return {
+    anchos: contenidos.map((px, i) =>
+      huecos[i] === 0
+        ? `${px}px`
+        : `calc(${px}px + ${huecos[i] === 1 ? "" : `${huecos[i]} * `}${sobrante})`
+    ),
+    minimo,
+  };
 }
 
 interface Props {
@@ -179,10 +254,17 @@ function AnalisisTableBase({
   const celda = densa ? { ...CELDA_DENSA, minWidth: suelo } : CELDA_NORMAL;
   // La densa no reparte nada: catorce columnas ya llenan el panel de sobra y
   // ahí el ancho lo tiene que marcar el contenido.
-  const anchos = useMemo(
-    () => (densa ? null : anchosProporcionales(columnas.slice(0, MAX_COLUMNAS), filasVisibles)),
+  const reparto = useMemo(
+    () => (densa ? null : anchosUniformes(columnas.slice(0, MAX_COLUMNAS), filasVisibles)),
     [densa, columnas, filasVisibles]
   );
+  const anchos = reparto?.anchos;
+  // Sin este suelo el sobrante se vuelve negativo en una ventana angosta y las
+  // siete columnas se aplastan a la vez; con él la tabla se desborda dentro de
+  // su contenedor con scroll y se lee moviéndose a la derecha.
+  const tabla = reparto
+    ? { ...TABLA_NORMAL, minWidth: reparto.minimo }
+    : undefined;
   const omitidas = totalColumnas - visibles.length;
   const termino = busquedaAplicada.trim();
   const buscando = termino !== "";
@@ -246,14 +328,14 @@ function AnalisisTableBase({
       </header>
 
       <div className="cr-table-scroll" style={{ maxHeight: "22rem", overflowY: "auto" }}>
-        <table className="cr-table" style={densa ? undefined : TABLA_NORMAL}>
+        <table className="cr-table" style={tabla}>
           <thead>
             <tr>
               {visibles.map((col, i) => (
                 <th
                   key={col.indice}
                   scope="col"
-                  className={col.tipo === "numero" && !col.esIdentificador ? "num" : undefined}
+                  className={alineadaDerecha(col) ? "num" : undefined}
                   style={{ ...encabezado, width: anchos?.[i] }}
                   title={col.nombre}
                 >
@@ -278,12 +360,11 @@ function AnalisisTableBase({
                 <tr key={i}>
                   {visibles.map((col) => {
                     const texto = formatearCeldaNormalizada(fila[col.indice], col);
-                    const clases =
-                      col.tipo === "numero" && !col.esIdentificador
-                        ? "num"
-                        : col.tipo === "fecha" || col.esIdentificador
-                          ? "cr-mono"
-                          : undefined;
+                    const clases = alineadaDerecha(col)
+                      ? "num"
+                      : col.tipo === "fecha" || col.esIdentificador
+                        ? "cr-mono"
+                        : undefined;
                     return (
                       <td key={col.indice} className={clases} title={texto} style={celda}>
                         <span className="block truncate">{texto || "—"}</span>

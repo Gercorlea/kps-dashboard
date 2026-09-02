@@ -223,9 +223,14 @@ export const WALMART_MENSUAL: Plantilla = {
     { header: "Item Nbr", campo: "itemNbr", rol: "codigo", tipoDato: "number" },
     { header: "Item Flags", campo: "itemFlags", rol: "ignorada", tipoDato: "string", motivo: "vacía" },
   ],
-  // El grano es (nombre, UPC, marca) y no sólo el nombre: un "Prime Item Desc"
-  // agrupa varios productos, así que con la descripción sola habría que enseñar
-  // UN upc de los varios que caen en la fila, que sería mentira.
+  // El grano es (nombre, código, UPC, marca) y no sólo el nombre: un "Prime
+  // Item Desc" agrupa varios productos, así que con la descripción sola habría
+  // que enseñar UN upc de los varios que caen en la fila, que sería mentira.
+  //
+  // El código va pegado al nombre porque es el mismo dato dicho de dos formas
+  // —"Prime Item Nbr" es el número del "Prime Item Desc"—: leerlos juntos es lo
+  // que permite pedir un producto por código sin buscarlo en otra pantalla. Al
+  // ser 1:1 con el nombre no parte ninguna fila en dos, sólo añade la columna.
   //
   // De las seis métricas guardadas se muestran tres: "Item Qty Sold" duplica a
   // "POS Qty", "# of Basket Occurences" es una medida de canasta que no dice
@@ -233,7 +238,7 @@ export const WALMART_MENSUAL: Plantilla = {
   // tienda que no cabe junto a los totales del producto. Las tres siguen
   // guardándose y se ven completas en /retail/analisis.
   producto: {
-    claves: ["itemDesc", "upc", "brand"],
+    claves: ["itemDesc", "primeItemNbr", "upc", "brand"],
     metricas: ["posQty", "posSales", "avgPrice"],
   },
 };
