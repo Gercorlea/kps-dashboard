@@ -322,7 +322,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   //
   // Un periodo SÍ cuesta un viaje, al revés que la métrica o la dimensión: las
   // ramas de dimensión y de producto del $facet agregan sin fecha, así que las
-  // barras, la dona y la tabla de artículos no se pueden recortar aquí. Se pide
+  // barras, la dona y la tabla de productos no se pueden recortar aquí. Se pide
   // un segundo bundle acotado y Ventas y Productos leen ese.
   const [desdeEscrito, setDesdeEscrito] = useState("");
   const [hastaEscrito, setHastaEscrito] = useState("");
@@ -708,7 +708,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
     : direccionPorOmision;
 
   const filasProductos = useMemo<CeldaCruda[][]>(() => {
-    // Del periodo si hay uno: la tabla de artículos responde al mismo filtro
+    // Del periodo si hay uno: la tabla de productos responde al mismo filtro
     // que las gráficas de Ventas, así que sus cifras y las de las barras
     // hablan del mismo tramo.
     const grupos = datos?.producto?.grupos;
@@ -807,9 +807,6 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
         </Selector>
       ) : null}
 
-      {/* Radios y no un desplegable, igual que el orden de Productos: las
-          métricas de una plantilla son dos o tres y caben a la vista, así que
-          se ve de un vistazo entre qué se elige y cambiar cuesta un clic. */}
       <Radios
         etiqueta="Medida"
         nombre="metrica-ventas"
@@ -893,7 +890,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
           <div className="hidden items-center gap-4 sm:flex">
             <Metrica etiqueta="Último reporte" valor={fmtFecha(ficha.ultimoReporte)} />
             <Metrica etiqueta="Reportes" valor={fmtNum(ficha.reportes)} />
-            <Metrica etiqueta="Artículos" valor={fmtNum(ficha.articulos)} />
+            <Metrica etiqueta="Productos" valor={fmtNum(ficha.articulos)} />
           </div>
         </div>
       </header>
@@ -1050,7 +1047,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                 avisoPeriodo
               ) : (
                 <AnalisisTable
-                  titulo="Artículos"
+                  titulo="Productos"
                   columnas={columnasProductos}
                   filasVisibles={productosVisibles}
                   totalFilas={datos?.producto?.grupos.length ?? 0}
@@ -1097,7 +1094,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                     // respuesta.
                     setCargando(true);
                     void cargar();
-                    // La cabecera (reportes, artículos, periodo) la pinta el
+                    // La cabecera (reportes, productos, periodo) la pinta el
                     // servidor: sin esto seguiría contando el reporte borrado.
                     router.refresh();
                   }}
@@ -1109,7 +1106,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   sinPadding
                 >
                   <div className="cr-table-scroll">
-                    <table className="cr-table">
+                    <table className="cr-table cr-table--head-lg">
                       <thead>
                         <tr>
                           <th>Archivo</th>

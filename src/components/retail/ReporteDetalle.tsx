@@ -127,7 +127,7 @@ export function ReporteDetalle({
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Kpi label="Filas" value={fmtNum(ficha.filas)} />
-            <Kpi label="Artículos" value={fmtNum(ficha.articulos)} />
+            <Kpi label="Productos" value={fmtNum(ficha.articulos)} />
             <Kpi label="Marcas" value={fmtNum(ficha.marcasTotal)} />
             <Kpi
               label="Periodo"
@@ -172,7 +172,7 @@ export function ReporteDetalle({
           {ficha.metricas.length > 0 ? (
             <Panel title="Totales del reporte" sinPadding>
               <div className="cr-table-scroll">
-                <table className="cr-table">
+                <table className="cr-table cr-table--head-lg">
                   <thead>
                     <tr>
                       <th>Columna</th>

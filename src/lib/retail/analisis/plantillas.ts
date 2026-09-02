@@ -111,7 +111,7 @@ export interface Plantilla {
  *
  * Trae 26 filas de preámbulo (título, "Report Options", "Selections Include",
  * la leyenda de Item Flags) antes del encabezado real, y el grano es
- * artículo × día: la clave (itemNbr, date) es única.
+ * producto × día: la clave (itemNbr, date) es única.
  *
  * Ojo con dos cosas del archivo real:
  * - `UPC` y `Vendor Nbr` traen ceros a la izquierda, así que son texto. Pasarlos
@@ -224,12 +224,12 @@ export const WALMART_MENSUAL: Plantilla = {
     { header: "Item Flags", campo: "itemFlags", rol: "ignorada", tipoDato: "string", motivo: "vacía" },
   ],
   // El grano es (nombre, UPC, marca) y no sólo el nombre: un "Prime Item Desc"
-  // agrupa varios artículos, así que con la descripción sola habría que enseñar
+  // agrupa varios productos, así que con la descripción sola habría que enseñar
   // UN upc de los varios que caen en la fila, que sería mentira.
   //
   // De las seis métricas guardadas se muestran tres: "Item Qty Sold" duplica a
   // "POS Qty", "# of Basket Occurences" es una medida de canasta que no dice
-  // nada leída por artículo, y "Avg Sales $ per Store" es una lectura por
+  // nada leída por producto, y "Avg Sales $ per Store" es una lectura por
   // tienda que no cabe junto a los totales del producto. Las tres siguen
   // guardándose y se ven completas en /retail/analisis.
   producto: {
@@ -529,7 +529,7 @@ export type FilaHistorico = Record<string, string | number>;
 /**
  * Convierte las filas crudas a la forma que espera el endpoint del histórico.
  *
- * Se descarta la fila que no tenga fecha o código de artículo legibles: son las
+ * Se descarta la fila que no tenga fecha o código de producto legibles: son las
  * dos partes de la clave natural (account, itemNbr, date), y sin ellas el
  * upsert no puede ser idempotente. Se informa cuántas se descartaron en vez de
  * hacerlo en silencio.

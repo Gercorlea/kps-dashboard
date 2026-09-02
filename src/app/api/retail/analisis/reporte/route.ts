@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     }
 
     // La plantilla dice qué columnas son métricas: sumar "todo lo numérico"
-    // metería los códigos de artículo en los totales.
+    // metería los códigos de producto en los totales.
     const plantilla = plantillaPorId(cabeza.template);
     const metricas = plantilla
       ? columnasHistorico(plantilla).filter((c) => c.rol === "metrica")
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
           desde: 1,
           hasta: 1,
           exclusivas: 1,
-          // El conteo se hace aquí y no en el cliente: son artículos
+          // El conteo se hace aquí y no en el cliente: son productos
           // distintos, no filas, y el arreglo entero no hace falta.
           articulos: { $size: "$articulos" },
           marcas: 1,

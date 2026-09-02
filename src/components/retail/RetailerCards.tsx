@@ -10,7 +10,7 @@ import type { DetalleRetailer, PuntoVentas } from "@/lib/retail/stats";
 // La fila daba ocho columnas del mismo peso y ninguna identidad: había que
 // leerla de izquierda a derecha para saber de quién era. La card pone delante
 // lo que se busca al entrar —de quién, cuánto y hacia dónde va— y deja el
-// detalle (artículos, reportes, periodo) abajo, donde no estorba.
+// detalle (productos, reportes, periodo) abajo, donde no estorba.
 //
 // Es un componente de servidor: sólo `Delta` cruza al cliente, y ya viaja en el
 // bundle de la página por la gráfica. El sparkline es SVG plano, sin recharts:
@@ -185,7 +185,7 @@ function RetailerCard({ r, serie }: { r: DetalleRetailer; serie: PuntoVentas[] }
               <dd>{fmtNum(r.unidades)}</dd>
             </div>
             <div>
-              <dt>Artículos</dt>
+              <dt>Productos</dt>
               <dd>{fmtNum(r.articulos)}</dd>
             </div>
             <div>

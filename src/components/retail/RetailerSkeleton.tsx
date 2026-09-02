@@ -130,9 +130,9 @@ export function RetailerGraficasSkeleton() {
 }
 
 /**
- * Tabla de artículos. La pinta la pestaña de Productos mientras llega el bundle
+ * Tabla de productos. La pinta la pestaña de Productos mientras llega el bundle
  * de un periodo recién elegido: la tabla de verdad con cero filas diría "0
- * artículos", que es un dato y no una espera.
+ * productos", que es un dato y no una espera.
  *
  * Sin animación propia, por lo mismo que las gráficas: la pone quien lo monta.
  */

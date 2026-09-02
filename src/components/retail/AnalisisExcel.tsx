@@ -504,7 +504,7 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
   // Ya no se elige: una métrica real se suma y "Cantidad de filas" se cuenta.
   //
   // El desplegable de agregación ofrecía además "Promedio", y lo que se veía
-  // era un promedio POR FILA del reporte —una fila es un artículo en un día—,
+  // era un promedio POR FILA del reporte —una fila es un producto en un día—,
   // que no es el promedio que nadie va a buscar. Sin él la única alternativa a
   // la suma era el conteo, y ése ya lo decide la métrica: sin columna numérica
   // no hay nada que sumar.
@@ -913,7 +913,7 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
               {formatearEntero(guardado.insertadas)} filas nuevas y{" "}
               {formatearEntero(guardado.actualizadas)} actualizadas
               {guardado.descartadas > 0
-                ? ` · ${formatearEntero(guardado.descartadas)} descartadas por no tener fecha o código de artículo`
+                ? ` · ${formatearEntero(guardado.descartadas)} descartadas por no tener fecha o código de producto`
                 : ""}
               .
             </p>

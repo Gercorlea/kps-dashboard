@@ -57,17 +57,18 @@ const CELDA_DENSA: React.CSSProperties = {
 };
 
 // El padding lo pone el design system; el tamaño no, porque sus 9px son
-// ilegibles en una tabla de pocas columnas. Aquí van a 13px —los mismos que el
-// dato— para que el nombre de la columna se lea de un vistazo, y con el
-// tracking recortado: el .08em del design system está calibrado para 9px y a
-// este tamaño estira los encabezados a lo ancho sin necesidad.
+// ilegibles en una tabla de pocas columnas. Aquí van a 11px —el mismo que
+// `.cr-table--head-lg`, así que las tres tablas del módulo leen igual— para
+// que el nombre de la columna se lea de un vistazo, y con el tracking
+// recortado: el .08em del design system está calibrado para 9px y a este
+// tamaño estira los encabezados a lo ancho sin necesidad.
 // Se parte en varias líneas: con el ancho ya repartido, un encabezado largo no
 // puede ensanchar su columna, así que en una ventana angosta o baja de renglón
 // o se derrama sobre la de al lado. Alineados abajo, la fila queda pareja
 // aunque unos ocupen dos líneas y otros una.
 const ENCABEZADO_NORMAL: React.CSSProperties = {
-  fontSize: "13px",
-  letterSpacing: ".02em",
+  fontSize: "11px",
+  letterSpacing: ".05em",
   whiteSpace: "normal",
   lineHeight: 1.3,
   verticalAlign: "bottom",
