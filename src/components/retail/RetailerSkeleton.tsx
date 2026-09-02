@@ -130,6 +130,44 @@ export function RetailerGraficasSkeleton() {
 }
 
 /**
+ * La fila de cuatro KPIs de Ventas.
+ *
+ * La pinta la pestaña de Ventas mientras llega el bundle de un periodo recién
+ * elegido: ahora que los KPIs son del periodo, dejar las cifras del histórico
+ * mientras viaja el nuevo bundle las pondría bajo la etiqueta de un trimestre.
+ *
+ * Las tarjetas son .cr-card y no .cr-kpi a propósito: la cinta de tinta de 2px
+ * del KPI se leería como un dato que ya llegó.
+ *
+ * El primero, el segundo y el tercero llevan un renglón más: son los que van
+ * con una línea de detalle bajo la cifra —el rango del periodo, el año contra
+ * el anterior y el promedio mensual—. Sin ella la fila crecía al llegar los
+ * datos y empujaba las gráficas hacia abajo.
+ *
+ * Sin animación propia: la pone quien lo monta, para que no queden dos
+ * `cr-pulse` anidados latiendo desfasados.
+ */
+export function RetailerKpisSkeleton() {
+  return (
+    // Misma rejilla que AnalisisKpis.
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {[
+        { ancho: 104, detalle: true },
+        { ancho: 120, detalle: true },
+        { ancho: 96, detalle: true },
+        { ancho: 88, detalle: false },
+      ].map(({ ancho, detalle }) => (
+        <div key={ancho} className="cr-card" style={{ padding: "18px 20px" }}>
+          <Bloque ancho={ancho} alto={10} />
+          <Bloque ancho={144} alto={30} className="mt-2.5" />
+          {detalle ? <Bloque ancho={112} alto={11} className="mt-1" /> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Tabla de productos. La pinta la pestaña de Productos mientras llega el bundle
  * de un periodo recién elegido: la tabla de verdad con cero filas diría "0
  * productos", que es un dato y no una espera.
@@ -164,29 +202,9 @@ export function RetailerContenidoSkeleton() {
     <div className="cr-pulse flex flex-col gap-6" aria-busy="true">
       <span className="sr-only">Cargando la ficha del retailer…</span>
 
-      {/* Misma rejilla que AnalisisKpis. Van primero porque en Ventas encabezan
-          la página, por encima de la fila de filtros. Las tarjetas son .cr-card y no .cr-kpi
-          a propósito: la cinta de tinta de 2px del KPI se leería como un dato
-          que ya llegó.
-
-          El segundo y el tercero llevan un renglón más: son los de evolución (el
-          año contra el anterior y el promedio mensual), que van con una línea
-          de detalle debajo de la cifra. Sin ella la fila crecía al llegar los
-          datos y empujaba las gráficas hacia abajo. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { ancho: 104, detalle: false },
-          { ancho: 120, detalle: true },
-          { ancho: 96, detalle: true },
-          { ancho: 88, detalle: false },
-        ].map(({ ancho, detalle }) => (
-          <div key={ancho} className="cr-card" style={{ padding: "18px 20px" }}>
-            <Bloque ancho={ancho} alto={10} />
-            <Bloque ancho={144} alto={30} className="mt-2.5" />
-            {detalle ? <Bloque ancho={112} alto={11} className="mt-1" /> : null}
-          </div>
-        ))}
-      </div>
+      {/* Van primero porque en Ventas encabezan la página, por encima de la
+          fila de filtros. */}
+      <RetailerKpisSkeleton />
 
       {/* Los selectores de dimensión y métrica, más el de periodo. */}
       <div className="flex flex-wrap items-end gap-3">
