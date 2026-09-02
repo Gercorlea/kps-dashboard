@@ -36,7 +36,12 @@ interface Ficha {
   actualizado: string | null;
   subidoPor: UsuarioReporte | null;
   actualizadoPor: UsuarioReporte | null;
-  metricas: { campo: string; nombre: string; total: number }[];
+  /**
+   * Una por columna de métrica, con su suma. `aditiva` en false son las que ya
+   * vienen promediadas fila a fila ("Precio promedio", "Venta promedio por
+   * tienda"): la suma sirve para el promedio, pero no es un total.
+   */
+  metricas: { campo: string; nombre: string; total: number; aditiva: boolean }[];
 }
 
 export function ReporteDetalle({
@@ -184,7 +189,16 @@ export function ReporteDetalle({
                     {ficha.metricas.map((m) => (
                       <tr key={m.campo}>
                         <td>{m.nombre}</td>
-                        <td className="num">{fmtNum(m.total)}</td>
+                        {/* Sumar una columna ya promediada da una cifra
+                            falsa: un "precio promedio" de siete dígitos. Va el
+                            guión largo en su lugar, con el motivo al pasar el
+                            cursor, y el promedio por fila —que es lo que esa
+                            columna sí sabe decir— se queda al lado. */}
+                        <td
+                          className="num"
+                        >
+                          {m.aditiva ? fmtNum(m.total) : "—"}
+                        </td>
                         <td className="num">
                           {ficha.filas > 0 ? fmtDec(m.total / ficha.filas) : "—"}
                         </td>

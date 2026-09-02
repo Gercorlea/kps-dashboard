@@ -135,6 +135,14 @@ export async function GET(request: NextRequest) {
         campo: m.campo,
         nombre: m.nombre,
         total: (resumen?.[`s_${m.campo}`] as number) ?? 0,
+        // Si la columna se puede TOTALIZAR, que no es lo mismo que sumarla.
+        // "Precio promedio" y "Venta promedio por tienda" ya vienen promediadas
+        // fila a fila, así que su suma —$1.4 millones de "precio promedio"— es
+        // un número que no significa nada y que la ficha no debe enseñar. La
+        // suma se sigue mandando porque de ella sale el promedio por fila, que
+        // sí es lo que esas dos columnas quieren decir; quien la lea tiene que
+        // mirar esta bandera antes de presentarla como un total.
+        aditiva: m.agregado.tipo === "suma",
       })),
     });
   } catch (e) {

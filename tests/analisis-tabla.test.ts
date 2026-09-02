@@ -270,6 +270,17 @@ describe("columnasHistorico", () => {
     expect(columnas.map((c) => c.indice)).toEqual(columnas.map((_, i) => i));
   });
 
+  it("dice qué métricas NO se pueden totalizar, que son las ya promediadas", () => {
+    // De aquí sale el guión largo de "Totales del reporte" (ReporteDetalle):
+    // sumar una columna que ya viene promediada fila a fila da una cifra falsa.
+    // Si mañana se declara otra métrica con un agregado que no es la suma,
+    // esta lista cambia y hay que decidir si su total significa algo.
+    const noAditivas = columnas
+      .filter((c) => c.rol === "metrica" && c.agregado.tipo !== "suma")
+      .map((c) => c.nombre);
+    expect(noAditivas).toEqual(["Precio promedio", "Venta promedio por tienda"]);
+  });
+
   it("marca como identificadores los códigos y no las métricas", () => {
     // Por campo: el nombre visible lo fija la etiqueta de la plantilla.
     const porCampo = new Map(columnas.map((c) => [c.campo, c]));
