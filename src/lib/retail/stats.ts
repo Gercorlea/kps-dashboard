@@ -233,7 +233,7 @@ export interface DetalleRetailer {
   /** Importe vendido en todos sus reportes. */
   importe: number;
   unidades: number;
-  /** Artículos distintos vistos en el histórico del retailer. */
+  /** Productos distintos vistos en el histórico del retailer. */
   articulos: number;
   reportes: number;
   /** Sobre el importe de todos los retailers; null si nadie vendió. */
