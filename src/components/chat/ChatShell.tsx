@@ -557,19 +557,6 @@ export function ChatShell() {
     }
   }
 
-  async function borrarTodos() {
-    if (chats.length === 0) return;
-    const msg = `¿Borrar TODAS las conversaciones (${chats.length})? Esta acción no se puede deshacer.`;
-    if (!window.confirm(msg)) return;
-    try {
-      await api("/api/ai/chats", { method: "DELETE" });
-      setChats([]);
-      setChatId(null);
-    } catch (e) {
-      setError(e instanceof ClientApiError ? e.message : "No se pudieron borrar las conversaciones");
-    }
-  }
-
   async function borrarChat(id: string) {
     if (!window.confirm("¿Borrar esta conversación?")) return;
     try {
@@ -614,15 +601,6 @@ export function ChatShell() {
           <button type="button" className="cr-chat-new-btn" onClick={() => nuevoChat()}>
             <Plus size={15} strokeWidth={2} />
             <span className="cr-chat-new-btn__label">Nueva conversación</span>
-          </button>
-          <button
-            type="button"
-            className="cr-chat-search-toggle"
-            aria-label="Borrar todas las conversaciones"
-            title="Borrar todas las conversaciones"
-            onClick={() => void borrarTodos()}
-          >
-            <Trash2 size={15} strokeWidth={1.75} />
           </button>
           <div className="cr-chat-search-slot">
             <button
