@@ -15,7 +15,12 @@
   /* Tinta (texto) */
   --cr-ink: #0E1116;            /* títulos, números, texto principal */
   --cr-ink-2: #5B6474;          /* cuerpo, descripciones */
-  --cr-ink-3: #8B94A3;          /* labels, placeholders, metadata */
+  /* 5.15:1 sobre blanco, 4.81 sobre el lienzo y 4.56 sobre surface-3: AA en
+     las tres superficies donde se posa. A #8B94A3 se quedaba en 3.06 —y
+     este tono viste metadatos, encabezados de tabla y ayudas de campo, que son
+     texto que hay que leer. Sigue por debajo de ink-2 (5.97): los tres
+     escalones de tinta se distinguen igual. */
+  --cr-ink-3: #656E7C;          /* labels, placeholders, metadata */
   --cr-on-accent: #ffffff;
 
   /* Líneas / bordes */
@@ -55,6 +60,14 @@
   /* Anillo de foco — un solo recurso para todo lo enfocable */
   --cr-ring: 0 0 0 3px rgba(91, 61, 245, 0.22);
   --cr-ring-danger: 0 0 0 3px rgba(193, 61, 43, 0.20);
+
+  /* Variante oscura para TEXTO sobre el tinte del propio tono. El color vivo
+     se queda en puntos, barras y rellenos —ahi es un grafico y manda la
+     viveza—; en texto sobre su propio tinte no llegaba a AA. Mismo patron que
+     accent / accent-ink. */
+  --cr-ok-ink: #0F6E4C;
+  --cr-warn-ink: #8A570C;
+  --cr-danger-ink: #A93122;
 
   /* Lavados — el mismo tono a menor alfa, para superficies grandes (avisos). */
   --cr-ok-wash: rgba(23, 131, 92, 0.055);
@@ -146,7 +159,7 @@
    la superficie, un halo gris no se veia. */
 .cr-input:focus { outline: none; border-color: var(--cr-accent); box-shadow: var(--cr-ring); }
 .cr-input::placeholder { color: #8B94A3; }
-select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a616c' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }
+select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235B6474' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }
 
 .cr-field { display: flex; flex-direction: column; gap: 6px; }
 
@@ -241,8 +254,13 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-kpi { background: #fff; border: 1px solid var(--cr-line-soft); border-radius: var(--cr-r-md);
   padding: 18px 20px; box-shadow: var(--cr-shadow-1);
   position: relative; overflow: hidden; }
+/* La cinta se queda SOLO donde dice algo. En estado neutro pintaba una banda
+   de tinta en cada card: sobre la esquina recta de antes pasaba por filo, pero
+   sobre 12px de radio se curva y se lee como una tapa negra, cuatro veces
+   seguidas y sin significar nada. El estado que si importa —alerta, bien— la
+   conserva, y ahora destaca porque es la unica que la lleva. */
 .cr-kpi::before { content: ""; position: absolute; top: 0; left: 0; right: 0;
-  height: 3px; background: #0E1116; }              /* rojo #C13D2B si alerta */
+  height: 3px; background: transparent; }          /* rojo #C13D2B si alerta */
 .cr-kpi--alert::before { background: #C13D2B; }
 .cr-kpi--positivo::before { background: #17835C; }
 .cr-kpi__label { font-size: 12.5px; font-weight: 500; text-transform: none;
@@ -368,9 +386,9 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
   font-size: 11.5px; font-weight: 500; letter-spacing: 0; text-transform: none;
   padding: 2px 9px; border-radius: var(--cr-r-pill); border: 0;
   background: var(--cr-surface-3); color: #5B6474; align-items: center; gap: 5px; }
-.cr-badge--ok     { background: rgba(23,131,92,.10);  color: #17835C; }
-.cr-badge--warn   { background: rgba(169,108,18,.12);  color: #A96C12; }
-.cr-badge--danger { background: rgba(193,61,43,.10);   color: #C13D2B; }
+.cr-badge--ok     { background: rgba(23,131,92,.10);  color: var(--cr-ok-ink); }
+.cr-badge--warn   { background: rgba(169,108,18,.12);  color: var(--cr-warn-ink); }
+.cr-badge--danger { background: rgba(193,61,43,.10);   color: var(--cr-danger-ink); }
 .cr-badge--ai     { background: rgba(91,61,245,.08);   color: #5b3df5; }
 
 /* ============================ Avisos ============================ */
@@ -396,13 +414,13 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 
 .cr-aviso--danger { border-color: rgba(193,61,43,.24); background: var(--cr-danger-wash); }
 .cr-aviso--danger .cr-aviso__icono,
-.cr-aviso--danger .cr-aviso__titulo { color: var(--cr-danger); }
+.cr-aviso--danger .cr-aviso__titulo { color: var(--cr-danger-ink); }
 .cr-aviso--danger .cr-aviso__detalle,
 .cr-aviso--danger .cr-aviso__detalle strong { color: #8E2C1E; }
 
 .cr-aviso--warn { border-color: rgba(169,108,18,.24); background: var(--cr-warn-wash); }
 .cr-aviso--warn .cr-aviso__icono,
-.cr-aviso--warn .cr-aviso__titulo { color: var(--cr-warn); }
+.cr-aviso--warn .cr-aviso__titulo { color: var(--cr-warn-ink); }
 .cr-aviso--warn .cr-aviso__detalle,
 .cr-aviso--warn .cr-aviso__detalle strong { color: #7c5312; }
 

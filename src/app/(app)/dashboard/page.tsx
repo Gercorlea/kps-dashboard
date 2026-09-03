@@ -33,6 +33,14 @@ export default async function DashboardPage() {
   const articulosTotales = ranking.reduce((t, r) => t + r.articulos, 0);
   const lider = ventasTotales > 0 ? ranking[0] : null;
 
+  // El ranking suma TODO el histórico, y sin decirlo se lee como si fuera del
+  // año en curso: Walmart es el 94.5% acumulado desde mayo de 2024 pero el
+  // 85.3% de 2026, porque San Pablo sólo reporta desde 2026. Dos cifras
+  // correctas que se contradicen si nadie nombra el periodo.
+  const desde = ranking.map((r) => r.desde).filter((d): d is string => d !== null).sort()[0] ?? null;
+  const hasta = ranking.map((r) => r.hasta).filter((d): d is string => d !== null).sort().at(-1) ?? null;
+  const periodo = desde && hasta ? `Acumulado ${fmtFecha(desde)} – ${fmtFecha(hasta)}` : "Acumulado histórico";
+
   return (
     <>
       <PageHeader title="Dashboard" description="Resumen Operativo de KPS" />
@@ -57,7 +65,11 @@ export default async function DashboardPage() {
         </div>
 
         <div style={{ width: "85%", margin: "0 auto" }}>
-          <Panel title="Ranking de ventas por retailer" sinPadding>
+          <Panel
+            title="Ranking de ventas por retailer"
+            acciones={<span className="cr-small">{periodo}</span>}
+            sinPadding
+          >
             <div className="cr-table-scroll">
               <table className="cr-table">
                 <thead>
@@ -67,7 +79,7 @@ export default async function DashboardPage() {
                     <th className="num" style={ENCABEZADO}>Ventas</th>
                     <th style={ENCABEZADO}>Participación</th>
                     <th className="num" style={ENCABEZADO}>Productos</th>
-                    <th style={ENCABEZADO}>Último reporte</th>
+                    <th style={ENCABEZADO}>Última venta</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -101,7 +113,17 @@ export default async function DashboardPage() {
                         </div>
                       </td>
                       <td className="num" style={CELDA}>{fmtNum(r.articulos)}</td>
-                      <td className="cr-mono" style={CELDA}>{fmtFecha(r.ultimoReporte)}</td>
+                      <td
+                        className="cr-mono"
+                        style={CELDA}
+                        title={
+                          r.ultimoReporte
+                            ? `Último archivo cargado el ${fmtFecha(r.ultimoReporte)}${r.ultimoArchivo ? `: ${r.ultimoArchivo}` : ""}`
+                            : undefined
+                        }
+                      >
+                        {fmtFecha(r.hasta)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

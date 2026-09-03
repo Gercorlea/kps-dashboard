@@ -198,7 +198,9 @@ function RetailerCard({ r, serie }: { r: DetalleRetailer; serie: PuntoVentas[] }
             <span>
               {fmtFecha(r.desde)} — {fmtFecha(r.hasta)}
             </span>
-            <span title={r.ultimoArchivo ?? undefined}>Últ. {fmtFecha(r.ultimoReporte)}</span>
+            <span title={r.ultimoArchivo ?? undefined}>
+              Cargado {fmtFecha(r.ultimoReporte)}
+            </span>
           </div>
         </>
       ) : (

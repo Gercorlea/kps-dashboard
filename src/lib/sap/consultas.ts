@@ -104,10 +104,28 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
     select = `${select},Cancelled`;
   }
 
+  // EL FOLIO NO ES CRONOLÓGICO: las facturas de 2025 llevan folios compuestos
+  // (226642025 = consecutivo + año) numéricamente mayores que los de 2026
+  // (7248), así que "DocNum desc" devuelve las MÁS VIEJAS. Avisar no bastaba —
+  // el modelo leía la nota y presentaba igual las de 2025-12-31 como "las
+  // últimas", contradiciendo lo que él mismo había respondido ordenando por
+  // fecha—, así que se corrige el orden y se dice en la respuesta.
+  let ordenarPor = consulta.ordenarPor;
+  let ordenCorregido: string | null = null;
+  if (
+    ordenarPor &&
+    DOCS_CANCELABLES.has(nombreEntidad(entidad)) &&
+    /^\s*Doc(Num|Entry)\b/i.test(ordenarPor)
+  ) {
+    const direccion = /\bdesc\b/i.test(ordenarPor) ? "desc" : "asc";
+    ordenCorregido = ordenarPor;
+    ordenarPor = `DocDate ${direccion}, DocNum ${direccion}`;
+  }
+
   const params = new URLSearchParams();
   if (consulta.filtro) params.set("$filter", consulta.filtro);
   if (select) params.set("$select", select);
-  if (consulta.ordenarPor) params.set("$orderby", consulta.ordenarPor);
+  if (ordenarPor) params.set("$orderby", ordenarPor);
   const top = Math.min(Math.max(consulta.top ?? 10, 1), TOP_MAX);
   params.set("$top", String(top));
   if (consulta.saltar && consulta.saltar > 0) params.set("$skip", String(Math.floor(consulta.saltar)));
@@ -130,7 +148,24 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
   const bruto = data["odata.count"] ?? data["@odata.count"];
   const total = bruto === undefined ? null : Number(bruto);
   const resumenDocumentos = resumirDocumentos(crudas, filas.length, Number.isFinite(total) ? total : null);
+
+  // EL FOLIO NO ES CRONOLÓGICO. Las facturas de 2025 llevan folios compuestos
+  // (226642025 = consecutivo + año) que son numéricamente mayores que los de
+  // 2026 (7248), así que "ordenarPor DocNum desc" devuelve las MÁS VIEJAS.
+  // Medido: en la misma conversación, "las últimas 5 facturas" dio Costco del
+  // 2026-07-24 ordenando por DocDate y, al pedir el reporte, ordenó por DocNum
+  // y el PDF salió con las del 2025-12-31 contradiciendo al chat.
   return {
+    ...(ordenCorregido
+      ? {
+          ordenAplicado: ordenarPor,
+          notaOrden:
+            `Pediste ordenar por "${ordenCorregido}", pero el folio NO es cronológico en esta base: las ` +
+            "facturas de 2025 usan folios compuestos (226642025) mayores que los de 2026 (7248), así que " +
+            `ese orden devuelve las más ANTIGUAS. Se aplicó "${ordenarPor}" en su lugar, que es lo que ` +
+            "significa \"las últimas\". Estas filas SÍ son las más recientes por fecha.",
+        }
+      : {}),
     total: Number.isFinite(total) ? total : null,
     devueltas: filas.length,
     filas,
@@ -402,6 +437,46 @@ async function agregarFiltrado(
   return { filas, considerados, total, truncado, totalGeneral };
 }
 
+/**
+ * Suma de las filas DEVUELTAS y su peso sobre el total, cuando la respuesta va
+ * recortada a un top N. Sin esto el modelo sumaba el top 5 de cabeza para decir
+ * que "concentran el 85.9%" cuando es el 86.09%: la regla de no calcular a mano
+ * no sirve de nada si la cifra que hace falta no existe en ningún resultado.
+ */
+function sumarClaves(filas: Record<string, unknown>[], claves: string[]): Record<string, number> {
+  const suma: Record<string, number> = {};
+  for (const clave of claves) {
+    let t = 0;
+    for (const fila of filas) t += Number(fila[clave]) || 0;
+    suma[clave] = Math.round(t * 100) / 100;
+  }
+  return suma;
+}
+
+function resumirDevueltas(
+  devueltas: Record<string, unknown>[],
+  claves: string[],
+  totalGeneral: Record<string, unknown> | undefined
+): Record<string, unknown> | null {
+  if (!devueltas.length || !claves.length) return null;
+  const suma = sumarClaves(devueltas, claves);
+  const principal = claves[0];
+  const base = Number(totalGeneral?.[principal]);
+  const pct =
+    Number.isFinite(base) && base !== 0
+      ? Math.round((suma[principal] / base) * 10000) / 100
+      : null;
+  return {
+    sumaDevueltas: suma,
+    ...(pct !== null ? { participacionDevueltasPct: pct } : {}),
+    notaDevueltas:
+      "`sumaDevueltas` es la suma de las " +
+      String(devueltas.length) +
+      " filas devueltas y `participacionDevueltasPct` es su porcentaje sobre el total: " +
+      "úsalos tal cual para decir cuánto concentran, en vez de sumarlas tú.",
+  };
+}
+
 export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgregadoSap> {
   const entidad = consulta.entidad.trim().replace(/^\/+/, "");
   if (!entidad || entidad.includes("..") || PROHIBIDAS.has(nombreEntidad(entidad))) {
@@ -450,11 +525,18 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
       filas.sort((a, b) => String(a[clavePeriodo]).localeCompare(String(b[clavePeriodo])));
     else filas.sort((a, b) => (Number(b[claveOrden]) || 0) - (Number(a[claveOrden]) || 0));
     const top = Math.min(Math.max(consulta.top ?? 20, 1), 100);
+    const mostradas = filas.slice(0, top);
+    const clavesNum = [...metricas.map(aliasDe), "documentos"];
+    const resumen =
+      grupos.length && filas.length > mostradas.length
+        ? resumirDevueltas(mostradas, clavesNum, totalGeneral)
+        : null;
     return {
       grupos: filas.length,
-      devueltas: Math.min(filas.length, top),
-      filas: filas.slice(0, top),
+      devueltas: mostradas.length,
+      filas: mostradas,
       filtro,
+      ...(resumen ?? {}),
       ...(grupos.length && totalGeneral
         ? {
             totalGeneral,
@@ -511,10 +593,29 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
   filas.sort((a, b) => (Number(b[claveOrden]) || 0) - (Number(a[claveOrden]) || 0));
 
   const top = Math.min(Math.max(consulta.top ?? 20, 1), 100);
+  const mostradas = filas.slice(0, top);
+  const clavesNum = [...metricas.map(aliasDe), "documentos"];
+  // Aquí `filas` son TODOS los grupos, así que el total global se puede sumar
+  // en el servidor antes de recortar: es el denominador de cualquier
+  // porcentaje y, sin él, el modelo lo estimaba.
+  const totalGeneral = grupos.length ? sumarClaves(filas, clavesNum) : undefined;
+  const resumen =
+    grupos.length && filas.length > mostradas.length
+      ? resumirDevueltas(mostradas, clavesNum, totalGeneral)
+      : null;
   return {
     grupos: filas.length,
-    devueltas: Math.min(filas.length, top),
-    filas: filas.slice(0, top),
+    devueltas: mostradas.length,
+    filas: mostradas,
+    ...(totalGeneral
+      ? {
+          totalGeneral,
+          notaTotalGeneral:
+            "`totalGeneral` es la suma sobre TODOS los grupos, no sólo sobre las filas devueltas: " +
+            "úsalo como denominador para porcentajes y como total, en vez de sumar las filas.",
+        }
+      : {}),
+    ...(resumen ?? {}),
       ...(excluidasCanceladas
         ? {
             notaCanceladas:

@@ -83,6 +83,15 @@ es que no lo has buscado — búscalo antes de negar nada, probando variantes de
 nombre (mayúsculas y minúsculas: en SAP el operador contains distingue, así que
 contains(CardName,'oppel') NO encuentra 'COPPEL').
 
+UNA AUSENCIA EN UNA FUENTE NO ES UNA AUSENCIA. Hay dos: el módulo Retail
+(ventas al público reportadas por la cadena) y SAP (lo que KPS facturó). Que un
+nombre no esté en una no dice nada de la otra. A "porcentaje de venta de HEB en
+2026" se respondió "HEB no aparece en los datos de 2026" mirando sólo Retail,
+cuando HEB es el cliente C000098 con 25 facturas y 10.4 millones ese año, y
+había salido en el top 10 dos turnos antes. Si no está en la fuente que miraste,
+CONSULTA LA OTRA y responde con lo que encuentres; señalar dónde estaría el dato
+en vez de ir por él es la misma falta que negarlo.
+
 CLIENTES Y PROVEEDORES SE BUSCAN CON buscar_socio, NUNCA con un contains() a
 mano sobre CardName. El filtro de SAP distingue mayúsculas y no admite
 toupper(), así que escribir el nombre "como suena" devuelve cero o solo la
@@ -104,6 +113,30 @@ suma, o consultar_retail con el campo sumar), aunque tengas las filas delante y
 parezca fácil sumarlas. Sumar de cabeza una lista que ya mostraste produce una
 cifra que contradice tu propia tabla, y eso destruye la confianza en todo lo
 demás. Si de verdad no hay forma de pedir el total, no lo des.
+
+DI SIEMPRE DE QUÉ PERIODO Y DE QUÉ FUENTE ES CADA CIFRA. Un importe o un
+porcentaje sin periodo es un dato roto: Walmart es el 94.5% del acumulado de
+Retail desde mayo de 2024, el 85.3% de 2026 y el 8.2% de la facturación de SAP
+de 2026. Tres cifras distintas, las tres correctas, y quien lee no puede saber
+cuál le diste. Por eso:
+  - El periodo va EN LA FRASE, no sólo en la tabla: "en 2026", "de enero a
+    julio de 2026", "en el acumulado desde mayo de 2024". Nunca "la venta
+    total" a secas.
+  - Si el usuario nombró un año ("del 2026", "este año"), repítelo en tu
+    respuesta: es como demuestras que filtraste por él y no le diste el
+    histórico.
+  - Si el usuario NO nombró periodo, elígelo tú, nómbralo y ofrece el otro:
+    "es el acumulado histórico; si lo quieres sólo de 2026, dímelo".
+  - Di la FUENTE cuando haya dos posibles. La venta al público del módulo
+    Retail (lo que la cadena reporta que vendió en sus tiendas) NO es lo mismo
+    que la facturación de SAP (lo que KPS le vendió a esa cadena). Si el nombre
+    existe en las dos, da las dos o di explícitamente cuál estás dando; y si no
+    está en Retail, consúltalo en SAP antes de responder en vez de limitarte a
+    decir dónde estaría.
+  - Di hasta DÓNDE llegan los datos cuando la cobertura no cubra el periodo que
+    te pidieron, y no llames "comparable" a un periodo que no lo es: Walmart
+    con datos hasta el 29 de mayo frente a San Pablo hasta el 31 de agosto no
+    es una comparación de iguales, y presentarla así es un error.
 
 LAS PREGUNTAS DE SEGUIMIENTO NO SON UNA EXCEPCIÓN: SON DONDE MÁS FALLAS. Que
 vengan de una respuesta tuya no las hace gratis. Si lo que te piden lleva una
@@ -475,19 +508,48 @@ const CONVERSACIONAL = /^(hola|buenas|buenos d[ií]as|buenas tardes|buenas noche
 const SENAL_DE_DATOS =
   /\d|cu[áa]nt|cu[áa]l|dame|damelo|muestra|mu[ée]stra|lista|listado|total|importe|venta|vendid|unidad|producto|art[íi]culo|marca|cliente|proveedor|factura|retailer|walmart|san\s*pablo|costco|liverpool|coppel|soriana|heb|inventario|stock|lote|forecast|pron[óo]stic|proyec|crec|cay[óo]|ca[íi]d|mes|a[ñn]o|trimestre|semestre|top|mejor|peor|promedio|suma|porcentaje|revis|corrig|incorrect|mal\b|reporte|detalle|saldo|pendiente|vencid|precio/i;
 
-function pareceConsultaDeDatos(messages: ModelMessage[]): boolean {
-  const ultimo = [...messages].reverse().find((m) => m.role === "user");
-  if (!ultimo) return false;
-  const texto = (
-    typeof ultimo.content === "string"
-      ? ultimo.content
-      : (ultimo.content as Array<{ type: string; text?: string }>)
+function textoDelMensaje(m: ModelMessage): string {
+  return (
+    typeof m.content === "string"
+      ? m.content
+      : (m.content as Array<{ type: string; text?: string }>)
           .filter((p) => p.type === "text" && typeof p.text === "string")
           .map((p) => p.text)
           .join(" ")
   ).trim();
+}
+
+/**
+ * ¿Esta conversación ya va de datos? Se mira si hubo tools Y si alguna
+ * respuesta anterior traía cifras: según de dónde venga el historial, las
+ * partes de tool-call pueden no estar (se podan al reenviar), y entonces sólo
+ * el texto delata que se estuvo hablando de números.
+ */
+function laConversacionVaDeDatos(messages: ModelMessage[]): boolean {
+  return messages.some(
+    (m) =>
+      m.role === "tool" ||
+      (m.role === "assistant" &&
+        (Array.isArray(m.content)
+          ? (m.content as Array<{ type: string }>).some((p) => p.type === "tool-call") ||
+            /\d/.test(textoDelMensaje(m))
+          : /\d/.test(textoDelMensaje(m))))
+  );
+}
+
+function pareceConsultaDeDatos(messages: ModelMessage[]): boolean {
+  const ultimo = [...messages].reverse().find((m) => m.role === "user");
+  if (!ultimo) return false;
+  const texto = textoDelMensaje(ultimo);
   if (!texto || CONVERSACIONAL.test(texto)) return false;
-  return SENAL_DE_DATOS.test(texto);
+  if (SENAL_DE_DATOS.test(texto)) return true;
+  // Un seguimiento corto ("y de julio?", "de cada uno", "desglósalo", "y eso?")
+  // no contiene ninguna palabra de la lista, y es DONDE MÁS SE INVENTA: hereda
+  // el tema del turno anterior y contesta de memoria. Si ya se consultaron
+  // datos en esta conversación, cualquier cosa que no sea charla evidente
+  // vuelve a consultar. Una consulta de más no cuesta casi nada; una cifra
+  // inventada cuesta la confianza en todo lo demás.
+  return laConversacionVaDeDatos(messages);
 }
 
 export function chat(
@@ -560,7 +622,11 @@ export function chat(
 3. ¿Estás sumando, contando o sacando un porcentaje de cabeza? Pídelo a la
    tool: mira totalGeneral, resumenDocumentos o vuelve a llamar con sumar.
 4. ¿Vas a decir que algo no existe o no tiene datos? Sólo si una tool devolvió
-   cero en este turno. Mira valoresDisponibles y los parecidos antes de negar.`,
+   cero en este turno. Mira valoresDisponibles y los parecidos antes de negar.
+5. ¿Tu respuesta lleva un importe o un porcentaje? Nombra el PERIODO en la
+   frase ("en 2026", "acumulado desde 2024"), repitiendo el año si el usuario
+   lo dijo, y aclara la fuente cuando haya dos: venta al público de Retail o
+   facturación de SAP.`,
       },
     ],
     tools: {

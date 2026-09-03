@@ -26,10 +26,27 @@ export async function GET(
     const session = await requireModule("cronos-ia");
     const { id } = await params;
     const chat = await cargarChatPropio(id, session.id);
-    const mensajes = await Message.find({ chatId: chat._id })
-      .sort({ createdAt: 1 })
-      .limit(200)
-      .lean();
+    // Descendente + limit + reverse, NO ascendente + limit.
+    //
+    // Con `sort({ createdAt: 1 }).limit(200)` Mongo ordena del mas viejo al mas
+    // nuevo y corta al final: en una conversacion de mas de 200 mensajes
+    // devolvia los 200 PRIMEROS y tiraba justo los ultimos. Al reabrirla, el
+    // usuario veia su conversacion congelada en un estado antiguo y lo que
+    // acababa de escribir habia desaparecido de la vista —seguia en Mongo, pero
+    // no habia forma de llegar a ello—. Y no se quedaba en lo cosmetico: el
+    // cliente reenvia este mismo historial a POST /api/ai/chat, asi que el
+    // modelo tampoco veia los ultimos turnos y la conversacion se bifurcaba
+    // desde un punto viejo.
+    //
+    // Ordenando descendente se corta por el otro extremo —se quedan los 200 mas
+    // RECIENTES— y el reverse los devuelve en orden cronologico, que es como los
+    // espera la vista.
+    const mensajes = (
+      await Message.find({ chatId: chat._id })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .lean()
+    ).reverse();
     return ok({
       chat: { id: String(chat._id), title: chat.title },
       mensajes: mensajes.map((m) => ({
