@@ -10,6 +10,7 @@
     "prepare": "husky",
     "commit": "cz",
     "test": "vitest run",
+    "qa:ia": "tsx --env-file=.env.local scripts/qa-kps-ai.ts",
     "seed:superadmin": "tsx scripts/seed-superadmin.ts",
     "sap:contexto": "tsx scripts/generar-contexto-sap.ts",
     "sap:facturas": "tsx --env-file=.env.local scripts/sincronizar-facturas-sap.ts",

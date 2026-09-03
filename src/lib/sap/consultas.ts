@@ -169,6 +169,19 @@ export async function consultarSap(consulta: ConsultaSap): Promise<ResultadoCons
     total: Number.isFinite(total) ? total : null,
     devueltas: filas.length,
     filas,
+    // AVISO DE MUESTRA. Sin él, {total: 482, devueltas: 100} se lee como si
+    // fueran los 482: preguntando cuántos socios son clientes y cuántos
+    // proveedores, el modelo contó sobre las 100 filas que tenía delante y
+    // respondió 347 y 135 (son 52 y 430). Los documentos ya lo avisan en
+    // `resumenDocumentos`; el resto de entidades no avisaba nada.
+    ...(!resumenDocumentos && Number.isFinite(total) && filas.length < (total as number)
+      ? {
+          notaMuestra:
+            `MUESTRA: son ${filas.length} filas de ${total} que hay. NO cuentes, ` +
+            "clasifiques ni sumes sobre ellas, y no extrapoles: para un conteo por " +
+            "categoría usa agregar_sap con agruparPor, y para un total su métrica suma.",
+        }
+      : {}),
     ...(resumenDocumentos ? { resumenDocumentos } : {}),
     ...(porDefecto ? { campos: porDefecto } : {}),
     ...(resumenLineas ? { resumenLineas } : {}),
@@ -343,13 +356,27 @@ async function agregarFiltrado(
   total: number | null;
   truncado: boolean;
   totalGeneral: Record<string, number>;
+  porMoneda: Record<string, Record<string, number>>;
 }> {
   // Paginación por cursor de DocEntry (como la sincronización de facturas):
   // con $skip sin $orderby el Service Layer no garantiza páginas estables y
   // al superar el tope se cortaba un mes por la mitad (diciembre 2025 salía
   // con 1,289 de 1,590 facturas). Cada página es una consulta indexada nueva.
   const camposSelect = grupos.map((g) => (g === GRUPO_MES || g === GRUPO_ANIO ? "DocDate" : g));
-  const select = [...new Set(["DocEntry", ...camposSelect, ...metricas.map((m) => m.campo)])].join(",");
+  // DocCurrency viaja siempre en los documentos: sumar pesos con dólares en una
+  // sola cifra es un error que no se ve. "Cuánto suman las órdenes de compra
+  // abiertas" se respondió 97,063,946.54 MXN, que es 60.9 M en pesos MÁS 36.1 M
+  // en dólares sumados como si fueran la misma moneda.
+  const conMoneda = DOCS_CANCELABLES.has(nombreEntidad(entidad));
+  const select = [
+    ...new Set([
+      "DocEntry",
+      ...(conMoneda ? ["DocCurrency"] : []),
+      ...camposSelect,
+      ...metricas.map((m) => m.campo),
+    ]),
+  ].join(",");
+  const monedas = new Map<string, { n: number; suma: Record<string, number> }>();
   const acum = new Map<string, { clave: Record<string, unknown>; n: number; suma: Record<string, number>; max: Record<string, number>; min: Record<string, number> }>();
   let considerados = 0;
   let truncado = false;
@@ -393,6 +420,17 @@ async function agregarFiltrado(
         g.min[m.campo] = Math.min(g.min[m.campo] ?? Infinity, v);
       }
       acum.set(k, g);
+
+      if (conMoneda) {
+        const moneda = String(f.DocCurrency ?? "?");
+        const mm = monedas.get(moneda) ?? { n: 0, suma: {} };
+        mm.n++;
+        for (const m of metricas) {
+          const v = Number(f[m.campo]);
+          if (Number.isFinite(v)) mm.suma[m.campo] = (mm.suma[m.campo] ?? 0) + v;
+        }
+        monedas.set(moneda, mm);
+      }
     }
     if (pagina.length < PAGINA_FILTRADO) break;
     cursor = Number(pagina[pagina.length - 1].DocEntry);
@@ -434,7 +472,17 @@ async function agregarFiltrado(
   }
   totalGeneral.documentos = considerados;
 
-  return { filas, considerados, total, truncado, totalGeneral };
+  const porMoneda: Record<string, Record<string, number>> = {};
+  for (const [moneda, mm] of monedas) {
+    const fila: Record<string, number> = { documentos: mm.n };
+    for (const m of metricas) {
+      const valor = mm.suma[m.campo];
+      if (valor !== undefined) fila[aliasDe(m)] = Math.round(valor * 100) / 100;
+    }
+    porMoneda[moneda] = fila;
+  }
+
+  return { filas, considerados, total, truncado, totalGeneral, porMoneda };
 }
 
 /**
@@ -451,6 +499,23 @@ function sumarClaves(filas: Record<string, unknown>[], claves: string[]): Record
     suma[clave] = Math.round(t * 100) / 100;
   }
   return suma;
+}
+
+/**
+ * Promedio por grupo (promedio mensual, promedio por cliente...). Va aquí
+ * porque el modelo lo dividía a mano: 10,395,982.83 entre 7 meses lo redondeó
+ * a 1,485,140.41 cuando son 1,485,140.40.
+ */
+function promediarPorGrupo(
+  totalGeneral: Record<string, number> | undefined,
+  grupos: number
+): Record<string, number> | null {
+  if (!totalGeneral || grupos < 2) return null;
+  const promedio: Record<string, number> = {};
+  for (const [clave, valor] of Object.entries(totalGeneral)) {
+    promedio[clave] = Math.round((valor / grupos) * 100) / 100;
+  }
+  return promedio;
 }
 
 function resumirDevueltas(
@@ -516,7 +581,7 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
   }
   if (filtro) {
     const aliasDe = (m: { campo: string; operacion: OperacionAgregado }) => `${m.operacion}_${m.campo}`;
-    const { filas, considerados, total, truncado, totalGeneral } = await agregarFiltrado(
+    const { filas, considerados, total, truncado, totalGeneral, porMoneda } = await agregarFiltrado(
       entidad, filtro, grupos, metricas, aliasDe
     );
     const claveOrden = metricas.length ? aliasDe(metricas[0]) : "documentos";
@@ -531,15 +596,38 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
       grupos.length && filas.length > mostradas.length
         ? resumirDevueltas(mostradas, clavesNum, totalGeneral)
         : null;
+    // Más de una moneda y nadie agrupó por ella: el total global mezcla pesos
+    // con dólares y no significa nada. Se devuelve partido y con un aviso duro.
+    const variasMonedas = Object.keys(porMoneda).length > 1 && !grupos.includes("DocCurrency");
     return {
       grupos: filas.length,
       devueltas: mostradas.length,
       filas: mostradas,
       filtro,
+      ...(variasMonedas
+        ? {
+            porMoneda,
+            notaMonedas:
+              "ATENCIÓN: hay documentos en " +
+              Object.keys(porMoneda).join(" y ") +
+              ". `totalGeneral` los suma como si fueran la misma moneda, así que NO es una " +
+              "cifra válida: no la des. Responde con `porMoneda`, una línea por divisa, y no " +
+              "conviertas entre ellas (no tienes el tipo de cambio).",
+          }
+        : {}),
       ...(resumen ?? {}),
       ...(grupos.length && totalGeneral
         ? {
             totalGeneral,
+            ...(promediarPorGrupo(totalGeneral, filas.length)
+              ? {
+                  promedioPorGrupo: promediarPorGrupo(totalGeneral, filas.length),
+                  notaPromedio:
+                    "`promedioPorGrupo` es totalGeneral entre los " +
+                    String(filas.length) +
+                    " grupos: úsalo tal cual para el promedio mensual o por cliente, no dividas tú.",
+                }
+              : {}),
             notaTotalGeneral:
               "`totalGeneral` es la suma sobre TODOS los grupos del filtro, no sólo sobre las filas " +
               "devueltas: úsalo como denominador para porcentajes y como total, en vez de sumar las filas.",
@@ -610,6 +698,15 @@ export async function agregarSap(consulta: AgregadoSap): Promise<ResultadoAgrega
     ...(totalGeneral
       ? {
           totalGeneral,
+          ...(promediarPorGrupo(totalGeneral, filas.length)
+            ? {
+                promedioPorGrupo: promediarPorGrupo(totalGeneral, filas.length),
+                notaPromedio:
+                  "`promedioPorGrupo` es totalGeneral entre los " +
+                  String(filas.length) +
+                  " grupos: úsalo tal cual, no dividas tú.",
+              }
+            : {}),
           notaTotalGeneral:
             "`totalGeneral` es la suma sobre TODOS los grupos, no sólo sobre las filas devueltas: " +
             "úsalo como denominador para porcentajes y como total, en vez de sumar las filas.",
@@ -790,6 +887,35 @@ async function todosLosSocios(): Promise<Record<string, unknown>[]> {
   return filas;
 }
 
+/**
+ * Quién le debe a quién, en palabras. El signo de CurrentAccountBalance se
+ * interpretaba al revés —se llegó a decir que KPS le debía a Walmart cuando es
+ * Walmart quien debe 21.8 M— y en la misma conversación se dijo una cosa de un
+ * cliente y la contraria de otro. Verificado contra las facturas: para un
+ * CLIENTE el saldo negativo es lo que ese cliente nos debe (Liverpool -503,822.39
+ * = sus 4 facturas abiertas; Walmart 26,456,850.93 abiertas - 4,653,846.33
+ * pagados = 21,803,004.60 = |saldo|). Para un PROVEEDOR, el saldo positivo es lo
+ * que le debemos nosotros.
+ */
+function explicarSaldo(f: Record<string, unknown>): string {
+  const saldo = Number(f.CurrentAccountBalance ?? 0);
+  const moneda = String(f.Currency ?? "");
+  const nombre = String(f.CardName ?? "el socio");
+  const monto = `${Math.abs(saldo).toLocaleString("es-MX", { maximumFractionDigits: 2 })}${moneda ? ` ${moneda}` : ""}`;
+  if (!Number.isFinite(saldo) || Math.abs(saldo) < 0.01) return "Sin saldo pendiente.";
+  if (f.CardType === "cCustomer") {
+    return saldo < 0
+      ? `${nombre} NOS DEBE ${monto} (facturas emitidas y aún no cobradas). No es una deuda de KPS.`
+      : `${nombre} tiene ${monto} a su favor (pagó de más o hay notas de crédito). Aquí KPS le debe a él.`;
+  }
+  if (f.CardType === "cSupplier") {
+    return saldo > 0
+      ? `KPS LE DEBE ${monto} a ${nombre} (compras recibidas y aún no pagadas).`
+      : `KPS tiene ${monto} a favor con ${nombre}.`;
+  }
+  return `Saldo ${saldo.toLocaleString("es-MX", { maximumFractionDigits: 2 })}${moneda ? ` ${moneda}` : ""}.`;
+}
+
 export interface ResultadoBusquedaSocios {
   buscado: string;
   encontrados: number;
@@ -815,6 +941,7 @@ export async function buscarSocios(texto: string): Promise<ResultadoBusquedaSoci
         : f.CardType === "cCustomer"
           ? "cliente"
           : String(f.CardType ?? ""),
+    saldoExplicado: explicarSaldo(f),
     parecido: puntos,
   });
 

@@ -478,8 +478,27 @@ async function pistaSinResultados(
       // Si el distinct falla no se rompe la consulta: simplemente no hay pista.
     }
   }
-  if (!Object.keys(sugerencias).length) return {};
+  // Cero filas filtrando por retailer NO responde "cuánto vendió X": Retail
+  // sólo tiene las cadenas que reportan al público, y X puede ser un cliente
+  // de SAP con facturación. A "porcentaje de venta de HEB del 2026" se
+  // respondió que no había datos y se ofreció mirar SAP en otro turno, cuando
+  // HEB factura 10.4 M ese año.
+  const porCuenta = (consulta.filtros ?? []).find(
+    (f) => f.field === "account" && f.operador === "igual" && typeof f.value === "string"
+  );
+  const notaOtraFuente = porCuenta
+    ? {
+        notaOtraFuente:
+          `"${String(porCuenta.value)}" no tiene reportes cargados en Retail. Eso NO contesta la ` +
+          "pregunta y NO significa que no exista: Retail sólo cubre las cadenas que envían su venta al " +
+          "público. Antes de responder, en ESTE MISMO turno, búscalo en SAP con buscar_socio y pide su " +
+          "facturación con agregar_sap sobre Invoices, y responde con esa cifra diciendo que es " +
+          "facturación de SAP y no venta al público. No ofrezcas consultarlo: consúltalo.",
+      }
+    : {};
+  if (!Object.keys(sugerencias).length) return notaOtraFuente;
   return {
+    ...notaOtraFuente,
     valoresDisponibles: sugerencias,
     notaSinResultados:
       "La consulta no devolvió NADA y filtra por texto: lo más probable es que el valor esté mal escrito, " +
