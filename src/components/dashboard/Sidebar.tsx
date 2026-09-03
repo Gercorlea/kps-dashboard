@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -34,7 +33,6 @@ const ICONOS: Record<string, React.ReactNode> = {
   "/proveedores": <Truck strokeWidth={1.75} />,
   "/peticiones": <Inbox strokeWidth={1.75} />,
   "/admin/usuarios": <Users strokeWidth={1.75} />,
-  "/admin/estadisticas": <BarChart3 strokeWidth={1.75} />,
 };
 
 const HREFS_AI = new Set(["/cronos-ia"]);

@@ -554,16 +554,47 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
         $facet: {
           filas: [{ $limit: consulta.limite ? limite : LIMITE_MAX }],
           conteo: [{ $count: "n" }],
+          // Total sobre TODOS los grupos, no sólo los devueltos: sin esto el
+          // modelo sumaba a mano la columna de su propia tabla ("123,989
+          // piezas" cuando son 123,939) y calculaba porcentajes sobre un
+          // denominador que no existe.
+          general: [{ $group: { _id: null, total: { $sum: "$total" }, registros: { $sum: "$registros" } } }],
         },
       },
     ]);
     const gruposTotales: number = filas[0]?.conteo?.[0]?.n ?? 0;
+    const general = filas[0]?.general?.[0];
     filas = filas[0]?.filas ?? [];
     return {
       total: gruposTotales,
       devueltas: filas.length,
       ...(esCopiaSap && gruposTotales === 0 ? { nota: NOTA_COPIA_SAP_VACIA } : {}),
+      // `total` en el modo agregado son los GRUPOS, no las filas, y el nombre se
+      // presta a confusión: preguntando "cuántos productos vende san pablo" el
+      // modelo ni agrupaba —pedía la suma de unidades y contestaba 17,582
+      // unidades en vez de 4 productos—. Con el conteo nombrado no hay duda.
+      ...(consulta.agruparPor
+        ? {
+            valoresDistintos: gruposTotales,
+            notaValoresDistintos:
+              `Hay ${gruposTotales} valores distintos de "${consulta.agruparPor}" con este filtro. Ésa es ` +
+              "la respuesta a \"cuántos productos / marcas / clientes distintos hay\": no cuentes las filas " +
+              "devueltas, que son sólo las que caben.",
+          }
+        : {}),
       ...(await pistaSinResultados(consulta, model, gruposTotales)),
+      ...(general && campoSuma
+        ? {
+            totalGeneral: {
+              [campoSuma]: general.total,
+              registros: general.registros,
+              grupos: gruposTotales,
+            },
+            notaTotalGeneral:
+              "`totalGeneral` suma TODOS los grupos, no sólo las filas devueltas: úsalo como total y como " +
+              "denominador de porcentajes en vez de sumar la columna de la tabla.",
+          }
+        : {}),
       ...(gruposTotales > filas.length
         ? { nota: `Se muestran ${filas.length} de ${gruposTotales} grupos: pide más con limite o afina el orden.` }
         : {}),
@@ -597,10 +628,28 @@ export async function consultarRetail(consulta: ConsultaRetail): Promise<Resulta
     .select(proyeccion)
     .lean();
 
+  // Una consulta de DETALLE devuelve un TROZO de las filas, y contar o sumar
+  // sobre ese trozo da una respuesta distinta según cuántas cayeron dentro.
+  // Medido: "cuántos productos distintos de VITA VIBE" se contestó agrupando a
+  // ojo 50 filas crudas (4 productos, cifras infladas) y, al repreguntar con el
+  // límite por defecto de 10, sólo aparecieron 3 -> "son 3, LIMA no está en los
+  // datos", descartando un producto real. Aquí se dice explícitamente.
+  const esMuestra = total > filas.length;
+
   return {
     total,
     devueltas: filas.length,
     ...(esCopiaSap && total === 0 ? { nota: NOTA_COPIA_SAP_VACIA } : {}),
+    ...(esMuestra
+      ? {
+          notaMuestra:
+            `ATENCIÓN: son ${filas.length} filas de ${total}. Es una MUESTRA, no el conjunto. NO cuentes ` +
+            "valores distintos ni sumes importes sobre ellas: lo que no cayó en la muestra parecería no " +
+            "existir. Para contar productos, marcas o clientes distintos, o para cualquier total, repite " +
+            "la consulta con `agruparPor` (el campo que quieres contar) y `sumar` (la métrica): eso lo " +
+            "calcula el servidor sobre TODAS las filas y devuelve además el conteo real de grupos.",
+        }
+      : {}),
     ...(await pistaSinResultados(consulta, model, total)),
     // .lean() deja Date/ObjectId vivos (`date`, `cutoffDate`, anidados en
     // `appointments[]`...). Por eso fallaba solo en consultas de detalle con

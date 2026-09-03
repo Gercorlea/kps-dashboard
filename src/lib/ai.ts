@@ -246,6 +246,12 @@ indicada; nunca calcules tú lo que la tool ya devuelve calculado).
   quantity (unidades) o lineTotal (importe), agruparPor "${AGRUPAR_POR_MES}".
   Di en una línea qué fuente usaste ("facturación de KPS" o "venta en
   Walmart") y, si la pregunta era ambigua, ofrece la otra.
+- "CUÁNTOS productos / artículos / marcas / clientes" es un CONTEO DE VALORES
+  DISTINTOS, no una suma de unidades. Agrupa por ese campo y responde con el
+  campo valoresDistintos. "Cuántos productos de la marca Bloom vende San Pablo" se
+  contesta "4 productos" (y de paso puedes dar las unidades), nunca sólo
+  "15,271 unidades": eso responde a otra pregunta. Ante la duda da las dos
+  cifras, pero el conteo primero.
 - POR PRODUCTO o POR MARCA ("el artículo más vendido", "top 5 productos",
   "ventas de <producto>", "importe total de <marca>", "cuánto ha vendido X"):
   SIEMPRE consultar_retail sobre salesReports, filtrando o agrupando por
@@ -450,6 +456,40 @@ function resumirHerramientas(
   return usadas;
 }
 
+/**
+ * ¿La última pregunta del usuario va sobre DATOS? Sirve para obligar a que el
+ * primer paso sea una consulta.
+ *
+ * Las reglas del prompt no bastaban: medido en una conversación real de 40
+ * turnos, seis se respondieron sin llamar a ninguna tool, inventando productos
+ * ("BLOOM PRE WORK OUT" en San Pablo, que no existe) y cifras que cambiaban a
+ * cada "vuelve a revisarlo". Repetir las reglas al final bajó los fallos de 6 a
+ * 4, pero mientras el modelo PUEDA contestar sin consultar, a veces lo hará.
+ *
+ * La lista peca de amplia a propósito: una consulta de más no cuesta casi nada;
+ * una cifra inventada cuesta la confianza en todo el asistente. Sólo se dejan
+ * pasar los mensajes puramente conversacionales.
+ */
+const CONVERSACIONAL = /^(hola|buenas|buenos d[ií]as|buenas tardes|buenas noches|gracias|ok|vale|perfecto|adi[óo]s|hasta luego|qu[ée] tal|c[óo]mo est[áa]s|qui[ée]n eres|qu[ée] puedes hacer|ayuda)[\s!¡.?¿]*$/i;
+
+const SENAL_DE_DATOS =
+  /\d|cu[áa]nt|cu[áa]l|dame|damelo|muestra|mu[ée]stra|lista|listado|total|importe|venta|vendid|unidad|producto|art[íi]culo|marca|cliente|proveedor|factura|retailer|walmart|san\s*pablo|costco|liverpool|coppel|soriana|heb|inventario|stock|lote|forecast|pron[óo]stic|proyec|crec|cay[óo]|ca[íi]d|mes|a[ñn]o|trimestre|semestre|top|mejor|peor|promedio|suma|porcentaje|revis|corrig|incorrect|mal\b|reporte|detalle|saldo|pendiente|vencid|precio/i;
+
+function pareceConsultaDeDatos(messages: ModelMessage[]): boolean {
+  const ultimo = [...messages].reverse().find((m) => m.role === "user");
+  if (!ultimo) return false;
+  const texto = (
+    typeof ultimo.content === "string"
+      ? ultimo.content
+      : (ultimo.content as Array<{ type: string; text?: string }>)
+          .filter((p) => p.type === "text" && typeof p.text === "string")
+          .map((p) => p.text)
+          .join(" ")
+  ).trim();
+  if (!texto || CONVERSACIONAL.test(texto)) return false;
+  return SENAL_DE_DATOS.test(texto);
+}
+
 export function chat(
   messages: ModelMessage[],
   opciones?: {
@@ -495,6 +535,33 @@ export function chat(
           ]
         : []),
       ...messages,
+      // RECORDATORIO AL FINAL. Las reglas del prompt van al principio para que
+      // Anthropic las cachee, pero ahí se diluyen: medido en una conversación
+      // real de 40 turnos, seis turnos seguidos ("qué productos se vendieron
+      // más en mayo", "está mal", "dame los detalles de san pablo") se
+      // respondieron SIN llamar a ninguna tool, inventando productos y cifras
+      // que cambiaban a cada "vuelve a revisarlo". En una prueba de tres turnos
+      // las reglas aguantaban; con el contexto lleno, no. Repetirlas aquí —
+      // después del historial, justo antes de generar— es lo único que las
+      // mantiene con peso, y es barato: son ~150 tokens fuera del prefijo
+      // cacheado.
+      {
+        role: "system" as const,
+        content: `Antes de responder, comprueba estas cuatro:
+1. ¿Tu respuesta lleva alguna CIFRA o NOMBRE de producto, marca, cliente o
+   retailer? Entonces tiene que venir de un resultado de tool de ESTE turno.
+   Que la pregunta sea un seguimiento ("y de julio", "está mal", "dame los
+   detalles", "y esa marca") NO te exime: relanza la consulta.
+2. ¿Te están diciendo que un dato está mal? Vuelve a consultarlo y responde lo
+   que diga la tool, aunque sea idéntico a lo anterior. NO ajustes la cifra
+   para complacer: cambiar un número sin consultar es peor que el error que te
+   señalan. Si tras consultar sale lo mismo, dilo y pregunta qué cifra
+   esperaban.
+3. ¿Estás sumando, contando o sacando un porcentaje de cabeza? Pídelo a la
+   tool: mira totalGeneral, resumenDocumentos o vuelve a llamar con sumar.
+4. ¿Vas a decir que algo no existe o no tiene datos? Sólo si una tool devolvió
+   cero en este turno. Mira valoresDisponibles y los parecidos antes de negar.`,
+      },
     ],
     tools: {
       consultar_sap: tool({
@@ -648,6 +715,9 @@ export function chat(
           `por itemDesc sumando posQty); agruparPor "${AGRUPAR_POR_MES}" agrupa por mes calendario ` +
           `y "${AGRUPAR_POR_ANIO}" por año, cada uno con el total ya sumado (para comparar años usa ` +
           `"${AGRUPAR_POR_ANIO}", NO sumes meses a mano). ` +
+          "CONTAR CUÁNTOS PRODUCTOS, MARCAS O CLIENTES DISTINTOS hay es SIEMPRE agruparPor por ese campo: " +
+          "la respuesta trae `valoresDistintos` con el número real. Sin agrupar sólo recibes un trozo de " +
+          "filas y contar los valores que aparecen en él da un número que cambia con el tamaño del trozo. " +
           "Los campos de cada colección están en tu referencia interna. " +
           "Los filtros sobre campos que no existen en la colección se devuelven en " +
           "`camposIgnorados`: si aparece, corrige la consulta.",
@@ -826,6 +896,11 @@ export function chat(
       }),
     },
     stopWhen: stepCountIs(10), // encadenar varias consultas antes de responder
+    // El PRIMER paso de una pregunta sobre datos tiene que ser una consulta:
+    // así el modelo no puede responder de memoria. A partir del segundo ya
+    // decide él, que es cuando redacta la respuesta con lo que trajo.
+    prepareStep: ({ stepNumber }) =>
+      stepNumber === 0 && pareceConsultaDeDatos(messages) ? { toolChoice: "required" as const } : {},
     providerOptions: {
       gateway: {
         only: ["anthropic"], // fija el proveedor: sin fallback silencioso

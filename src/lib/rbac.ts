@@ -98,7 +98,6 @@ export const NAV_SECTIONS: NavSection[] = [
     name: "Sistema",
     items: [
       { href: "/admin/usuarios", label: "Usuarios", module: "admin-usuarios" },
-      { href: "/admin/estadisticas", label: "Estadísticas", module: "admin-estadisticas" },
     ],
   },
 ];
