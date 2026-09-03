@@ -10,7 +10,7 @@ import { canAccess } from "@/lib/rbac";
 export default async function AdminUsuariosPage() {
   const usuario = await getSessionUser();
   if (!usuario) redirect("/login");
-  if (!canAccess(usuario, "admin")) return <AccesoDenegado modulo="Administración" />;
+  if (!canAccess(usuario, "admin-usuarios")) return <AccesoDenegado modulo="Usuarios" />;
 
   return (
     <>

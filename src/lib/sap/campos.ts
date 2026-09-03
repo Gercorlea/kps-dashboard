@@ -6,8 +6,12 @@
 // Los nombres están verificados contra el Service Layer real. Si añades uno
 // que no existe, SAP responde 400 y la entidad ENTERA deja de funcionar.
 
+// `Cancelled` va SIEMPRE: una factura cancelada sigue teniendo DocumentStatus
+// "bost_Close", así que sin este campo se presentaba como cerrada normal y su
+// importe se contaba como facturación real. Coppel tiene 6 de 13 canceladas y
+// en toda la base hay 94 por 19.3 millones.
 export const CAMPOS_DOC =
-  "DocEntry,DocNum,DocDate,DocDueDate,CardCode,CardName,DocTotal,DocCurrency,DocumentStatus";
+  "DocEntry,DocNum,DocDate,DocDueDate,CardCode,CardName,DocTotal,DocCurrency,DocumentStatus,Cancelled";
 
 export const CAMPOS_CLAVE: Record<string, string> = {
   items:
@@ -25,6 +29,10 @@ export const CAMPOS_CLAVE: Record<string, string> = {
   warehouses: "WarehouseCode,WarehouseName,Inactive",
   pricelists: "PriceListNo,PriceListName,BasePriceList,Factor,ValidFrom,ValidTo",
   itemgroups: "Number,GroupName",
+  // Lotes: consultar_sap añade a cada fila diasParaVencer, diasDesdeFabricacion,
+  // diasDesdeIngreso, vidaUtilRestantePct y estadoFrescura (lib/sap/frescura.ts).
+  batchnumberdetails:
+    "ItemCode,ItemDescription,Batch,Status,AdmissionDate,ManufacturingDate,ExpirationDate",
 };
 
 /**
@@ -79,6 +87,19 @@ export const CAMPOS_CLAVE: Record<string, string> = {
  * Los importes de SAP están en MXP. El módulo Retail NO tiene dinero: sus
  * cifras (unidades, valor) son unidades, así que cualquier pregunta de pesos
  * se responde con SAP.
+ */
+
+/**
+ * LOTES Y FRESCURA. Los lotes viven en el entity set BatchNumberDetails (uno
+ * por artículo × lote, con AdmissionDate, ManufacturingDate y
+ * ExpirationDate). Para "cuántos días de frescura tiene el lote X":
+ *   { entidad: "BatchNumberDetails", filtro: "Batch eq 'X'" }
+ * (añade " and ItemCode eq '…'" si hay varios artículos con el mismo lote).
+ * consultar_sap devuelve cada fila YA con diasParaVencer, diasDesdeFabricacion,
+ * diasDesdeIngreso, vidaUtilDias, vidaUtilRestantePct y estadoFrescura
+ * (vigente / por vencer ≤90 días / caducado): úsalos tal cual, nunca restes
+ * fechas. BatchNumberDetails NO trae existencias por lote; las unidades
+ * VENDIDAS por lote están en la colección sapSalesLotes de consultar_retail.
  */
 
 /** "Items('INS0002')" → "items" */

@@ -91,6 +91,64 @@ function textoDe(m: UIMessage): string {
     .trim();
 }
 
+// La línea "▸ Consultó …" es lo único del motor que ve el usuario, y él es de
+// negocio: mostrar "BusinessPartners" o "dcStock" no le dice nada. Se traduce
+// a la palabra del negocio y, si el nombre no está en el mapa, se omite en
+// vez de filtrar el técnico.
+const NOMBRES_FUENTE: Record<string, string> = {
+  businesspartners: "socios de negocio",
+  items: "artículos",
+  orders: "pedidos",
+  invoices: "facturas",
+  quotations: "cotizaciones",
+  purchaseorders: "órdenes de compra",
+  purchaseinvoices: "facturas de compra",
+  deliverynotes: "entregas",
+  purchasedeliverynotes: "entradas de mercancía",
+  creditnotes: "notas de crédito",
+  warehouses: "almacenes",
+  pricelists: "listas de precios",
+  itemgroups: "grupos de artículos",
+  sales: "ventas",
+  sapsales: "ventas facturadas",
+  weeklyforecast: "pronóstico semanal",
+  dailyforecast: "pronóstico diario",
+  dcstock: "inventario de CEDIS",
+  pharmacystock: "inventario de farmacias",
+  uploads: "cargas",
+};
+
+function etiquetasConsultadas(partes: UIMessage["parts"]): string[] {
+  const etiquetas: string[] = [];
+  for (const p of partes) {
+    if (!p.type.startsWith("tool-") || p.type === "tool-crear_reporte") continue;
+    const entrada = (p as { input?: { entidad?: string; coleccion?: string } }).input;
+    const bruto = entrada?.entidad ?? entrada?.coleccion;
+    if (!bruto) continue;
+    // "Items('INS0002')" → "items"; los nombres desconocidos no se muestran.
+    const etiqueta = NOMBRES_FUENTE[bruto.split("(")[0].toLowerCase()];
+    if (etiqueta && !etiquetas.includes(etiqueta)) etiquetas.push(etiqueta);
+  }
+  return etiquetas;
+}
+
+// true mientras el modelo está tecleando el markdown de crear_reporte (el
+// tramo más largo de la respuesta: no llega texto y parece colgado).
+function generandoReporte(partes: UIMessage["parts"]): boolean {
+  return partes.some(
+    (p) =>
+      p.type === "tool-crear_reporte" &&
+      (p as { state?: string }).state !== "output-available" &&
+      (p as { state?: string }).state !== "output-error"
+  );
+}
+
+function LineaConsultas({ partes }: { partes: UIMessage["parts"] }) {
+  const fuentes = etiquetasConsultadas(partes);
+  if (!fuentes.length) return null;
+  return <p className="cr-label pb-1.5">▸ Consultó {fuentes.join(" · ")}</p>;
+}
+
 function grupoDeFecha(iso: string): string {
   const date = new Date(iso);
   const hoy = new Date();
@@ -343,24 +401,27 @@ function Conversacion({
                 ) : (
                   <div key={m.id} className="cr-msg-block cr-msg-block--assistant">
                     <RemitenteIA />
-                    {m.parts.some((p) => p.type.startsWith("tool-") && p.type !== "tool-crear_reporte") ? (
-                      <p className="cr-label pb-1.5">
-                        ▸ Consultó SAP
-                        {m.parts
-                          .filter((p) => p.type.startsWith("tool-") && p.type !== "tool-crear_reporte")
-                          .map((p) => {
-                            const entrada = (p as { input?: { entidad?: string } }).input;
-                            return entrada?.entidad ? ` · ${entrada.entidad}` : "";
-                          })
-                          .join("")}
-                      </p>
-                    ) : null}
+                    <LineaConsultas partes={m.parts} />
                     <div className="cr-assistant-final">
                       <Markdown>{textoDe(m)}</Markdown>
                       {ultimoEsAssistantStreaming && idx === messages.length - 1 ? (
                         <span className="cr-live-cursor" />
                       ) : null}
                     </div>
+                    {ultimoEsAssistantStreaming &&
+                    idx === messages.length - 1 &&
+                    generandoReporte(m.parts) ? (
+                      <div className="cr-live-status">
+                        <span className="cr-live-status__pulse">
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                        <span className="cr-live-status__label">
+                          Generando reporte… puede tardar un momento
+                        </span>
+                      </div>
+                    ) : null}
                     {m.parts
                       .filter((p) => p.type === "tool-crear_reporte")
                       .map((p, i) => {
@@ -496,6 +557,19 @@ export function ChatShell() {
     }
   }
 
+  async function borrarTodos() {
+    if (chats.length === 0) return;
+    const msg = `¿Borrar TODAS las conversaciones (${chats.length})? Esta acción no se puede deshacer.`;
+    if (!window.confirm(msg)) return;
+    try {
+      await api("/api/ai/chats", { method: "DELETE" });
+      setChats([]);
+      setChatId(null);
+    } catch (e) {
+      setError(e instanceof ClientApiError ? e.message : "No se pudieron borrar las conversaciones");
+    }
+  }
+
   async function borrarChat(id: string) {
     if (!window.confirm("¿Borrar esta conversación?")) return;
     try {
@@ -540,6 +614,15 @@ export function ChatShell() {
           <button type="button" className="cr-chat-new-btn" onClick={() => nuevoChat()}>
             <Plus size={15} strokeWidth={2} />
             <span className="cr-chat-new-btn__label">Nueva conversación</span>
+          </button>
+          <button
+            type="button"
+            className="cr-chat-search-toggle"
+            aria-label="Borrar todas las conversaciones"
+            title="Borrar todas las conversaciones"
+            onClick={() => void borrarTodos()}
+          >
+            <Trash2 size={15} strokeWidth={1.75} />
           </button>
           <div className="cr-chat-search-slot">
             <button

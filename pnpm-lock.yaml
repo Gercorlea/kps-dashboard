@@ -23,6 +23,9 @@ importers:
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
+      decimal.js:
+        specifier: ^10.6.0
+        version: 10.6.0
       framer-motion:
         specifier: ^13.1.0
         version: 13.1.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)

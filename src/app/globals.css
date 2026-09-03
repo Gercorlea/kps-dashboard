@@ -3,18 +3,19 @@
 
 @theme {
   --color-cr-bg: #ffffff;
-  --color-cr-surface-2: #fafaf9;
-  --color-cr-surface-3: #f4f4f1;
-  --color-cr-canvas: #d9d9d5;
-  --color-cr-ink: #15171c;
-  --color-cr-ink-2: #5a616c;
-  --color-cr-ink-3: #99a0ab;
+  --color-cr-surface-2: #F7F8FA;
+  --color-cr-surface-3: #EFF1F5;
+  --color-cr-canvas: #F6F7F9;
+  --color-cr-ink: #0E1116;
+  --color-cr-ink-2: #5B6474;
+  --color-cr-ink-3: #8B94A3;
   --color-cr-accent: #5b3df5;
-  --color-cr-ok: #1f9468;
-  --color-cr-warn: #b9791c;
-  --color-cr-danger: #cf4733;
-  --radius-cr-xs: 2px;
-  --radius-cr-sm: 3px;
+  --color-cr-ok: #17835C;
+  --color-cr-warn: #A96C12;
+  --color-cr-danger: #C13D2B;
+  --radius-cr-xs: 6px;
+  --radius-cr-sm: 10px;
+  --radius-cr-md: 12px;
   --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
@@ -43,9 +44,10 @@ html {
 }
 
 body {
-  background: var(--cr-bg);
+  background: var(--cr-canvas);
   color: var(--cr-ink);
   font-family: var(--cr-font-sans);
-  font-size: 13.5px;
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }

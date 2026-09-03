@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { canAccess } from "@/lib/rbac";
+import { canAccess, expandirModulos } from "@/lib/rbac";
 
 process.env.JWT_SECRET = "secreto-de-prueba-para-vitest";
 process.env.JWT_REFRESH_SECRET = "otro-secreto-de-prueba";
@@ -17,14 +17,44 @@ describe("canAccess (§5.4)", () => {
     const u = { role: "superadmin", modules: [] };
     expect(canAccess(u, "retail")).toBe(true);
     expect(canAccess(u, "cronos-ia")).toBe(true);
-    expect(canAccess(u, "admin")).toBe(true);
+    expect(canAccess(u, "admin-usuarios")).toBe(true);
   });
 
   it("user solo accede a sus módulos asignados", () => {
     const u = { role: "user", modules: ["retail"] };
     expect(canAccess(u, "retail")).toBe(true);
     expect(canAccess(u, "cronos-ia")).toBe(false);
-    expect(canAccess(u, "admin")).toBe(false);
+    expect(canAccess(u, "admin-usuarios")).toBe(false);
+  });
+
+  // El permiso es por página: dar Estadísticas no puede colar Usuarios.
+  it("dentro de una sección los permisos no se arrastran entre sí", () => {
+    const u = { role: "user", modules: ["admin-estadisticas"] };
+    expect(canAccess(u, "admin-estadisticas")).toBe(true);
+    expect(canAccess(u, "admin-usuarios")).toBe(false);
+
+    const v = { role: "user", modules: ["peticiones"] };
+    expect(canAccess(v, "peticiones")).toBe(true);
+    expect(canAccess(v, "proveedores-alta")).toBe(false);
+  });
+
+  // Quien se guardó cuando cada sección era un solo módulo tiene que seguir
+  // entrando donde entraba, sin migrar nada en Mongo.
+  it("los permisos antiguos abren toda su sección", () => {
+    const u = { role: "user", modules: ["admin", "proveedores"] };
+    expect(canAccess(u, "admin-usuarios")).toBe(true);
+    expect(canAccess(u, "admin-estadisticas")).toBe(true);
+    expect(canAccess(u, "proveedores-alta")).toBe(true);
+    expect(canAccess(u, "peticiones")).toBe(true);
+    expect(canAccess(u, "retail")).toBe(false);
+  });
+
+  it("expandirModulos descarta lo que ya no existe y no duplica", () => {
+    expect(expandirModulos(["admin", "admin-usuarios", "inventado"]).sort()).toEqual([
+      "admin-estadisticas",
+      "admin-usuarios",
+    ]);
+    expect(expandirModulos(null)).toEqual([]);
   });
 
   it("sin usuario no hay acceso", () => {

@@ -4,17 +4,18 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3,
   LayoutDashboard,
   LogOut,
   Menu,
   Sparkles,
   Table2,
+  Inbox,
+  Truck,
   Users,
   X,
 } from "lucide-react";
 import { BrandMark } from "@/components/ui/BrandMark";
-import { canAccess, type ModuleId } from "@/lib/rbac";
+import { canAccess, NAV_SECTIONS } from "@/lib/rbac";
 
 export interface UsuarioUI {
   id: string;
@@ -23,36 +24,18 @@ export interface UsuarioUI {
   modules: string[];
 }
 
-interface Item {
-  href: string;
-  etiqueta: string;
-  icono: React.ReactNode;
-  modulo: ModuleId | null;
-  ai?: boolean;
-}
+// El árbol del menú vive en lib/rbac (lo comparte la pantalla de usuarios);
+// aquí solo se le cuelga la parte visual: el icono y el acento de KPS AI.
+const ICONOS: Record<string, React.ReactNode> = {
+  "/dashboard": <LayoutDashboard strokeWidth={1.75} />,
+  "/retail": <Table2 strokeWidth={1.75} />,
+  "/cronos-ia": <Sparkles strokeWidth={1.75} />,
+  "/proveedores": <Truck strokeWidth={1.75} />,
+  "/peticiones": <Inbox strokeWidth={1.75} />,
+  "/admin/usuarios": <Users strokeWidth={1.75} />,
+};
 
-const ITEMS: { seccion: string; items: Item[] }[] = [
-  {
-    seccion: "General",
-    items: [
-      { href: "/dashboard", etiqueta: "Dashboard", icono: <LayoutDashboard strokeWidth={1.75} />, modulo: null },
-    ],
-  },
-  {
-    seccion: "Módulos",
-    items: [
-      { href: "/retail", etiqueta: "Retail", icono: <Table2 strokeWidth={1.75} />, modulo: "retail" },
-      { href: "/cronos-ia", etiqueta: "KPS AI", icono: <Sparkles strokeWidth={1.75} />, modulo: "cronos-ia", ai: true },
-    ],
-  },
-  {
-    seccion: "Sistema",
-    items: [
-      { href: "/admin/usuarios", etiqueta: "Usuarios", icono: <Users strokeWidth={1.75} />, modulo: "admin" },
-      { href: "/admin/estadisticas", etiqueta: "Estadísticas", icono: <BarChart3 strokeWidth={1.75} />, modulo: "admin" },
-    ],
-  },
-];
+const HREFS_AI = new Set(["/cronos-ia"]);
 
 // Cada link cubre sus subrutas. Ninguna subruta de /retail tiene entrada propia
 // en el menú —a /retail/analisis y a la ficha de un retailer se entra desde la
@@ -68,9 +51,9 @@ export function Sidebar({ usuario }: { usuario: UsuarioUI }) {
 
   // El menú se renderiza según los módulos del usuario; la seguridad real
   // está en el backend, no en ocultar el link (§5.4).
-  const secciones = ITEMS.map((s) => ({
+  const secciones = NAV_SECTIONS.map((s) => ({
     ...s,
-    items: s.items.filter((i) => i.modulo === null || canAccess(usuario, i.modulo)),
+    items: s.items.filter((i) => i.module === null || canAccess(usuario, i.module)),
   })).filter((s) => s.items.length > 0);
 
   async function cerrarSesion() {
@@ -97,19 +80,19 @@ export function Sidebar({ usuario }: { usuario: UsuarioUI }) {
       </div>
       <nav className="cr-sidebar__nav">
         {secciones.map((s) => (
-          <div key={s.seccion}>
+          <div key={s.id}>
             <div className="cr-sidebar__section">
-              <span className="cr-label">{s.seccion}</span>
+              <span className="cr-label">{s.name}</span>
             </div>
             {s.items.map((i) => {
               const activo = esActivo(pathname, i.href);
               const clases = ["cr-navlink"];
-              if (i.ai) clases.push("cr-navlink--ai");
+              if (HREFS_AI.has(i.href)) clases.push("cr-navlink--ai");
               if (activo) clases.push("cr-navlink--active");
               return (
                 <Link key={i.href} href={i.href} className={clases.join(" ")} onClick={() => setAbierto(false)}>
-                  {i.icono}
-                  {i.etiqueta}
+                  {ICONOS[i.href]}
+                  {i.label}
                 </Link>
               );
             })}

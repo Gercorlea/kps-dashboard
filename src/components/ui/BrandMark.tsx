@@ -13,8 +13,11 @@ const ARCHIVOS: Record<Variant, Record<Tone, string>> = {
 };
 
 // Relación de aspecto por variante para fijar width/height y evitar
-// layout shift (isotipo cuadrado; logotipo horizontal).
-const RATIO: Record<Variant, number> = { mark: 1, word: 4.4 };
+// layout shift (isotipo cuadrado; logotipo horizontal). Los valores salen de
+// los PNG reales de public/ —isotipo 1000×1000, logotipo 1350×385—: si no
+// coinciden, el `width` que se declara aquí no cuadra con el que el navegador
+// calcula por `width: auto` y next/image avisa de la relación de aspecto rota.
+const RATIO: Record<Variant, number> = { mark: 1, word: 1350 / 385 };
 
 export function BrandMark({
   variant = "mark",

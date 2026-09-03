@@ -3,6 +3,7 @@ import { isValidObjectId } from "mongoose";
 import type { NextRequest } from "next/server";
 import { ApiError, handleApiError, parseJson } from "@/lib/api";
 import { chat } from "@/lib/ai";
+import { coberturaRetailers } from "@/lib/retail/consultas-ia";
 import { MODELO_DEFECTO, costUSD, esModeloValido } from "@/lib/ai-modelos";
 import { requireModule } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
@@ -78,7 +79,11 @@ export async function POST(request: NextRequest) {
     });
     const result = chat(mensajesModelo, {
       model: body.model,
-      onFinish: async ({ texto, model, entrada, salida, tools }) => {
+      // Qué retailers tienen datos, leído de Mongo (cacheado 5 min) en vez de
+      // enumerado en el prompt: así el modelo no puede llamar "cargados" a los
+      // que están en el catálogo sin un solo reporte.
+      cobertura: await coberturaRetailers(),
+      onFinish: async ({ texto, model, entrada, salida, cache, tools }) => {
         try {
           await Message.create({
             chatId: conversacion._id,
@@ -88,7 +93,7 @@ export async function POST(request: NextRequest) {
             model,
             inputTokens: entrada,
             outputTokens: salida,
-            costUSD: costUSD(model, entrada, salida),
+            costUSD: costUSD(model, entrada, salida, cache),
             tools: tools.length ? tools : undefined,
           });
           await Chat.updateOne({ _id: conversacion._id }, { $set: { updatedAt: new Date() } });
@@ -102,15 +107,30 @@ export async function POST(request: NextRequest) {
     // muestra tokens y costo sin una petición extra.
     const modeloUsado = esModeloValido(body.model) ? body.model : MODELO_DEFECTO;
     return result.toUIMessageStreamResponse({
+      // Un fallo posterior a la apertura del stream —consulta a SAP, límite del
+      // proveedor, timeout de la función— ya no puede volverse respuesta HTTP:
+      // las cabeceras salieron y el catch de abajo nunca lo ve. Sin esto el SDK
+      // lo enmascara y el cliente solo puede decir "intenta de nuevo". Se emite
+      // con el contrato { error: { message } } que espera motivoDelError.
+      onError: (error) => {
+        console.error("[chat] fallo durante el streaming", error);
+        const message =
+          error instanceof Error ? error.message : "Error generando la respuesta";
+        return JSON.stringify({ error: { message } });
+      },
       messageMetadata: ({ part }) => {
         if (part.type !== "finish") return undefined;
         const entrada = part.totalUsage?.inputTokens ?? 0;
         const salida = part.totalUsage?.outputTokens ?? 0;
+        const cache = {
+          leidos: part.totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0,
+          escritos: part.totalUsage?.inputTokenDetails?.cacheWriteTokens ?? 0,
+        };
         return {
           model: modeloUsado,
           entrada,
           salida,
-          costo: costUSD(modeloUsado, entrada, salida),
+          costo: costUSD(modeloUsado, entrada, salida, cache),
         };
       },
     });

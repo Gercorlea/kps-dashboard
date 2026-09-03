@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loginSchema } from "@/lib/validation/auth";
+import { chatBodySchema } from "@/lib/validation/chat";
 import { guardarAnalisisSchema, resumenAnalisisQuerySchema } from "@/lib/validation/retail";
 import { nombreRetailer, RETAILER_IDS, RETAILERS } from "@/lib/retail/retailers";
 
@@ -115,5 +116,26 @@ describe("retailers del analizador", () => {
     expect(nombreRetailer("heb")).toBe("HEB");
     // Una cuenta vieja en la base debe verse, no desaparecer de la pantalla.
     expect(nombreRetailer("cuenta-vieja")).toBe("cuenta-vieja");
+  });
+});
+
+describe("chatBodySchema: topes por rol", () => {
+  const body = (msgs: Array<{ role: "user" | "assistant"; len: number }>) => ({
+    messages: msgs.map((m) => ({ role: m.role, parts: [{ type: "text", text: "x".repeat(m.len) }] })),
+  });
+
+  it("el tope de 8000 es sólo para lo que escribe el usuario", () => {
+    expect(chatBodySchema.safeParse(body([{ role: "user", len: 8000 }])).success).toBe(true);
+    expect(chatBodySchema.safeParse(body([{ role: "user", len: 8001 }])).success).toBe(false);
+  });
+
+  it("una respuesta larga del asistente (un pronóstico) no bloquea el siguiente mensaje", () => {
+    expect(chatBodySchema.safeParse(body([{ role: "assistant", len: 30_000 }, { role: "user", len: 20 }])).success).toBe(true);
+  });
+
+  it("acepta el historial que devuelve el GET de la conversación (hasta 200 mensajes)", () => {
+    const msgs = Array.from({ length: 200 }, (_, i) => ({ role: (i % 2 ? "assistant" : "user") as "user" | "assistant", len: 10 }));
+    expect(chatBodySchema.safeParse(body(msgs)).success).toBe(true);
+    expect(chatBodySchema.safeParse(body([...msgs, { role: "user", len: 10 }])).success).toBe(false);
   });
 });

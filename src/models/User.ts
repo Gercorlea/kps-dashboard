@@ -6,7 +6,7 @@ export interface IUser {
   passwordHash: string;
   name: string;
   role: "superadmin" | "user";
-  modules: string[]; // ["retail", "cronos-ia", "admin"]
+  modules: string[]; // ids de MODULES, p. ej. ["retail", "admin-usuarios"]
   active: boolean;
   resetTokenHash: string | null;
   resetTokenExpiresAt: Date | null;
