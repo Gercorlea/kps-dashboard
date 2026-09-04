@@ -36,14 +36,14 @@ export default async function RetailPage() {
         title="Retailers"
         description="Abre un retailer para ver su histórico y sus reportes"
       />
-      <div className="cr-page-content cr-page-content--pegado flex flex-col gap-5">
+      <div className="cr-page-content cr-page-content--pegado flex flex-col gap-8">
         <RetailerCards retailers={retailers} serie={summary.serie} />
 
         {/* Los agregados leen como un bloque: la fila de KPIs es el titular y
             la gráfica su desglose, así que van más juntos entre sí que con el
             resto de la página. */}
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
               label={`Ventas ${MESES_DASHBOARD} meses`}
               value={fmtNum(summary.unidadesTotales)}

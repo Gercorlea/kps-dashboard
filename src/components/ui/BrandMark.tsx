@@ -8,8 +8,8 @@ type Variant = "mark" | "word";
 type Tone = "ink" | "white";
 
 const ARCHIVOS: Record<Variant, Record<Tone, string>> = {
-  mark: { ink: "/kps-logo.png", white: "/kps-logo.png" },
-  word: { ink: "/kps-logo-wide.png", white: "/kps-logo-wide.png" },
+  mark: { ink: "/kps-isotipo.png", white: "/kps-isotipo.png" },
+  word: { ink: "/kps-marca.png", white: "/kps-marca.png" },
 };
 
 // Relación de aspecto por variante para fijar width/height y evitar
@@ -17,7 +17,7 @@ const ARCHIVOS: Record<Variant, Record<Tone, string>> = {
 // los PNG reales de public/ —isotipo 1000×1000, logotipo 1350×385—: si no
 // coinciden, el `width` que se declara aquí no cuadra con el que el navegador
 // calcula por `width: auto` y next/image avisa de la relación de aspecto rota.
-const RATIO: Record<Variant, number> = { mark: 1, word: 200 / 60 };
+const RATIO: Record<Variant, number> = { mark: 1, word: 430 / 153 };
 
 export function BrandMark({
   variant = "mark",
@@ -39,7 +39,7 @@ export function BrandMark({
   return (
     <Image
       src={ARCHIVOS[variant][tone]}
-      alt="Arcanum"
+      alt="KPS"
       width={width}
       height={height}
       priority={priority}

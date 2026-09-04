@@ -21,7 +21,7 @@ export default function Loading() {
   return (
     <>
       <RetailerCabeceraSkeleton />
-      <div className="cr-page-content flex flex-col gap-5">
+      <div className="cr-page-content flex flex-col gap-6">
         <RetailerContenidoSkeleton />
       </div>
     </>

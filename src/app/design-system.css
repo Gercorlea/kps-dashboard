@@ -590,7 +590,7 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
 
 /* El lockup ocupa el ancho util de la cabecera —de un margen al otro— porque
    su fondo ES la marca: a media anchura se leia como una insignia suelta. */
-.cr-sidebar__marca { display: block; flex: 0 1 156px; max-width: 156px; min-width: 0; border: 0; }
+.cr-sidebar__marca { display: block; flex: 0 1 132px; max-width: 132px; min-width: 0; border: 0; }
 
 .cr-sidebar__section { padding: 14px 18px 4px; }
 
@@ -1783,3 +1783,73 @@ a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tin
   text-decoration: none; border-top: 1px solid var(--cr-line-soft);
 }
 .cr-campana__pie:hover { background: var(--cr-surface-2); }
+
+/* =====================================================================
+   RETAIL — se queda en el lenguaje anterior (esquinas redondeadas)
+   ---------------------------------------------------------------------
+   El resto de la app volvio a CRONOS v1.0 (esquinas de 2-4px, versalitas
+   en mono), pero retail conserva su aspecto de antes por decision del
+   usuario. Estas ocho reglas son las que difieren, copiadas de
+   origin/Development.
+
+   No hace falta acotarlas a una ruta: `.cr-rcard*` y `.cr-viz*` son
+   selectores EXCLUSIVOS de retail, asi que ninguna otra pantalla los usa.
+
+   Los valores van explicitos y no por token —12px en vez de var(--cr-r-md),
+   los grises en hex— justamente porque los tokens de este fichero son los
+   del v1.0: leerlos daria las esquinas cuadradas que aqui no se quieren.
+   ===================================================================== */
+
+.cr-rcard {
+  border: 1px solid rgba(14, 17, 22, 0.06);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(14, 17, 22, 0.05), 0 1px 3px rgba(14, 17, 22, 0.04);
+}
+
+.cr-rcard__label {
+  font-family: var(--cr-font-sans); font-size: 12px; font-weight: 500;
+  letter-spacing: 0; text-transform: none; color: #5B6474;
+}
+
+.cr-rcard__part {
+  font-family: var(--cr-font-sans); font-size: 11.5px;
+  font-variant-numeric: tabular-nums; color: #656E7C;
+}
+
+.cr-rcard__valor {
+  font-family: var(--cr-font-sans); font-size: 24px; font-weight: 600;
+  letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: #0E1116;
+  margin: 2px 0 8px;
+}
+
+.cr-rcard__cifras dt {
+  font-family: var(--cr-font-sans); font-size: 11px; font-weight: 500;
+  letter-spacing: 0; text-transform: none; color: #656E7C;
+}
+.cr-rcard__cifras dd {
+  margin-top: 2px; font-family: var(--cr-font-sans); font-size: 13.5px;
+  font-weight: 500; font-variant-numeric: tabular-nums; color: #0E1116;
+}
+
+.cr-rcard__pie {
+  font-family: var(--cr-font-sans); font-size: 12px; color: #656E7C;
+  border-top: 1px solid rgba(14, 17, 22, 0.06);
+}
+
+.cr-viz-dona__cifra {
+  font-family: var(--cr-font-sans); font-size: 17px; font-weight: 600;
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+  color: #0E1116; line-height: 1.2;
+}
+.cr-viz-dona__etiqueta {
+  font-family: var(--cr-font-sans); font-size: 12px; font-weight: 500;
+  text-transform: none; letter-spacing: 0; color: #5B6474;
+}
+.cr-viz-tip__titulo {
+  font-family: var(--cr-font-sans); font-size: 12px; font-weight: 600;
+  text-transform: none; letter-spacing: 0; color: #0E1116; margin-bottom: 7px;
+}
+
+/* La barra de participacion y la punta del sparkline redondean tambien. */
+.cr-rcard__barra { border-radius: 999px; }
+.cr-rcard__punta { border-radius: 50%; }

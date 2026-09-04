@@ -43,7 +43,7 @@ export default async function AnalisisPage({
           </Link>
         }
       />
-      <div className="cr-page-content flex flex-col gap-5">
+      <div className="cr-page-content">
         <AnalisisExcel retailer={id} />
       </div>
     </>

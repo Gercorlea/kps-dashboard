@@ -13,7 +13,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     >
       <div className="cr-card w-full max-w-sm p-8">
         <div className="mb-6 flex justify-center">
-          <BrandMark variant="word" tone="ink" height={54} priority />
+          <BrandMark variant="word" tone="ink" height={44} priority />
         </div>
         {children}
       </div>
