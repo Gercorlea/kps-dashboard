@@ -29,6 +29,7 @@ import { ReporteDetalle } from "@/components/retail/ReporteDetalle";
 import {
   RetailerContenidoSkeleton,
   RetailerGraficasSkeleton,
+  RetailerKpisSkeleton,
   RetailerTablaSkeleton,
 } from "@/components/retail/RetailerSkeleton";
 import { SelectorPeriodo } from "@/components/retail/SelectorPeriodo";
@@ -58,6 +59,7 @@ import type {
   Granularidad,
   MetaColumna,
   PuntoAgrupado,
+  PuntoSerie,
 } from "@/lib/retail/analisis/tipos";
 
 // Mismo motivo que en el analizador: recharts es lo más pesado de la ruta y no
@@ -237,13 +239,14 @@ function fechaUTC(iso: string): Date {
 const UMBRAL_DIA_PERIODO = 130;
 
 /**
- * Todo lo que las gráficas y la tabla sacan de UN bundle.
+ * Todo lo que los KPIs, las gráficas y la tabla sacan de UN bundle.
  *
  * Existe porque la ficha tiene dos bundles a la vez: el del histórico completo
- * —lo que miran los KPIs de arriba— y el del periodo elegido, que miran las
- * gráficas de Ventas y la tabla de Productos. Sin esto habría que duplicar
- * cuatro `useMemo` casi idénticos, y es
- * justo el tipo de duplicado en el que uno de los dos se queda atrás.
+ * y el del periodo elegido. Sin filtro se mira el primero y con filtro el
+ * segundo, y lo hacen los tres a la vez —KPIs, gráficas y tabla—, así que el
+ * cambio de fuente se decide UNA vez (`datos`) y no tres. Sin esto habría que
+ * duplicar cuatro `useMemo` casi idénticos, y es justo el tipo de duplicado en
+ * el que uno de los dos se queda atrás.
  */
 interface Derivados {
   /** Acumuladores por valor de la dimensión elegida; null sin dimensión. */
@@ -254,6 +257,8 @@ interface Derivados {
   mensual: Map<string, Acumulador> | null;
   producto: { campos: string[]; grupos: GrupoProducto[] } | null;
   totales: GrupoAcumulado | null;
+  /** Primera y última fecha CON DATOS; con filtro, las de dentro del rango. */
+  rangoFechas: { desde: string; hasta: string } | null;
   /**
    * Métricas del bundle del que salen estos grupos, en orden. Viaja con ellos
    * porque `valorMetricaAgregada` indexa `suma` por POSICIÓN: leer los grupos
@@ -284,6 +289,7 @@ function derivar(
       : null,
     producto: bundle?.producto ?? null,
     totales: bundle?.totales ?? null,
+    rangoFechas: bundle?.rangoFechas ?? null,
     metricas,
   };
 }
@@ -317,12 +323,12 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   // --- Filtro de periodo ---------------------------------------------------
   // Los dos extremos, tal como están escritos en los inputs. Vacíos = todo el
   // histórico, que es lo que pide la carga inicial: así el primer viaje sigue
-  // siendo el de siempre y los KPIs de la cabecera nunca se mueven.
+  // siendo el de siempre.
   //
   // Un periodo SÍ cuesta un viaje, al revés que la métrica o la dimensión: las
   // ramas de dimensión y de producto del $facet agregan sin fecha, así que las
-  // barras, la dona y la tabla de artículos no se pueden recortar aquí. Se pide
-  // un segundo bundle acotado y Ventas y Productos leen ese.
+  // barras, la dona y la tabla de productos no se pueden recortar aquí. Se pide
+  // un segundo bundle acotado y los KPIs, Ventas y Productos leen ese.
   const [desdeEscrito, setDesdeEscrito] = useState("");
   const [hastaEscrito, setHastaEscrito] = useState("");
   // El bundle del periodo, con la clave a la que corresponde: guardarla dentro
@@ -527,18 +533,18 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
   // solo: `columnas.find` no encuentra el campo null.
   const metricaMoneda =
     columnas.find((c) => c.campo === campoMetrica)?.esMoneda ?? false;
-  // Lo que sale del histórico completo. Los KPIs de arriba miran SÓLO esto: son
-  // la foto del retailer y no la del periodo que alguien esté explorando en las
-  // gráficas de abajo, y por eso van por encima del selector de fechas.
+  // Lo que sale del histórico completo: lo que se mira sin filtro, y también de
+  // donde salen las dos lecturas que NO pueden salir del periodo —el año
+  // anterior queda fuera del rango por definición—.
   const base = useMemo(
     () => derivar(bundle, campoDimension, campoMetrica, agregacionEfectiva),
     [bundle, campoDimension, campoMetrica, agregacionEfectiva]
   );
 
-  // Lo mismo pero del periodo. Null cuando no hay filtro —Ventas y Productos
-  // caen entonces en `base`— y también mientras el bundle acotado viaja, que es
-  // lo que hace que se pinte el esqueleto en vez del histórico completo con la
-  // etiqueta de un trimestre.
+  // Lo mismo pero del periodo. Null cuando no hay filtro —los KPIs, Ventas y
+  // Productos caen entonces en `base`— y también mientras el bundle acotado
+  // viaja, que es lo que hace que se pinte el esqueleto en vez del histórico
+  // completo con la etiqueta de un trimestre.
   const filtrado = useMemo(
     () =>
       bundlePeriodo
@@ -547,7 +553,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
     [bundlePeriodo, campoDimension, campoMetrica, agregacionEfectiva]
   );
 
-  /** Lo que miran Ventas y Productos. Null = el periodo todavía no está. */
+  /** Lo que miran los KPIs, Ventas y Productos. Null = el periodo no está aún. */
   const datos = periodo ? filtrado : base;
 
   // Serie del histórico completo, siempre por mes: el bundle la trae con ese
@@ -599,49 +605,69 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
     return datos.mensual ? compararAnios(datos.mensual, agregacionEfectiva) : null;
   }, [periodo, anualHistorico, datos, base, agregacionEfectiva]);
 
+  // Los KPIs leen `datos`, igual que las gráficas: con un periodo puesto son las
+  // cifras de ESE periodo. El bundle acotado ya viene recortado por Mongo —el
+  // $match con fechas alcanza a todas las ramas del $facet, también a la de la
+  // dimensión—, así que aquí no hay nada que recortar, sólo que leer el bundle
+  // que toca.
+  //
+  // `datos.metricas` y no `bundle.metricas`: `suma` se indexa por POSICIÓN, y
+  // leer los totales de un bundle con la lista de métricas del otro daría
+  // cifras cambiadas de columna sin que nada falle (ver `Derivados`).
   const kpis = useMemo(() => {
-    if (!bundle?.totales) return null;
-    const i = campoMetrica ? (bundle.metricas ?? []).indexOf(campoMetrica) : -1;
+    if (!datos?.totales) return null;
+    const i = campoMetrica ? datos.metricas.indexOf(campoMetrica) : -1;
     return {
-      totalMetrica: i < 0 ? bundle.totales.conteo : (bundle.totales.suma[i] ?? 0),
-      totalFilas: bundle.totales.conteo,
-      dimensionesDistintas: base.acum?.size ?? 0,
-      rangoFechas: bundle.rangoFechas
+      totalMetrica: i < 0 ? datos.totales.conteo : (datos.totales.suma[i] ?? 0),
+      totalFilas: datos.totales.conteo,
+      dimensionesDistintas: datos.acum?.size ?? 0,
+      rangoFechas: datos.rangoFechas
         ? {
-            desde: fechaLocal(bundle.rangoFechas.desde),
-            hasta: fechaLocal(bundle.rangoFechas.hasta),
+            desde: fechaLocal(datos.rangoFechas.desde),
+            hasta: fechaLocal(datos.rangoFechas.hasta),
           }
         : null,
     };
-  }, [bundle, campoMetrica, base]);
+  }, [datos, campoMetrica]);
 
   // Los dos KPIs de la derecha miran el DESEMPEÑO del retailer y no el archivo
   // que lo trajo: cómo va el año contra el anterior y cuánto vale un mes
   // típico. Salen de lo que ya está calculado para las gráficas, así que
-  // cambiar de métrica los mueve al mismo tiempo que ellas.
+  // cambiar de métrica —o de periodo— los mueve al mismo tiempo que ellas.
   const evolucion: EvolucionKpis = useMemo(() => {
-    // Sólo el último año, no toda la historia: un promedio que arrastra los
-    // años viejos deja de decir cómo va el retailer hoy. La serie llega
-    // ordenada, así que el año es el del último punto.
-    const serie = serieHistorico ?? [];
-    const anio = serie.length > 0 ? serie[serie.length - 1].clave.slice(0, 4) : null;
-    const ultimoAnio = anio ? serie.filter((p) => p.clave.startsWith(anio)) : [];
+    // La serie sobre la que se promedia y los meses que la acompañan en el
+    // detalle. Con periodo son los del rango; sin él, los del último año con
+    // datos —no toda la historia: un promedio que arrastra los años viejos deja
+    // de decir cómo va el retailer hoy—.
+    //
+    // En los dos casos la serie viene RELLENA (`rellenarSerie`), así que un mes
+    // sin ventas dentro del tramo cuenta como cero, igual que en la gráfica.
+    let meses: PuntoSerie[];
+    let anio: number | null;
+    if (periodo) {
+      meses = datos?.mensual ? rellenarSerie(datos.mensual, agregacionEfectiva, "mes") : [];
+      anio = null;
+    } else {
+      // La serie llega ordenada, así que el año es el del último punto.
+      const serie = serieHistorico ?? [];
+      const ultimo = serie.length > 0 ? serie[serie.length - 1].clave.slice(0, 4) : null;
+      meses = ultimo ? serie.filter((p) => p.clave.startsWith(ultimo)) : [];
+      anio = ultimo ? Number(ultimo) : null;
+    }
     // Sumar los puntos vale porque la agregación fija es "suma" (o "conteo",
     // que también es aditivo): con "promedio" el promedio de los promedios
-    // mensuales no sería el promedio del año.
-    const total = ultimoAnio.reduce((acc, p) => acc + p.valor, 0);
+    // mensuales no sería el promedio del tramo.
+    const total = meses.reduce((acc, p) => acc + p.valor, 0);
     return {
-      anual: anualHistorico,
-      // Los meses son los del año en curso hasta donde llega el reporte —no
-      // doce fijos ni sólo los que vendieron—: la serie viene rellena, así que
-      // un mes sin reportar ya cuenta como cero en la gráfica y tiene que
-      // contar igual en el promedio.
+      // `anualVentas` y no `anualHistorico`: ya resuelve el caso con periodo
+      // —el mismo tramo del año pasado— y sin él devuelve el histórico.
+      anual: anualVentas,
       promedioMensual:
-        anio && ultimoAnio.length > 0
-          ? { valor: total / ultimoAnio.length, meses: ultimoAnio.length, anio: Number(anio) }
+        meses.length > 0
+          ? { valor: total / meses.length, meses: meses.length, anio }
           : null,
     };
-  }, [serieHistorico, anualHistorico]);
+  }, [periodo, datos, serieHistorico, anualVentas, agregacionEfectiva]);
 
   // --- Pestaña de productos ------------------------------------------------
   // Una fila por producto —(nombre, UPC, marca), el grano que declara la
@@ -707,7 +733,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
     : direccionPorOmision;
 
   const filasProductos = useMemo<CeldaCruda[][]>(() => {
-    // Del periodo si hay uno: la tabla de artículos responde al mismo filtro
+    // Del periodo si hay uno: la tabla de productos responde al mismo filtro
     // que las gráficas de Ventas, así que sus cifras y las de las barras
     // hablan del mismo tramo.
     const grupos = datos?.producto?.grupos;
@@ -806,9 +832,6 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
         </Selector>
       ) : null}
 
-      {/* Radios y no un desplegable, igual que el orden de Productos: las
-          métricas de una plantilla son dos o tres y caben a la vista, así que
-          se ve de un vistazo entre qué se elige y cambiar cuesta un clic. */}
       <Radios
         etiqueta="Medida"
         nombre="metrica-ventas"
@@ -887,7 +910,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
           <div className="hidden items-center gap-4 sm:flex">
             <Metrica etiqueta="Último reporte" valor={fmtFecha(ficha.ultimoReporte)} />
             <Metrica etiqueta="Reportes" valor={fmtNum(ficha.reportes)} />
-            <Metrica etiqueta="Artículos" valor={fmtNum(ficha.articulos)} />
+            <Metrica etiqueta="Productos" valor={fmtNum(ficha.articulos)} />
           </div>
         </div>
       </header>
@@ -921,18 +944,29 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
           // porque cambia con la sección: dejarla fuera la haría aparecer
           // de golpe encima de un panel que todavía entra.
           <div key={vista} className="cr-vista">
-            {/* Los KPIs encabezan la página: son la foto del retailer entero
-                —no la del periodo que se esté explorando debajo— y por eso van
-                ARRIBA del selector de fechas y no bajo él, donde se leerían
-                como cifras que ignoran el filtro. */}
-            {vista === "ventas" && kpis ? (
-              <AnalisisKpis
-                kpis={kpis}
-                nombreMetrica={nombreMetrica}
-                nombreDimension={nombreDe(campoDimension)}
-                metricaMoneda={metricaMoneda}
-                evolucion={evolucion}
-              />
+            {/* Los KPIs encabezan la página, por encima del selector de fechas,
+                pero hablan del MISMO periodo que las gráficas de abajo: por eso
+                pasan por el mismo `estadoPeriodo` que ellas —esqueleto mientras
+                el bundle acotado viaja— y por eso el total lleva el rango en el
+                detalle, que a esta altura es lo único que lo ata al filtro.
+
+                Con el periodo vacío o en error no se pintan: el aviso ya está
+                abajo, y cuatro ceros encima de él serían un dato que no existe. */}
+            {vista === "ventas" ? (
+              estadoPeriodo === "cargando" ? (
+                <div className="cr-pulse" aria-busy="true">
+                  <RetailerKpisSkeleton />
+                </div>
+              ) : estadoPeriodo === "listo" && kpis ? (
+                <AnalisisKpis
+                  kpis={kpis}
+                  nombreMetrica={nombreMetrica}
+                  nombreDimension={nombreDe(campoDimension)}
+                  metricaMoneda={metricaMoneda}
+                  evolucion={evolucion}
+                  periodo={periodo ? (kpis.rangoFechas ?? undefined) : undefined}
+                />
+              ) : null
             ) : null}
 
             {/* Productos tiene su propio filtro: su tabla no depende de la
@@ -1044,7 +1078,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                 avisoPeriodo
               ) : (
                 <AnalisisTable
-                  titulo="Artículos"
+                  titulo="Productos"
                   columnas={columnasProductos}
                   filasVisibles={productosVisibles}
                   totalFilas={datos?.producto?.grupos.length ?? 0}
@@ -1091,7 +1125,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                     // respuesta.
                     setCargando(true);
                     void cargar();
-                    // La cabecera (reportes, artículos, periodo) la pinta el
+                    // La cabecera (reportes, productos, periodo) la pinta el
                     // servidor: sin esto seguiría contando el reporte borrado.
                     router.refresh();
                   }}
@@ -1103,7 +1137,7 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
                   sinPadding
                 >
                   <div className="cr-table-scroll">
-                    <table className="cr-table">
+                    <table className="cr-table cr-table--head-lg">
                       <thead>
                         <tr>
                           <th>Archivo</th>

@@ -27,10 +27,14 @@ export interface EvolucionKpis {
     mesesComparables: number;
   } | null;
   /**
-   * Métrica por mes del ÚLTIMO año con datos; null si no hay serie. `meses` son
-   * los que ese año trae en el reporte, que hasta diciembre no son doce.
+   * Métrica por mes del tramo que se esté mirando; null si no hay serie.
+   *
+   * Sin filtro de fechas el tramo es el ÚLTIMO año con datos y `anio` dice
+   * cuál: `meses` son los que ese año trae en el reporte, que hasta diciembre
+   * no son doce. Con filtro el tramo es el periodo elegido y `anio` va en null,
+   * porque un rango puede cruzar dos años y "de 2026" sería mentira.
    */
-  promedioMensual: { valor: number; meses: number; anio: number } | null;
+  promedioMensual: { valor: number; meses: number; anio: number | null } | null;
 }
 
 interface Props {
@@ -45,6 +49,15 @@ interface Props {
   metricaMoneda?: boolean;
   /** Ver EvolucionKpis: presente sólo en la ficha de un retailer. */
   evolucion?: EvolucionKpis;
+  /**
+   * Rango con datos del periodo filtrado; ausente cuando no hay filtro.
+   *
+   * Los KPIs van por ENCIMA del selector de fechas, así que sin esta línea la
+   * cifra del total no dice sobre qué está calculada y se lee como el histórico
+   * completo. Son las fechas con ventas dentro del rango, no las escritas en
+   * los inputs: es lo que de verdad hay detrás del número.
+   */
+  periodo?: { desde: Date; hasta: Date };
 }
 
 /**
@@ -105,6 +118,7 @@ function AnalisisKpisBase({
   nombreDimension,
   metricaMoneda = false,
   evolucion,
+  periodo,
 }: Props) {
   const { rangoFechas } = kpis;
   const fmtTotal = metricaMoneda ? formatearMonedaCompacta : formatearCompacto;
@@ -117,7 +131,17 @@ function AnalisisKpisBase({
       {/* Primero las tres lecturas de la métrica —cuánto, cómo va contra el año
           pasado y cuánto vale un mes— y al final el recuento de la dimensión,
           que es lo único que no habla de la métrica. */}
-      <Kpi label={`Total ${nombreMetrica}`} value={fmtTotal(kpis.totalMetrica)} />
+      <Kpi
+        label={`Total ${nombreMetrica}`}
+        value={fmtTotal(kpis.totalMetrica)}
+        detalle={
+          periodo ? (
+            <span className="cr-mono">
+              {formatearFecha(periodo.desde)} → {formatearFecha(periodo.hasta)}
+            </span>
+          ) : undefined
+        }
+      />
 
       {evolucion ? (
         <>
@@ -126,12 +150,18 @@ function AnalisisKpisBase({
             <Kpi
               label="Promedio mensual"
               value={fmtTotal(evolucion.promedioMensual.valor)}
-              // Se dice el año y cuántos meses lleva: el promedio de un año a
-              // medias no se compara con el de uno completo, y sin esta línea
-              // no habría forma de saber sobre qué está calculado.
+              // Se dice sobre cuántos meses —y de qué— está calculado: el
+              // promedio de un año a medias no se compara con el de uno
+              // completo, y sin esta línea no habría forma de saberlo. Con
+              // filtro puesto el tramo es el periodo y no un año (ver
+              // EvolucionKpis).
               detalle={`${evolucion.promedioMensual.meses} ${
                 evolucion.promedioMensual.meses === 1 ? "mes" : "meses"
-              } de ${evolucion.promedioMensual.anio}`}
+              } ${
+                evolucion.promedioMensual.anio !== null
+                  ? `de ${evolucion.promedioMensual.anio}`
+                  : "del periodo"
+              }`}
             />
           ) : null}
         </>

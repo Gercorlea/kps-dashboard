@@ -208,7 +208,10 @@ describe("plantillas", () => {
     const campoDe = (campo: string) => resueltas.find((c) => c.campo === campo);
 
     // Identidad del producto: el nombre solo agruparía varios UPC en una fila.
-    expect(producto.claves).toEqual(["itemDesc", "upc", "brand"]);
+    // El código va detrás del nombre porque es el mismo producto dicho en
+    // número, y no parte ninguna fila: sobre el archivo real las 38 filas del
+    // grano viejo (nombre, UPC, marca) siguen siendo 38 con él dentro.
+    expect(producto.claves).toEqual(["itemDesc", "primeItemNbr", "upc", "brand"]);
     // Las de canasta, la que duplica a POS Qty y la lectura por tienda quedan
     // fuera; se siguen guardando y se ven en /retail/analisis.
     expect(producto.metricas).toEqual(["posQty", "posSales", "avgPrice"]);
@@ -224,7 +227,15 @@ describe("plantillas", () => {
     }
     // Y que cada mitad sea de la clase que le toca.
     expect(producto.metricas.every((m) => campoDe(m)?.rol === "metrica")).toBe(true);
-    expect(producto.claves.every((c) => campoDe(c)?.tipo === "categoria")).toBe(true);
+    // Las claves son texto o código, nunca una magnitud: por ahí se agrupa y
+    // ahí busca el buscador de la pestaña. "Prime Item Nbr" viene como número
+    // del Excel, así que lo que lo salva es su rol de código.
+    expect(
+      producto.claves.every((c) => {
+        const col = campoDe(c);
+        return col?.tipo === "categoria" || col?.esIdentificador === true;
+      })
+    ).toBe(true);
   });
 
   it("las columnas que ya vienen promediadas no se declaran aditivas", async () => {
