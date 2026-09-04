@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Paginacion } from "@/components/dashboard/Paginacion";
 import { Check, RefreshCw, Search } from "lucide-react";
 import { api, ClientApiError } from "@/components/lib/api-client";
 import { Badge, Panel } from "@/components/ui/basicos";
@@ -27,6 +28,8 @@ interface Respuesta {
   total: number;
   registrados: number;
   coinciden: number;
+  pagina: number;
+  paginas: number;
   proveedores: Proveedor[];
 }
 
@@ -35,9 +38,15 @@ const TIPOS = [
   { id: "SERVICIO", etiqueta: "Servicios" },
 ] as const;
 
-function consulta(q: string, refrescar: boolean): string {
+/* Cuantos proveedores por pagina. Es decision de la pantalla, no del endpoint:
+   la API acepta de 1 a 200 y aqui se elige 10. */
+const POR_PAGINA = 5;
+
+function consulta(q: string, refrescar: boolean, pagina: number): string {
   const params = new URLSearchParams();
+  params.set("limite", String(POR_PAGINA));
   if (q.trim()) params.set("q", q.trim());
+  if (pagina > 1) params.set("pagina", String(pagina));
   if (refrescar) params.set("refrescar", "1");
   return params.toString();
 }
@@ -69,9 +78,9 @@ export function ProveedoresAdmin() {
   // Sin setState sincrono al entrar: llamarla desde un efecto dispararia
   // renders en cascada. El indicador de carga lo enciende quien la invoca a
   // mano; en el montaje ya arranca en true.
-  const cargar = useCallback(async (q: string, refrescar = false) => {
+  const cargar = useCallback(async (q: string, refrescar = false, pagina = 1) => {
     try {
-      const r = await api<Respuesta>(`/api/proveedores?${consulta(q, refrescar)}`);
+      const r = await api<Respuesta>(`/api/proveedores?${consulta(q, refrescar, pagina)}`);
       setDatos(r);
       setCargando(false);
     } catch (e) {
@@ -97,7 +106,7 @@ export function ProveedoresAdmin() {
     e.preventDefault();
     setCargando(true);
     setError(null);
-    void cargar(busqueda);
+    void cargar(busqueda);   // sin pagina: vuelve a la primera
   }
 
   async function registrar(p: Proveedor) {
@@ -145,23 +154,7 @@ export function ProveedoresAdmin() {
 
   return (
     <div className="cr-stack">
-      <Panel
-        title="Padrón de Business One"
-        acciones={
-          <button
-            type="button"
-            className="cr-btn cr-btn--ghost cr-btn--sm"
-            onClick={() => {
-              setCargando(true);
-              setError(null);
-              void cargar(busqueda, true);
-            }}
-            disabled={cargando}
-          >
-            <RefreshCw size={14} strokeWidth={1.75} /> Actualizar desde SAP
-          </button>
-        }
-      >
+      <Panel>
         <form onSubmit={buscar} className="cr-field">
           <label className="cr-label" htmlFor="q">
             Código, RFC o razón social
@@ -181,18 +174,6 @@ export function ProveedoresAdmin() {
           </div>
         </form>
 
-        <p className="cr-small">
-          El correo y la contraseña son opcionales: sin ellos el proveedor queda
-          registrado pero todavía no puede entrar al portal. Con la fila ya registrada,
-          dejar la contraseña vacía conserva la que tenga.
-        </p>
-
-        {datos ? (
-          <p className="cr-small">
-            {datos.total} proveedores en Business One · {datos.registrados} registrados en el portal
-            {busqueda.trim() ? ` · ${datos.coinciden} coinciden` : ""}
-          </p>
-        ) : null}
 
         {error ? <p className="cr-error">{error}</p> : null}
         {aviso ? <p className="cr-small">{aviso}</p> : null}
@@ -323,6 +304,17 @@ export function ProveedoresAdmin() {
             </tbody>
           </table>
         </div>
+        {datos ? (
+          <Paginacion
+            pagina={datos.pagina}
+            paginas={datos.paginas}
+            total={datos.coinciden}
+            onCambiar={(p) => {
+              setCargando(true);
+              void cargar(busqueda, false, p);
+            }}
+          />
+        ) : null}
       </Panel>
     </div>
   );

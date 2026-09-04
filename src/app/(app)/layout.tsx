@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Notificaciones } from "@/components/dashboard/Notificaciones";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { getSessionUser } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
@@ -30,7 +31,15 @@ export default async function AppLayout({
   return (
     <div className="cr-shell">
       <Sidebar usuario={usuario} />
-      <main className="cr-shell__main">{children}</main>
+      <main className="cr-shell__main">
+        {/* Barra superior. Arranca justo despues del borde del sidebar, como en
+            Industria Real. Solo en escritorio: en movil ya hay .cr-mobile-nav y
+            dos barras apiladas se comerian media pantalla. */}
+        <div className="cr-topbar">
+          <Notificaciones />
+        </div>
+        {children}
+      </main>
     </div>
   );
 }

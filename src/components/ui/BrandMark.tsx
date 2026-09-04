@@ -8,8 +8,8 @@ type Variant = "mark" | "word";
 type Tone = "ink" | "white";
 
 const ARCHIVOS: Record<Variant, Record<Tone, string>> = {
-  mark: { ink: "/ArcanumBlackLogo.png", white: "/ArcanumWhiteLogo.png" },
-  word: { ink: "/ArcanumTextBlack.png", white: "/ArcanumTextWhite.png" },
+  mark: { ink: "/kps-logo.png", white: "/kps-logo.png" },
+  word: { ink: "/kps-logo-wide.png", white: "/kps-logo-wide.png" },
 };
 
 // Relación de aspecto por variante para fijar width/height y evitar
@@ -17,19 +17,22 @@ const ARCHIVOS: Record<Variant, Record<Tone, string>> = {
 // los PNG reales de public/ —isotipo 1000×1000, logotipo 1350×385—: si no
 // coinciden, el `width` que se declara aquí no cuadra con el que el navegador
 // calcula por `width: auto` y next/image avisa de la relación de aspecto rota.
-const RATIO: Record<Variant, number> = { mark: 1, word: 1350 / 385 };
+const RATIO: Record<Variant, number> = { mark: 1, word: 200 / 60 };
 
 export function BrandMark({
   variant = "mark",
   tone = "ink",
   height = 28,
   priority = false,
+  bloque = false,
   className,
 }: {
   variant?: Variant;
   tone?: Tone;
   height?: number;
   priority?: boolean;
+  /** Ocupa todo el ancho del contenedor; el alto sale del ratio. */
+  bloque?: boolean;
   className?: string;
 }) {
   const width = Math.round(height * RATIO[variant]);
@@ -41,7 +44,7 @@ export function BrandMark({
       height={height}
       priority={priority}
       className={className}
-      style={{ height, width: "auto" }}
+      style={bloque ? { width: "100%", height: "auto" } : { height, width: "auto" }}
     />
   );
 }

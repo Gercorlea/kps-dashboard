@@ -133,14 +133,8 @@ function RetailerCard({ r, serie }: { r: DetalleRetailer; serie: PuntoVentas[] }
   return (
     <article
       className={`cr-rcard${conDatos ? "" : " cr-rcard--vacio"}`}
-      style={{ "--cr-rcard-color": color } as React.CSSProperties}
     >
       <div className="cr-rcard__head">
-        <span
-          aria-hidden="true"
-          className="size-2.5 shrink-0"
-          style={{ background: color, borderRadius: "var(--cr-r-xs)" }}
-        />
         {/* El enlace del nombre cubre la card entera (ver .cr-rcard__link):
             se puede hacer clic en cualquier parte sin repetir el enlace. */}
         <Link href={`/retail/${r.id}`} className="cr-rcard__link cr-rcard__nombre">

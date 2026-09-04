@@ -51,7 +51,6 @@ import {
   type RangoISO,
 } from "@/lib/retail/analisis/periodos";
 import { columnasHistorico, plantillaPorId } from "@/lib/retail/analisis/plantillas";
-import { colorRetailer } from "@/lib/retail/retailers";
 import type { DetalleRetailer } from "@/lib/retail/stats";
 import type {
   Agregacion,
@@ -859,11 +858,6 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
       <header className="cr-detalle-head">
         <div className="cr-detalle-head__fila">
           <div className="flex min-w-0 items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className="size-3 shrink-0"
-              style={{ background: colorRetailer(ficha.id), borderRadius: "var(--cr-r-xs)" }}
-            />
             <h1 className="cr-h1 truncate">{ficha.nombre}</h1>
             <Badge tono={sinDatos ? "neutro" : "ok"}>
               {sinDatos ? "Sin reportes" : "Con datos"}

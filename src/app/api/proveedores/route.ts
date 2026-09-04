@@ -104,6 +104,10 @@ export async function GET(req: Request) {
     const q = normalizar(url.searchParams.get("q")?.trim() ?? "");
     const refrescar = url.searchParams.get("refrescar") === "1";
     const limite = Math.min(Math.max(Number(url.searchParams.get("limite") ?? 50), 1), 200);
+    // Antes esto era un `slice(0, limite)` a secas: el proveedor 51 en adelante
+    // no habia forma de verlo desde la aplicacion aunque estuviera en el padron.
+    // Con la pagina, el mismo limite pasa a ser tamano de pagina.
+    const pagina = Math.max(Number(url.searchParams.get("pagina") ?? 1), 1);
 
     const lista = await padron(refrescar);
 
@@ -141,7 +145,9 @@ export async function GET(req: Request) {
       total: lista.length,
       registrados: porCodigo.size,
       coinciden: filtrados.length,
-      proveedores: filtrados.slice(0, limite).map((bp) => ({
+      pagina,
+      paginas: Math.max(1, Math.ceil(filtrados.length / limite)),
+      proveedores: filtrados.slice((pagina - 1) * limite, pagina * limite).map((bp) => ({
         cardCode: bp.CardCode,
         nombre: bp.CardName,
         rfc: bp.FederalTaxID ?? null,

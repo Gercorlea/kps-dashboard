@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { CircleAlert, Loader2 } from "lucide-react";
 import { api, ClientApiError } from "@/components/lib/api-client";
 
 function FormularioLogin() {
@@ -57,12 +57,19 @@ function FormularioLogin() {
           required
         />
       </label>
+      {/* .cr-aviso en vez de un <p> rojo suelto: un fallo de acceso tiene que
+          leerse antes que nada, y en linea entre dos campos se pierde. */}
       {error ? (
-        <p className="cr-small" style={{ color: "var(--cr-danger)" }} role="alert">
-          {error}
-        </p>
+        <div className="cr-aviso cr-aviso--danger" role="alert">
+          <span className="cr-aviso__icono">
+            <CircleAlert size={16} strokeWidth={1.75} />
+          </span>
+          <div className="cr-aviso__cuerpo">
+            <div className="cr-aviso__titulo">{error}</div>
+          </div>
+        </div>
       ) : null}
-      <button type="submit" className="cr-btn cr-btn--primary justify-center" disabled={cargando}>
+      <button type="submit" className="cr-btn cr-btn--primary cr-btn--block" disabled={cargando}>
         {cargando ? <Loader2 className="cr-spin" strokeWidth={1.75} /> : null}
         Entrar
       </button>

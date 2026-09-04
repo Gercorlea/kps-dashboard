@@ -65,13 +65,12 @@ export function Sidebar({ usuario }: { usuario: UsuarioUI }) {
   const nav = (
     <>
       <div className="cr-sidebar__head">
-        <Link href="/dashboard" className="flex items-center gap-2.5" onClick={() => setAbierto(false)}>
-          <BrandMark variant="mark" tone="ink" height={28} priority />
-          <BrandMark variant="word" tone="ink" height={14} />
+        <Link href="/dashboard" className="cr-sidebar__marca" onClick={() => setAbierto(false)}>
+          <BrandMark variant="word" tone="ink" height={47} bloque priority />
         </Link>
         <button
           type="button"
-          className="cr-btn cr-btn--ghost cr-btn--sm ml-auto lg:hidden"
+          className="cr-btn cr-btn--ghost cr-btn--sm cr-sidebar__cerrar"
           onClick={() => setAbierto(false)}
           aria-label="Cerrar menú"
         >
@@ -120,9 +119,8 @@ export function Sidebar({ usuario }: { usuario: UsuarioUI }) {
         >
           <Menu strokeWidth={1.75} />
         </button>
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <BrandMark variant="mark" tone="ink" height={24} />
-          <BrandMark variant="word" tone="ink" height={12} />
+        <Link href="/dashboard" className="flex items-center">
+          <BrandMark variant="mark" tone="ink" height={32} />
         </Link>
       </header>
       {abierto ? <div className="cr-backdrop lg:hidden" onClick={() => setAbierto(false)} /> : null}

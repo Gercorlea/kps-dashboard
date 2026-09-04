@@ -385,7 +385,7 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                     {termino
                       ? `Ninguna petición coincide con "${busqueda}".`
                       : filtro === "pendientes"
-                        ? "No hay nada esperando decisión."
+                        ? "Todo al día: ninguna factura espera tu revisión."
                         : filtro === "archivadas"
                           ? "No has archivado ninguna petición."
                           : "No hay peticiones que mostrar."}

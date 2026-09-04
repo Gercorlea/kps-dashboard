@@ -17,10 +17,7 @@ export default async function ProveedoresPage() {
 
   return (
     <>
-      <PageHeader
-        title="Proveedores"
-        description="Da de alta en el portal proveedores que ya existen en Business One"
-      />
+      <PageHeader title="Proveedores" />
       <div className="cr-page-content">
         <ProveedoresAdmin />
       </div>

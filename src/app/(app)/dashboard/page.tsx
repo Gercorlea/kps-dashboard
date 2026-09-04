@@ -5,7 +5,6 @@ import { fmtFecha, fmtNum, fmtPct } from "@/components/lib/fmt";
 import { Kpi, Meter, Panel } from "@/components/ui/basicos";
 import { getSessionUser } from "@/lib/auth/guards";
 import { formatearMoneda, formatearMonedaCompacta } from "@/lib/retail/analisis/formato";
-import { colorRetailer } from "@/lib/retail/retailers";
 import { detalleRetailers } from "@/lib/retail/stats";
 
 // Portada general: no repite las cards ni la gráfica en unidades/12 meses de
@@ -44,8 +43,8 @@ export default async function DashboardPage() {
   return (
     <>
       <PageHeader title="Dashboard" description="Resumen Operativo de KPS" />
-      <div className="cr-page-content cr-page-content--pegado flex flex-col gap-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="cr-page-content cr-page-content--pegado flex flex-col gap-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Kpi
             label="Ventas totales"
             value={formatearMonedaCompacta(ventasTotales)}
@@ -54,7 +53,6 @@ export default async function DashboardPage() {
           <Kpi
             label="Retailer líder"
             value={lider ? lider.nombre : "—"}
-            positivo={lider !== null}
             detalle={lider ? `${fmtPct(lider.participacion)} de participación` : "Sin ventas registradas"}
           />
           <Kpi
@@ -64,73 +62,61 @@ export default async function DashboardPage() {
           />
         </div>
 
-        <div style={{ width: "85%", margin: "0 auto" }}>
-          <Panel
-            title="Ranking de ventas por retailer"
-            acciones={<span className="cr-small">{periodo}</span>}
-            sinPadding
-          >
-            <div className="cr-table-scroll">
-              <table className="cr-table">
-                <thead>
-                  <tr>
-                    <th style={ENCABEZADO}>#</th>
-                    <th style={ENCABEZADO}>Retailer</th>
-                    <th className="num" style={ENCABEZADO}>Ventas</th>
-                    <th style={ENCABEZADO}>Participación</th>
-                    <th className="num" style={ENCABEZADO}>Productos</th>
-                    <th style={ENCABEZADO}>Última venta</th>
+        <Panel
+          title="Ranking de ventas por retailer"
+          acciones={<span className="cr-small">{periodo}</span>}
+          sinPadding
+        >
+          <div className="cr-table-scroll">
+            <table className="cr-table">
+              <thead>
+                <tr>
+                  <th style={ENCABEZADO}>#</th>
+                  <th style={ENCABEZADO}>Retailer</th>
+                  <th className="num" style={ENCABEZADO}>Ventas</th>
+                  <th style={ENCABEZADO}>Participación</th>
+                  <th className="num" style={ENCABEZADO}>Productos</th>
+                  <th style={ENCABEZADO}>Última venta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ranking.map((r, i) => (
+                  <tr key={r.id}>
+                    <td className="cr-mono" style={CELDA}>{i + 1}</td>
+                    <td style={CELDA}>
+                      <span style={{ fontSize: 15 }}>{r.nombre}</span>
+                    </td>
+                    <td className="num" style={{ ...CELDA, fontSize: 15 }}>
+                      {formatearMoneda(r.importe)}
+                    </td>
+                    <td style={CELDA}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-40">
+                          <Meter value={r.participacion ?? 0} tono="ink" />
+                        </div>
+                        <span className="cr-mono" style={{ fontSize: 13 }}>
+                          {fmtPct(r.participacion)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="num" style={CELDA}>{fmtNum(r.articulos)}</td>
+                    <td
+                      className="cr-mono"
+                      style={CELDA}
+                      title={
+                        r.ultimoReporte
+                          ? `Último archivo cargado el ${fmtFecha(r.ultimoReporte)}${r.ultimoArchivo ? `: ${r.ultimoArchivo}` : ""}`
+                          : undefined
+                      }
+                    >
+                      {fmtFecha(r.hasta)}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {ranking.map((r, i) => (
-                    <tr key={r.id}>
-                      <td className="cr-mono" style={CELDA}>{i + 1}</td>
-                      <td style={CELDA}>
-                        <div className="flex items-center gap-3">
-                          <span
-                            aria-hidden="true"
-                            className="size-3.5 shrink-0"
-                            style={{
-                              background: colorRetailer(r.id),
-                              borderRadius: "var(--cr-r-xs)",
-                            }}
-                          />
-                          <span style={{ fontSize: 15 }}>{r.nombre}</span>
-                        </div>
-                      </td>
-                      <td className="num" style={{ ...CELDA, fontSize: 15 }}>
-                        {formatearMoneda(r.importe)}
-                      </td>
-                      <td style={CELDA}>
-                        <div className="flex items-center gap-3">
-                          <div className="w-40">
-                            <Meter value={r.participacion ?? 0} />
-                          </div>
-                          <span className="cr-mono" style={{ fontSize: 13 }}>
-                            {fmtPct(r.participacion)}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="num" style={CELDA}>{fmtNum(r.articulos)}</td>
-                      <td
-                        className="cr-mono"
-                        style={CELDA}
-                        title={
-                          r.ultimoReporte
-                            ? `Último archivo cargado el ${fmtFecha(r.ultimoReporte)}${r.ultimoArchivo ? `: ${r.ultimoArchivo}` : ""}`
-                            : undefined
-                        }
-                      >
-                        {fmtFecha(r.hasta)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
       </div>
     </>
   );

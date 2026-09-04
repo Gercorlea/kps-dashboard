@@ -43,7 +43,7 @@ export function StatsAdmin() {
   if (!stats) return <p className="cr-small">Cargando…</p>;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="cr-stack">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           label="Usuarios"
