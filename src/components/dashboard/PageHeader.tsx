@@ -13,7 +13,7 @@ export function PageHeader({
     <div className="cr-page-head">
       <div>
         <h1 className="cr-h1">{title}</h1>
-        {description ? <p className="cr-body mt-0.5">{description}</p> : null}
+        {description ? <p className="cr-small cr-ink-3 mt-0.5">{description}</p> : null}
       </div>
       {/* flex-wrap: en movil el grupo de acciones —un segmentado y dos
           botones— no cabe en una linea, y sin envolver empujaba el ancho de

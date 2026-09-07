@@ -61,6 +61,98 @@ export function Panel({
   );
 }
 
+/**
+ * Tabla de datos. Pone el envoltorio con scroll y la clase de la tabla, que es
+ * la pareja que se escribía a mano en ocho archivos.
+ *
+ * El scroll NO es opcional: sin `.cr-table-scroll` una tabla más ancha que la
+ * pantalla empuja el panel y la barra horizontal acaba saliendo en el documento
+ * en vez de en la tabla.
+ *
+ * Va dentro de un <Panel sinPadding> — el panel da el marco, la tabla su
+ * propio padding por celda.
+ *
+ *   <Panel title="Ranking" sinPadding>
+ *     <Tabla densidad="comoda">
+ *       <thead>…</thead>
+ *       <tbody>…</tbody>
+ *     </Tabla>
+ *   </Panel>
+ */
+export function Tabla({
+  densidad = "normal",
+  headLg = false,
+  scroll = false,
+  fija = false,
+  children,
+}: {
+  /**
+   * - `normal`: el default, calibrado para tablas anchas (el histórico de
+   *   retail llega a sesenta columnas).
+   * - `comoda`: para tablas de pocas columnas, que a la densidad normal se ven
+   *   dispersas. Sustituye a los `style={{ padding }}` por página.
+   * - `compacta`: listas densas donde cada píxel de alto es una fila más.
+   */
+  densidad?: "normal" | "comoda" | "compacta";
+  /** Encabezados a 11px en vez de 9px. */
+  headLg?: boolean;
+  /**
+   * Scroll horizontal. Va APAGADO por defecto a propósito: la regla es
+   * compactar hasta que la tabla quepa, no dejar que se desborde de lado. Se
+   * enciende solo donde el ancho es irreducible —el histórico de retail, que
+   * llega a sesenta columnas de fechas—, nunca para no tener que compactar.
+   */
+  scroll?: boolean;
+  /**
+   * Anchos mandados por `<colgroup>` (`table-layout: fixed`) en vez de
+   * calculados por el contenido. **Necesario para que `truncate` funcione**: sin
+   * esto una celda larga ensancha su columna y empuja la tabla, y lo que sale es
+   * scroll horizontal en vez de puntos suspensivos.
+   */
+  fija?: boolean;
+  children: ReactNode;
+}) {
+  const clases = ["cr-table"];
+  if (densidad === "comoda") clases.push("cr-table--comoda");
+  if (densidad === "compacta") clases.push("cr-table--compact");
+  if (headLg) clases.push("cr-table--head-lg");
+  if (fija) clases.push("cr-table--fija");
+  const tabla = <table className={clases.join(" ")}>{children}</table>;
+  return scroll ? <div className="cr-table-scroll">{tabla}</div> : tabla;
+}
+
+/**
+ * Campo de formulario: etiqueta arriba, control debajo.
+ *
+ * Envuelve en `<label>`, así que el control queda asociado a su etiqueta sin
+ * necesidad de `id` + `htmlFor` —hacer clic en el texto enfoca el campo y un
+ * lector de pantalla lo anuncia—. Por eso mismo NO sirve para un grupo de
+ * radios o checkboxes: ahí la etiqueta pertenece al grupo, no a un control, y
+ * va un `<fieldset>` con `.cr-radios`.
+ *
+ *   <Campo label="Correo">
+ *     <input className="cr-input" type="email" />
+ *   </Campo>
+ */
+export function Campo({
+  label,
+  ayuda,
+  children,
+}: {
+  label: ReactNode;
+  /** Texto de apoyo bajo el control: formato esperado, límites, etc. */
+  ayuda?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <label className="cr-field">
+      <span className="cr-label">{label}</span>
+      {children}
+      {ayuda ? <span className="cr-small">{ayuda}</span> : null}
+    </label>
+  );
+}
+
 export function Meter({
   value,
   tono = "ok",
@@ -89,7 +181,7 @@ export function Aviso({
   icono,
   children,
 }: {
-  tono?: "danger" | "warn" | "neutro";
+  tono?: "danger" | "warn" | "ok" | "neutro";
   titulo: ReactNode;
   icono?: ReactNode;
   children?: ReactNode;
