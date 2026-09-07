@@ -921,7 +921,13 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
         </div>
       </header>
 
-      <div className="cr-page-content cr-page-content--pegado-suave flex flex-col gap-6">
+      {/* Esta ficha no usa <Pagina> porque trae su propia cabecera con pestañas
+          (.cr-detalle-head). Se quitó `cr-page-content--pegado-suave`, que no
+          existía en el CSS y no hacía nada.
+          PENDIENTE (turno del módulo Retail): este `gap-6` es un tercer ritmo
+          —el design system solo reconoce 20px y 32px— y hay que decidir a cuál
+          se acerca en vez de dejarlo suelto. */}
+      <div className="cr-page-content flex flex-col gap-6">
         {sinDatos ? (
           <Panel>
             <EstadoVacio
