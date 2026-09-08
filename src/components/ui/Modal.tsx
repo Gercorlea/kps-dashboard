@@ -34,6 +34,7 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
  */
 export function Modal({
   titulo,
+  subtitulo,
   children,
   pie,
   onCerrar,
@@ -41,6 +42,13 @@ export function Modal({
   onSubmit,
 }: {
   titulo: ReactNode;
+  /**
+   * Línea de identificación bajo el título: de quién es, cuánto es, en qué
+   * estado está. Va en la CABECERA y no en el cuerpo — el cuerpo es para la
+   * consecuencia y para lo que haya que capturar, no para repetir de qué se
+   * está hablando.
+   */
+  subtitulo?: ReactNode;
   children: ReactNode;
   /** Botones de acción. Van alineados a la derecha, el primario al final. */
   pie?: ReactNode;
@@ -56,19 +64,33 @@ export function Modal({
   // debe cerrar: eso es seleccionar texto, no descartar el diálogo.
   const inicioDentro = useRef(false);
 
+  // El `onCerrar` de turno, sin que su identidad entre en las dependencias.
+  const cerrarRef = useRef(onCerrar);
+  useEffect(() => {
+    cerrarRef.current = onCerrar;
+  }, [onCerrar]);
+
+  // Montaje y desmontaje, NADA MAS.
+  //
+  // Antes dependía de `onCerrar`, y quien abre el modal lo escribe casi siempre
+  // como una lambda —`onCerrar={() => setAbierto(null)}`—, así que cambia de
+  // identidad en cada render. Escribir una letra en un campo re-renderiza al
+  // padre → nuevo `onCerrar` → el efecto se limpia y se vuelve a montar → la
+  // limpieza devuelve el foco al elemento que lo tenía ANTES de abrir el modal.
+  // Resultado: el campo perdía el foco a la primera tecla y no se podía escribir.
   useEffect(() => {
     const previo = document.activeElement as HTMLElement | null;
     caja.current?.focus();
 
     function alTeclear(e: KeyboardEvent) {
-      if (e.key === "Escape") onCerrar();
+      if (e.key === "Escape") cerrarRef.current();
     }
     document.addEventListener("keydown", alTeclear);
     return () => {
       document.removeEventListener("keydown", alTeclear);
       previo?.focus?.();
     };
-  }, [onCerrar]);
+  }, []);
 
   // Atributos comunes a las dos formas de la caja. Se escriben una vez para que
   // la variante `form` no pueda quedarse sin el `role` o sin el foco.
@@ -83,9 +105,12 @@ export function Modal({
   const contenido = (
     <>
       <div className="cr-modal__head">
-        <h2 className="cr-h2" id={tituloId}>
+        {/* `.cr-h3` y no `.cr-h2`: el titular de un diálogo es el de un panel,
+            no el de una pantalla. A 19px competía con el contenido. */}
+        <h2 className="cr-h3" id={tituloId}>
           {titulo}
         </h2>
+        {subtitulo ? <p className="cr-small cr-ink-3">{subtitulo}</p> : null}
       </div>
       <div className="cr-modal__cuerpo">{children}</div>
       {pie ? <div className="cr-modal__pie">{pie}</div> : null}

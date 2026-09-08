@@ -39,11 +39,17 @@ export function Kpi({
 
 export function Panel({
   title,
+  subtitulo,
   acciones,
   children,
   sinPadding = false,
 }: {
   title?: ReactNode;
+  /**
+   * Línea meta bajo el título: el conteo, el periodo, la cobertura. Es donde va
+   * el dato que si no acabaría inventándose un encabezado de sub-sección propio.
+   */
+  subtitulo?: ReactNode;
   acciones?: ReactNode;
   children: ReactNode;
   sinPadding?: boolean;
@@ -52,7 +58,10 @@ export function Panel({
     <section className="cr-panel">
       {title !== undefined ? (
         <header className="cr-panel__head">
-          <h3 className="cr-h3">{title}</h3>
+          <div className="min-w-0">
+            <h3 className="cr-h3">{title}</h3>
+            {subtitulo ? <p className="cr-small cr-ink-3">{subtitulo}</p> : null}
+          </div>
           {acciones}
         </header>
       ) : null}
