@@ -741,7 +741,10 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                  que dijera dónde acaba una cosa y empieza la otra. */
               <Panel title="Orden de compra contra factura" sinPadding>
                 <div className="cr-table-scroll">
-                  <table className="cr-table cr-comparativa cr-table--fija">
+                  {/* Densidad compacta en el cuerpo: son pocas líneas y cortas.
+                      El pie conserva su aire —tiene regla propia— así que el
+                      contraste entre datos densos y total holgado se mantiene. */}
+                  <table className="cr-table cr-comparativa cr-table--fija cr-table--compact">
                     {/* Anchos declarados: el concepto es la columna elástica y
                         la que recorta; las tres de cifras no pueden encogerse o
                         los números de una fila se tocan con los de la vecina. */}
@@ -823,7 +826,7 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
 
             {/* Los documentos van visibles y con nombre propio: quien revisa
                 tiene que poder abrir el XML y la evidencia sin buscarlos. */}
-            <Panel title="Documentos">
+            <Panel title="Documentos" sinPadding>
               <div className="cr-docs">
                 <Documento
                   tipo="XML"
@@ -894,11 +897,8 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
             {PAGO_SIMULADO &&
             ["REGISTRADA_SAP", "CUENTAS_POR_PAGAR"].includes(abierta.peticion.estatus) ? (
               <Aviso tono="warn" titulo="Herramienta de pruebas">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span>
-                    Crea el pago en Business One y marca la factura como pagada. En la operación
-                    real lo hace tesorería dentro de Business One.
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <span>Crea el pago en B1. En la operación real lo hace tesorería.</span>
                   <button
                     type="button"
                     className="cr-btn cr-btn--secondary cr-btn--sm"
