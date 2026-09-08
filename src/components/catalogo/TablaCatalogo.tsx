@@ -3,16 +3,20 @@
 import { Paginacion } from "@/components/dashboard/Paginacion";
 import { fmtFecha } from "@/components/lib/fmt";
 import { BuscadorTabla, type FiltroSelect } from "@/components/catalogo/BuscadorTabla";
+import { Badge } from "@/components/ui/basicos";
+import { tonoEstatus } from "@/lib/catalogo/estatus";
 import type { FilaCatalogo } from "@/lib/catalogo/tipos";
 
-/** Las siete columnas que se muestran; el resto está en la ficha. */
+/*
+ * Las siete columnas que se muestran; el resto está en la ficha.
+ */
 const COLUMNAS: { campo: keyof FilaCatalogo; etiqueta: string; mono?: boolean }[] = [
   { campo: "item", etiqueta: "Item", mono: true },
   { campo: "description", etiqueta: "Descripción" },
-  { campo: "salesUnit", etiqueta: "Unidad de venta" },
   { campo: "status", etiqueta: "Estatus" },
   { campo: "line", etiqueta: "Línea" },
   { campo: "upc", etiqueta: "UPC", mono: true },
+  { campo: "salesUnit", etiqueta: "Unidad de venta" },
   { campo: "launchDate", etiqueta: "Fecha de lanzamiento", mono: true },
 ];
 
@@ -108,6 +112,25 @@ export function TablaCatalogo({
                             f.launchDateText
                         : f[c.campo];
                     const texto = String(valor ?? "");
+
+                    // El estatus va como badge de color: es lo que decide si el
+                    // producto se puede pedir, y en una tabla de siete columnas
+                    // de texto plano se perdía. El tono lo resuelve
+                    // lib/catalogo/estatus.ts, que deja en neutro —visible, sin
+                    // color— cualquier valor que no reconozca.
+                    if (c.campo === "status") {
+                      return (
+                        <td key={c.campo}>
+                          {texto ? (
+                            <span title={texto}>
+                              <Badge tono={tonoEstatus(texto)}>{texto}</Badge>
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      );
+                    }
 
                     if (c.campo === "item") {
                       return (

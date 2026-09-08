@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ClientApiError } from "@/components/lib/api-client";
 import { fmtDec, fmtFecha, fmtNum } from "@/components/lib/fmt";
 import { Aviso, Badge } from "@/components/ui/basicos";
+import { tonoEstatus } from "@/lib/catalogo/estatus";
 import type { FichaProducto as Ficha } from "@/lib/catalogo/tipos";
 
 /** Un dato de la ficha. Vacío se pinta "—", nunca en blanco. */
@@ -132,7 +133,14 @@ export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () =
                   <span className="cr-small shrink-0">Trello</span>
                   <span>{p.trello ? <Badge>{p.trello}</Badge> : "—"}</span>
                 </div>
-                <Dato etiqueta="Estatus" valor={p.status} />
+                {/* Mismo badge y mismo tono que la columna Estatus de la tabla:
+                    el dato tiene que leerse igual se mire donde se mire. */}
+                <div className="flex items-baseline justify-between gap-3 py-1">
+                  <span className="cr-small shrink-0">Estatus</span>
+                  <span>
+                    {p.status ? <Badge tono={tonoEstatus(p.status)}>{p.status}</Badge> : "—"}
+                  </span>
+                </div>
                 <Dato etiqueta="Línea" valor={p.line} />
                 <Dato etiqueta="Unidad de venta" valor={p.salesUnit} />
               </Seccion>
