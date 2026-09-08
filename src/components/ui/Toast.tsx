@@ -21,10 +21,13 @@ import {
  * nadie lo lea. `<Aviso>` sigue siendo lo correcto para un estado PERSISTENTE
  * de la pantalla —"esta carga falló, vuelve a intentarlo"—, no para un acuse.
  *
- * DURACION. Lo que salió bien se va solo a los 5 segundos: ya se ve el efecto en
- * la pantalla, el texto solo confirma. Lo que salió MAL se queda hasta que se
- * cierra: si desaparece antes de leerlo, el usuario no sabe qué pasó ni puede
- * copiar el mensaje.
+ * DURACION. TODOS se van solos con la misma cuenta atrás y la misma barra de
+ * tiempo, los de error incluidos. Que unos caducaran y otros no obligaba a mirar
+ * el aviso para saber si iba a quedarse, y dejaba errores viejos en pantalla
+ * mucho después de haberlos leído.
+ *
+ * Si un fallo necesita leerse con calma —o copiarse— no es un toast: va en un
+ * `<Aviso>` dentro de la pantalla, que es lo que se usa para el error de carga.
  *
  *   const toast = useToast();
  *   toast.ok("Proveedor registrado", "P0001 · Industrias Vía Láctea");
@@ -117,13 +120,16 @@ function Aviso({ toast, cerrar }: { toast: Toast; cerrar: (id: number) => void }
   const { id, tono } = toast;
 
   useEffect(() => {
-    // Los errores no se van solos: hay que poder leerlos y copiarlos.
-    if (tono === "danger") return;
+    // TODOS los toasts se van solos, también los de error: misma duración y
+    // misma barra de tiempo. Que unos caduquen y otros no obligaba a mirar el
+    // aviso para saber si iba a quedarse, y dejaba errores viejos en pantalla.
+    // Un fallo que hay que leer con calma va en un <Aviso> de la pantalla, no
+    // en un toast.
     const t = setTimeout(() => cerrar(id), DURACION);
     return () => clearTimeout(t);
-    // Solo `id` y `tono`: son los que identifican ESTE toast. Si aquí entrara
-    // algo que cambia en cada render, la cuenta atrás se reiniciaría sola.
-  }, [id, tono, cerrar]);
+    // Solo `id`: identifica ESTE toast. Si aquí entrara algo que cambia en cada
+    // render, la cuenta atrás se reiniciaría sola.
+  }, [id, cerrar]);
 
   return (
     <div
@@ -142,16 +148,13 @@ function Aviso({ toast, cerrar }: { toast: Toast; cerrar: (id: number) => void }
       >
         <X strokeWidth={1.75} />
       </button>
-      {/* Solo donde hay cuenta atrás: un error no se va solo, así que una barra
-          llenándose prometería algo que no va a pasar. La duración sale de la
-          misma constante que el temporizador, para que no puedan derivar. */}
-      {tono !== "danger" ? (
-        <span
-          className="cr-toast__barra"
-          style={{ animationDuration: `${DURACION}ms` }}
-          aria-hidden="true"
-        />
-      ) : null}
+      {/* La duración sale de la misma constante que el temporizador, para que la
+          barra no pueda mentir sobre cuánto queda. */}
+      <span
+        className="cr-toast__barra"
+        style={{ animationDuration: `${DURACION}ms` }}
+        aria-hidden="true"
+      />
     </div>
   );
 }
