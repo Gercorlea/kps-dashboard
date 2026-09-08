@@ -11,14 +11,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet } from "lucide-react";
 import { api } from "@/components/lib/api-client";
 import { fmtFecha, fmtFechaHora, fmtNum } from "@/components/lib/fmt";
@@ -33,6 +26,7 @@ import {
   RetailerTablaSkeleton,
 } from "@/components/retail/RetailerSkeleton";
 import { SelectorPeriodo } from "@/components/retail/SelectorPeriodo";
+import { BarraSegmentada } from "@/components/ui/BarraSegmentada";
 import { Badge, EstadoVacio, Panel } from "@/components/ui/basicos";
 import {
   acumuladoresDeGrupos,
@@ -101,92 +95,6 @@ const VISTAS: { id: Vista; etiqueta: string }[] = [
   { id: "productos", etiqueta: "Productos" },
   { id: "reportes", etiqueta: "Reportes" },
 ];
-
-/**
- * Barra de pestañas de la ficha, con la pastilla activa deslizándose de una a
- * otra en vez de saltar.
- *
- * El fondo tinta deja de pintarlo el botón activo y pasa a ser un elemento
- * aparte que se coloca por medida —no hay forma de animar entre dos elementos
- * distintos—, así que hay que leer del DOM dónde está y cuánto ocupa la pestaña
- * viva. Como esas medidas no existen en el servidor, hasta la primera hay dos
- * relevos: `medido` cede el fondo del botón al indicador, y `anima` habilita el
- * movimiento un frame más tarde para que colocarse no se vea como deslizarse.
- */
-function BarraVistas({
-  vista,
-  onCambio,
-}: {
-  vista: Vista;
-  onCambio: (v: Vista) => void;
-}) {
-  const pistaRef = useRef<HTMLDivElement | null>(null);
-  const botonesRef = useRef<(HTMLButtonElement | null)[]>([]);
-  const [pastilla, setPastilla] = useState({ x: 0, w: 0 });
-  const [medido, setMedido] = useState(false);
-  const [anima, setAnima] = useState(false);
-
-  // Antes de pintar: si se midiera en un efecto normal se vería un frame con la
-  // pastilla en el sitio viejo. El observer la recoloca cuando cambia el ancho
-  // —breakpoints del shell, o la fuente que termina de cargar y reajusta las
-  // etiquetas—, porque las medidas de entonces ya no sirven.
-  useLayoutEffect(() => {
-    const medir = () => {
-      const activo = botonesRef.current[VISTAS.findIndex((v) => v.id === vista)];
-      const pista = pistaRef.current;
-      if (!activo || !pista) return;
-      const caja = activo.getBoundingClientRect();
-      const cajaPista = pista.getBoundingClientRect();
-      setPastilla({ x: caja.left - cajaPista.left, w: caja.width });
-      setMedido(true);
-    };
-    medir();
-
-    const pista = pistaRef.current;
-    if (!pista) return;
-    const observer = new ResizeObserver(medir);
-    observer.observe(pista);
-    return () => observer.disconnect();
-  }, [vista]);
-
-  useEffect(() => {
-    if (!medido || anima) return;
-    const id = requestAnimationFrame(() => setAnima(true));
-    return () => cancelAnimationFrame(id);
-  }, [medido, anima]);
-
-  return (
-    <div
-      className={`cr-segment cr-segment--desliza${medido ? " cr-segment--medido" : ""}${
-        anima ? " cr-segment--anima" : ""
-      }`}
-      role="tablist"
-    >
-      <div className="cr-segment__pista" ref={pistaRef}>
-        <span
-          className="cr-segment__indicador"
-          aria-hidden
-          style={{ transform: `translateX(${pastilla.x}px)`, width: pastilla.w }}
-        />
-        {VISTAS.map((v, i) => (
-          <button
-            key={v.id}
-            ref={(el) => {
-              botonesRef.current[i] = el;
-            }}
-            type="button"
-            role="tab"
-            aria-selected={vista === v.id}
-            onClick={() => onCambio(v.id)}
-            className={`cr-segment__item${vista === v.id ? " cr-segment__item--active" : ""}`}
-          >
-            {v.etiqueta}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 interface SerieAcumulada {
   granularidad: Granularidad;
@@ -904,8 +812,9 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
         )}
 
         <div className="cr-detalle-head__tabs">
-          <BarraVistas
-            vista={vista}
+          <BarraSegmentada
+            opciones={VISTAS}
+            valor={vista}
             onCambio={(v) => {
               setVista(v);
               // Cambiar de pestaña vuelve a la lista: la ficha de un reporte no
