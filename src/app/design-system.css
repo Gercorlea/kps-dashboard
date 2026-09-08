@@ -1477,7 +1477,10 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
 .cr-callout p:last-child { margin-bottom: 0; }
 
 /* Los datos fiscales van plegados: hacen falta para auditar, no para decidir. */
-.cr-detalle-fiscal { margin-top: 16px; }
+/* Sin `margin-top`: la separacion la da el gap de la columna que lo contiene.
+   Con los dos, el bloque plegado quedaba a 32px del anterior y abria un hueco
+   que se leia como que faltaba algo. */
+.cr-detalle-fiscal { margin-top: 0; }
 .cr-detalle-fiscal > summary {
   cursor: pointer;
   color: var(--cr-ink-3);
@@ -1488,25 +1491,55 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
 /* Panel lateral de revisión de una petición.
    Va superpuesto y no debajo de la tabla: con la lista larga, el detalle
    quedaba fuera de pantalla y había que bajar a buscarlo cada vez. */
+/* Tres franjas, como un dialogo: cabecera fija, cuerpo con scroll propio y pie
+   de decision anclado abajo.
+   ANTES ERA UNA COLUMNA UNICA CON SCROLL. Con eso, los botones de aprobar y
+   rechazar quedaban al final del documento: en una factura con muchas lineas
+   habia que recorrer todo el panel para decidir, y en una corta se quedaban
+   flotando a media altura con un hueco vacio debajo. La decision es lo que se
+   viene a hacer aqui, asi que siempre esta a la vista. */
 .cr-revision {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
   width: min(560px, 100vw);
-  overflow-y: auto;
   background: var(--cr-bg);
   border-left: 1px solid var(--cr-line-2);
   box-shadow: -8px 0 32px rgba(10, 12, 18, 0.12);
   z-index: 36;
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
 }
 .cr-revision__head {
+  flex: none;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--cr-line-soft);
+}
+/* `min-height: 0` es lo que deja encoger a un hijo flex por debajo de su
+   contenido; sin el, el cuerpo crece y el scroll nunca aparece —el que se
+   desborda acaba siendo el panel entero. */
+.cr-revision__cuerpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cr-revision__pie {
+  flex: none;
+  padding: 12px 20px;
+  border-top: 1px solid var(--cr-line-soft);
+  background: var(--cr-surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* Confirmación de archivado.
@@ -1537,8 +1570,9 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
 /* Bloque de decisión del panel de revisión.
    Separado del contenido de arriba por una línea: es el punto donde se deja de
    leer y se actúa, y sin ese corte los botones se montaban sobre el campo. */
+/* El separador lo da el borde; la distancia, el gap de .cr-revision. Antes
+   llevaba tambien `margin-top: 20px` y los dos se sumaban. */
 .cr-decision {
-  margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--cr-line);
 }
@@ -1553,28 +1587,41 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
    Tarjetas y no filas de tabla: son cosas que se abren, y como enlace se ve
    que se pueden pulsar. Lo que falta se muestra apagado en vez de omitirse,
    porque "no lo subió" es información para quien decide. */
-.cr-docs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+/* Lista de documentos: filas separadas por linea, SIN recuadro por item.
+   Antes cada documento era su propia tarjeta con borde, dentro del panel que ya
+   es un recuadro —cajas dentro de cajas— y con `border-style: dashed` para los
+   que faltan, que es decoracion. Ahora es una lista plana: lo que separa son
+   lineas, y lo que falta se apaga con tinta, no con un borde distinto. */
+.cr-docs { display: flex; flex-direction: column; }
 .cr-doc {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--cr-line);
-  border-radius: 6px;
+  padding: 7px 0;
   color: var(--cr-ink);
   text-decoration: none;
 }
-a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tint); }
-.cr-doc[data-falta="si"] { color: var(--cr-ink-3); border-style: dashed; }
+.cr-doc + .cr-doc { border-top: 1px solid var(--cr-line-soft); }
+/* Hover en TINTA. Era morado (`--cr-accent` + su tinte), y el morado esta
+   reservado a la IA: un XML que se puede abrir no es contenido generado. */
+a.cr-doc:hover { background: var(--cr-surface-2); }
+.cr-doc[data-falta="si"] { color: var(--cr-ink-3); }
+.cr-doc__nombre { flex: 1; min-width: 0; }
+.cr-doc__abrir { flex: none; color: var(--cr-ink-3); }
+.cr-doc__abrir svg { width: 13px; height: 13px; display: block; }
+a.cr-doc:hover .cr-doc__abrir { color: var(--cr-ink); }
+/* Chip de tipo: mismo lenguaje que `.cr-badge` —tinte y tinta, sin borde— y en
+   la escala de radios (era 4px sobre el gris del lienzo exterior). */
 .cr-doc__tipo {
   flex: none;
-  width: 40px;
+  width: 38px;
   text-align: center;
-  padding: 3px 0;
-  border-radius: 4px;
-  background: var(--cr-canvas);
+  padding: 2px 0;
+  border-radius: var(--cr-r-xs);
+  background: var(--cr-surface-3);
   font-family: var(--cr-font-mono);
-  font-size: 10px;
+  font-size: 9px;
+  letter-spacing: .08em;
   color: var(--cr-ink-3);
 }
 
@@ -1582,11 +1629,32 @@ a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tin
    de un vistazo, y la fila marcada cuando no cuadra. */
 .cr-comparativa td.cr-num,
 .cr-comparativa th.cr-num { text-align: right; font-variant-numeric: tabular-nums; }
-.cr-comparativa tr[data-diff="si"] td { background: var(--cr-danger-tint); }
+/* La diferencia se cuenta con el badge de su columna, NO rellenando la fila:
+   el color de estatus va en puntos, etiquetas y medidores, nunca como fondo de
+   una superficie. Una fila entera tintada ademas apaga el badge que si lleva
+   el dato. */
+/* Fila de totales. Se lee como cierre de la tabla, no como una fila mas:
+   franja gris, separador y AIRE. Antes iba con el padding normal de celda y,
+   como la tabla va de canto a canto dentro del panel, el total quedaba
+   aplastado entre su borde superior y el borde del panel. */
 .cr-comparativa tfoot td {
-  border-top: 2px solid var(--cr-line-2);
+  border-top: 1px solid var(--cr-line-2);
+  background: var(--cr-surface-2);
+  padding-top: 18px;
+  padding-bottom: 20px;
   font-weight: 600;
 }
+/* Los bordes de la tabla se alinean con los 18px de `.cr-panel__head`: la tabla
+   va de canto a canto dentro del panel, y con los 14px de celda por defecto el
+   total arrancaba cuatro pixeles antes que el titulo de arriba. Ese desfase es
+   parte de lo que se lee como apretado. */
+.cr-comparativa th:first-child,
+.cr-comparativa td:first-child { padding-left: 18px; }
+.cr-comparativa th:last-child,
+.cr-comparativa td:last-child { padding-right: 18px; }
+/* Aire tambien ENCIMA del separador: el pie no puede pegarse a la ultima linea
+   de datos. */
+.cr-comparativa tbody tr:last-child td { padding-bottom: 16px; }
 
 /* ================ Accesos por sección (alta de usuarios) ================
    Los permisos se agrupan igual que el menú lateral —General, Módulos,
@@ -1665,13 +1733,20 @@ a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tin
   border-radius: var(--cr-r-sm);
   box-shadow: 0 16px 48px rgba(10, 12, 18, 0.24);
 }
-.cr-modal__head { flex: none; padding: 18px 20px 12px; }
+/* Cabecera rectangulo, separada por hairline: mismo lenguaje que
+   `.cr-panel__head` y que el panel de revision. Antes no tenia separador y el
+   titulo flotaba sobre el cuerpo. */
+.cr-modal__head {
+  flex: none;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--cr-line-soft);
+}
 /* `min-height: 0` es lo que deja encoger a un hijo flex por debajo de su
    contenido; sin él la caja crece y el scroll nunca aparece. */
 .cr-modal__cuerpo {
   flex: 1; min-height: 0; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 16px;
-  padding: 2px 20px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 16px 20px;
 }
 .cr-modal__pie {
   flex: none; display: flex; justify-content: flex-end; gap: 8px;
