@@ -421,6 +421,11 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
    colores de las series NO viven aquí: son los tokens --viz-* de globals.css,
    que es la paleta categórica validada. Esto es todo lo que rodea al dato. */
 
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-wrapper :focus,
+.recharts-wrapper :focus-visible { outline: none; }
+
 /* Tooltip propio. El de recharts es una caja blanca con borde gris y la
    tipografía del navegador; esta habla el idioma del design system. */
 .cr-viz-tip {
