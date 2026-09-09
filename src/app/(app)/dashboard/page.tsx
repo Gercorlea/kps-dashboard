@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { redirect } from "next/navigation";
-import { PageHeader } from "@/components/dashboard/PageHeader";
 import { VentasNetasChart } from "@/components/dashboard/VentasNetasChart";
+import { Pagina } from "@/components/dashboard/Pagina";
 import { fmtFecha, fmtNum, fmtPct } from "@/components/lib/fmt";
 import { Kpi, Meter, Panel } from "@/components/ui/basicos";
 import { getSessionUser } from "@/lib/auth/guards";
@@ -48,9 +48,7 @@ export default async function DashboardPage() {
   const periodo = desde && hasta ? `Acumulado ${fmtFecha(desde)} – ${fmtFecha(hasta)}` : "Acumulado histórico";
 
   return (
-    <>
-      <PageHeader title="Dashboard" description="Resumen Operativo de KPS" />
-      <div className="cr-page-content cr-page-content--pegado flex flex-col gap-5">
+    <Pagina title="Dashboard" description="Resumen Operativo de KPS">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Kpi
             label="Ventas totales"
@@ -129,7 +127,6 @@ export default async function DashboardPage() {
             </table>
           </div>
         </Panel>
-      </div>
-    </>
+    </Pagina>
   );
 }

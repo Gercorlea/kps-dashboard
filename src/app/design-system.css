@@ -46,7 +46,7 @@
   /* Sombras */
   --cr-shadow-1: 0 1px 2px rgba(10, 12, 18, 0.04);
   --cr-shadow-2: 0 6px 24px -10px rgba(10, 12, 18, 0.18);
-  --cr-shadow-ai: 0 2px 12px rgba(91, 61, 245, 0.10);
+  --cr-shadow-ai: 0 6px 24px -10px rgba(91, 61, 245, 0.28);
 
   /* Espaciado */
   --cr-s1: 4px;  --cr-s2: 8px;  --cr-s3: 12px; --cr-s4: 16px;
@@ -80,7 +80,7 @@
   font-family: var(--cr-font-mono); font-size: 9.5px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.12em; color: var(--cr-ink-3);
 }
-.cr-metric { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--cr-ink); }
+.cr-metric { font-size: 27px; font-weight: 600; letter-spacing: -0.02em; color: var(--cr-ink); }
 .cr-mono { font-family: var(--cr-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; }
 
 /* ============================ Botones ============================ */
@@ -92,7 +92,8 @@
   transition: background .12s, border-color .12s;
   cursor: pointer; white-space: nowrap;
 }
-.cr-btn:disabled { opacity: .5; cursor: not-allowed; }
+.cr-btn:disabled { opacity: .42; cursor: not-allowed; }
+.cr-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--cr-accent-tint-2); }
 .cr-btn--primary   { background: #15171c; color: #fff; border-color: #15171c; }
 .cr-btn--primary:hover:not(:disabled) { background: #2a2d35; }
 .cr-btn--secondary { background: #fff; color: #15171c; border-color: rgba(10,12,18,.16); }
@@ -101,11 +102,28 @@
 .cr-btn--ai:hover:not(:disabled)  { background: #4a2fe0; }
 .cr-btn--ghost     { background: transparent; color: #5a616c; }
 .cr-btn--ghost:hover:not(:disabled) { background: #f4f4f1; color: #15171c; }
-.cr-btn--danger    { background: #fff; color: var(--cr-danger); border-color: rgba(207,71,51,.35); }
-.cr-btn--danger:hover:not(:disabled) { background: var(--cr-danger-tint); }
+.cr-btn--danger    { background: var(--cr-danger); color: #fff; border-color: var(--cr-danger); }
+.cr-btn--danger:hover:not(:disabled) { background: #b83c2a; border-color: #b83c2a; }
 .cr-btn--ok        { background: #fff; color: var(--cr-ok); border-color: rgba(31,148,104,.35); }
 .cr-btn--ok:hover:not(:disabled) { background: var(--cr-ok-tint); }
 .cr-btn--sm        { padding: 7px 12px; font-size: 11.5px; }
+
+/* Boton de paginacion: cuadrado de 28px, mono, con el activo en tinta. Es el
+   mismo de Industria Real — el paginado se ve igual en los dos productos. */
+.cr-page-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; min-width: 28px; padding: 0 8px;
+  font-family: var(--cr-font-mono); font-size: 12px; color: var(--cr-ink-2);
+  background: #fff; border: 1px solid var(--cr-line-2);
+  border-radius: var(--cr-r-xs); cursor: pointer;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.cr-page-btn:hover:not(:disabled) { background: var(--cr-surface-2); color: var(--cr-ink); }
+.cr-page-btn:disabled { opacity: .42; cursor: not-allowed; }
+.cr-page-btn[data-active="true"] {
+  background: var(--cr-ink); color: #fff; border-color: var(--cr-ink);
+}
+.cr-page-btn svg { width: 16px; height: 16px; }
 /* Iconos dentro de botones: 14×14px */
 .cr-btn svg { width: 14px; height: 14px; }
 
@@ -116,7 +134,39 @@
   border-radius: 2px; padding: 9px 12px; font-size: 13px; color: #15171c;
   min-height: 37px;
 }
-.cr-input:focus { outline: none; border-color: #15171c; box-shadow: 0 0 0 3px #f4f4f1; }
+.cr-input:focus { outline: none; border-color: var(--cr-accent); box-shadow: 0 0 0 3px var(--cr-accent-tint); }
+
+/* Casillas y radios nativos en TINTA. Sin esto el navegador los pinta con su
+   azul de sistema —el unico azul que quedaba en la app—, y no hay forma de
+   verlo hasta que una pantalla con formulario lo saca. Va sobre el elemento y
+   no sobre una clase para que lo herede cualquier casilla, tambien las que
+   escriba codigo nuevo sin acordarse. */
+input[type="checkbox"],
+input[type="radio"] { accent-color: var(--cr-ink); }
+
+/* Casilla con su texto al lado. La etiqueta de un checkbox va A LA DERECHA y no
+   encima como en `.cr-field`: encima se lee como el titulo de un grupo y deja
+   la casilla huerfana. Existe como clase para que no se resuelva con utilidades
+   sueltas distintas en cada pantalla. */
+.cr-check {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--cr-ink); cursor: pointer;
+}
+.cr-check input { flex: none; width: 14px; height: 14px; cursor: pointer; }
+
+/* Campo de busqueda: hueco para la lupa a la izquierda y para la X a la derecha.
+   TIENE que vivir aqui y no como `pl-9` de Tailwind en el markup: este archivo
+   se importa SIN @layer y las utilidades de Tailwind van en @layer utilities, y
+   en la cascada lo no-capado gana siempre a lo capado. Un `pl-9` sobre
+   .cr-input no hace nada y el icono acaba encima del texto. */
+.cr-input--busca { padding-left: 34px; padding-right: 30px; }
+
+/* Control compacto: para inputs DENTRO de una fila de tabla y para barras de
+   filtro. El alto por defecto (37px) infla la fila y rompe la densidad —una
+   fila con tres controles pasaba de 40px a 62px—. */
+.cr-input--sm { min-height: 30px; padding: 5px 9px; font-size: 12px; }
+.cr-input--sm.cr-input--busca { padding-left: 30px; padding-right: 26px; }
+select.cr-input--sm { padding-right: 22px; }
 .cr-input::placeholder { color: #99a0ab; }
 select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a616c' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }
 
@@ -186,8 +236,18 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 
 /* ============================ Cards y paneles ============================ */
 
+/* Sin sombra: la definicion la da el borde hairline. La elevacion queda para
+   overlays (modales, drawers, popovers) y para el contexto IA — regla del canon
+   CRONOS de Industria Real, ver lib/docs/DESIGN.md §9.
+   El padding de 18px vive AQUI y no en cada uso: es lo que hace que todas las
+   cards midan lo mismo en todas las pantallas. No lo pises con `p-*` de
+   Tailwind —design-system.css va sin @layer, asi que gana a las utilidades y el
+   override quedaria muerto—; si una card necesita otra medida, es un caso a
+   discutir, no a resolver en el markup. */
 .cr-card, .cr-panel { background: #fff; border: 1px solid rgba(10,12,18,.10);
-  border-radius: 3px; box-shadow: 0 1px 2px rgba(10,12,18,.04); }
+  border-radius: 3px; }
+/* El panel no lleva padding propio: lo ponen __head y __body. */
+.cr-card { padding: 18px; }
 .cr-panel__head { padding: 14px 18px; border-bottom: 1px solid rgba(10,12,18,.06);
   display: flex; justify-content: space-between; align-items: center; }
 .cr-panel__body { padding: 16px 18px; }
@@ -203,10 +263,31 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
    Para cards, donde el contenedor es un <div>, ver .cr-rcard__link. */
 .cr-fila-link { cursor: pointer; }
 
+/* Fila seleccionada en un maestro-detalle (lista a la izquierda, detalle fijo a
+   la derecha). Es el patron estandar de CRONOS para "lista + edicion", y lo van
+   a usar Proveedores y Peticiones, asi que la marca vive aqui y no en una
+   pantalla.
+
+   El realce va en TINTA y nunca en morado: el morado esta reservado a IA, y una
+   fila seleccionada no es contenido generado. La barra de 3px a la izquierda
+   hace el trabajo que en una card haria el anillo —en una tabla un `box-shadow`
+   envolvente no se puede: WebKit ignora `position` en las partes internas de la
+   tabla y el borde saldria descuadrado. */
+.cr-table tbody tr.cr-fila-activa > td {
+  background: var(--cr-surface-3);
+  box-shadow: inset 0 1px 0 var(--cr-line), inset 0 -1px 0 var(--cr-line);
+}
+.cr-table tbody tr.cr-fila-activa > td:first-child {
+  box-shadow: inset 3px 0 0 var(--cr-ink), inset 0 1px 0 var(--cr-line),
+    inset 0 -1px 0 var(--cr-line);
+}
+/* El hover general de fila no debe apagar la seleccion. */
+.cr-table tbody tr.cr-fila-activa:hover > td { background: var(--cr-surface-3); }
+
 /* ============================ KPI cards ============================ */
 
 .cr-kpi { background: #fff; border: 1px solid rgba(10,12,18,.10); border-radius: 3px;
-  padding: 14px 15px; box-shadow: 0 1px 2px rgba(10,12,18,.04);
+  padding: 14px 15px;
   position: relative; overflow: hidden; }
 .cr-kpi::before { content: ""; position: absolute; top: 0; left: 0; right: 0;
   height: 2px; background: #15171c; }              /* rojo #cf4733 si alerta */
@@ -324,10 +405,13 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 
 /* ============================ Badges ============================ */
 
+/* Ningun chip ni insignia lleva borde, viva donde viva: el hairline sobre un
+   tinte dibuja una escalerita de cajitas que no aporta, y resolver dos marcas
+   vecinas de dos formas distintas es lo que se ve mal. Puro tinte + tinta. */
 .cr-badge { display: inline-flex; font-family: var(--cr-font-mono);
-  font-size: 9px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase;
-  padding: 3px 7px; border-radius: 2px; border: 1px solid rgba(10,12,18,.10);
-  background: #fafaf9; color: #5a616c; align-items: center; gap: 4px; }
+  font-size: 9px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: var(--cr-r-xs);
+  background: var(--cr-surface-3); color: var(--cr-ink-2); align-items: center; gap: 5px; }
 .cr-badge--ok     { background: rgba(31,148,104,.10);  color: #1f9468; }
 .cr-badge--warn   { background: rgba(184,121,28,.12);  color: #b9791c; }
 .cr-badge--danger { background: rgba(207,71,51,.10);   color: #cf4733; }
@@ -366,26 +450,156 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-aviso--warn .cr-aviso__detalle,
 .cr-aviso--warn .cr-aviso__detalle strong { color: #7c5312; }
 
+/* Confirmacion: "se registro", "se guardo". Faltaba, y sin ella el acuse de una
+   operacion que SI salio bien se mostraba con el mismo gris que un aviso
+   informativo, o peor, como texto suelto. */
+.cr-aviso--ok { border-color: rgba(31,148,104,.28); background: var(--cr-ok-tint); }
+.cr-aviso--ok .cr-aviso__icono,
+.cr-aviso--ok .cr-aviso__titulo { color: var(--cr-ok); }
+.cr-aviso--ok .cr-aviso__detalle,
+.cr-aviso--ok .cr-aviso__detalle strong { color: #16694a; }
+
+/* Error a nivel de campo: una linea bajo el control que falla.
+   EXISTIA EN EL MARKUP PERO NO EN EL CSS: seis usos entre Proveedores y
+   Peticiones renderizaban el texto de error sin ningun estilo, indistinguible
+   de un parrafo normal. Para un fallo de pantalla completa —que necesita decir
+   que hacer a continuacion— usa <Aviso tono="danger">, no esto. */
+.cr-error { font-size: 12.5px; line-height: 1.5; color: var(--cr-danger); }
+
+/* ============================ Avisos momentaneos ============================
+   El acuse de una operacion que salio bien no puede vivir en el flujo de la
+   pagina: empuja el contenido hacia abajo, descuadra la medida del paginado y
+   se queda ahi para siempre aunque ya nadie lo lea. Va como capa flotante.
+
+   La sombra SI esta permitida aqui: es un overlay, no una card. El color del
+   estado entra por el punto, nunca rellenando la superficie. */
+
+/* Arriba a la derecha. Queda por DEBAJO de la barra superior (top: 80px, los
+   64px de la barra mas el respiro) para no taparle la campana.
+   Los nuevos entran arriba y los viejos bajan, asi el que acaba de llegar
+   siempre esta en el mismo sitio. */
+.cr-toast-zona {
+  position: fixed; right: 16px; top: 80px; z-index: 60;
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+  width: min(400px, calc(100vw - 32px));
+  pointer-events: none;   /* la zona no bloquea; cada toast si recibe clics */
+}
+/* En movil no hay barra superior de escritorio, pero si la nav fija de 56px. */
+@media (max-width: 1023.9px) {
+  .cr-toast-zona { top: calc(var(--cr-mobile-nav-height) + 12px); }
+}
+.cr-toast {
+  pointer-events: auto;
+  position: relative; overflow: hidden;   /* la barra se recorta al radio */
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px;
+  background: var(--cr-bg);
+  border: 1px solid var(--cr-line-2);
+  border-radius: var(--cr-r-sm);
+  box-shadow: var(--cr-shadow-2);
+  animation: cr-toast-entra .16s cubic-bezier(.2,.6,.2,1) both;
+}
+
+/* Barra de tiempo: se va llenando y, cuando llega al final, el toast se va.
+   La duracion la fija el componente con `animation-duration` en linea, atada a
+   la MISMA constante que el temporizador que lo cierra: si se declarara aqui,
+   los dos numeros derivarian y la barra mentiria. */
+.cr-toast__barra {
+  position: absolute; left: 0; bottom: 0; height: 2px;
+  background: var(--cr-ok);
+  animation: cr-toast-barra linear forwards;
+}
+.cr-toast--warn .cr-toast__barra { background: var(--cr-warn); }
+.cr-toast--danger .cr-toast__barra { background: var(--cr-danger); }
+@keyframes cr-toast-barra {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+@keyframes cr-toast-entra {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+/* Salida: se va hacia su esquina en vez de desaparecer de golpe. La duracion la
+   comparte con el temporizador que lo quita de la lista (SALIDA en Toast.tsx);
+   si se separan, el toast se borra del DOM antes de terminar de irse. */
+.cr-toast--saliendo { animation: cr-toast-sale .18s cubic-bezier(.4,0,1,1) forwards; }
+@keyframes cr-toast-sale {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateX(12px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cr-toast, .cr-toast--saliendo { animation: none; }
+}
+.cr-toast { width: 100%; }
+.cr-toast__cuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cr-toast__titulo { font-size: 13px; font-weight: 600; color: var(--cr-ink); }
+/* El estado va en la TINTA del titulo, no en un punto ni rellenando la caja. */
+.cr-toast--danger .cr-toast__titulo { color: var(--cr-danger); }
+.cr-toast--warn .cr-toast__titulo { color: var(--cr-warn); }
+.cr-toast__detalle { font-size: 12.5px; line-height: 1.45; color: var(--cr-ink-2); }
+.cr-toast__cerrar {
+  flex: none; background: none; border: 0; padding: 2px; cursor: pointer;
+  color: var(--cr-ink-3); line-height: 0;
+}
+.cr-toast__cerrar:hover { color: var(--cr-ink); }
+.cr-toast__cerrar svg { width: 14px; height: 14px; }
+
 /* ============================ Tablas de datos ============================ */
 
 .cr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cr-table thead th { font-family: var(--cr-font-mono); font-size: 9px;
-  font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: #99a0ab;
+  font-weight: 400; letter-spacing: .1em; text-transform: uppercase; color: #99a0ab;
   padding: 9px 14px; text-align: left; border-bottom: 1px solid rgba(10,12,18,.06);
   background: #fff; white-space: nowrap; }
 .cr-table tbody td { padding: 12px 14px; color: #15171c;
   border-bottom: 1px solid rgba(10,12,18,.06); vertical-align: middle; }
 .cr-table tbody tr:hover td { background: #fafaf9; }
-.cr-table .num { font-family: var(--cr-font-mono); font-size: 12px;
+/* Celda numerica. `.cr-num` es el nombre canonico; `.num` se conserva porque lo
+   usan las tablas que aun no pasan por el rediseno. */
+.cr-table .num, .cr-table .cr-num { font-family: var(--cr-font-mono); font-size: 12px;
   text-align: right; font-variant-numeric: tabular-nums; }
 /* `.cr-table .num` (0,2,0) le ganaba a `.cr-table thead th` (0,1,2), así que
    un encabezado numérico salía a 12px junto a los de texto a 9px. Se restituye
    aquí, que es más específico (0,2,1): del .num en el encabezado sólo se quiere
    la alineación a la derecha. */
-.cr-table thead th.num { text-align: right; font-size: 9px; }
+.cr-table thead th.num,
+.cr-table thead th.cr-num { text-align: right; font-size: 9px; }
+
+/* Densidad compacta: para listas densas donde cada pixel de alto es una fila
+   mas en pantalla. La cara opuesta de --comoda. */
+.cr-table--compact thead th,
+.cr-table--compact tbody td { padding: 5px 10px; }
+
+/* Anchos mandados por <colgroup> en vez de calculados por el contenido.
+   ES LO QUE HACE QUE `truncate` FUNCIONE: con el reparto automatico (el que
+   trae la tabla por defecto) una celda larga ENSANCHA su columna y empuja la
+   tabla entera, asi que el texto nunca llega a recortarse y lo que aparece es
+   scroll horizontal. Con `fixed`, la columna mide lo que dice el colgroup y el
+   texto que sobra se corta con puntos suspensivos.
+   Si los anchos declarados no caben, el navegador los reduce en proporcion: no
+   se desborda, se aprieta.
+   El `overflow: hidden` de la celda es la otra mitad: sin el, un badge o un
+   control que no quepa se pinta ENCIMA de la columna vecina —el `td` no recorta
+   por su cuenta. */
+.cr-table--fija { table-layout: fixed; }
+.cr-table--fija tbody td { overflow: hidden; }
 
 .cr-table--head-lg thead th,
 .cr-table--head-lg thead th.num { font-size: 11px; letter-spacing: .05em; }
+
+/* Tabla cómoda: para tablas de POCAS columnas.
+   La densidad por defecto está calibrada para tablas de muchas columnas (el
+   histórico de retail llega a sesenta): a lo ancho de la pantalla, con cinco o
+   seis columnas cortas, esa misma densidad deja las celdas dispersas y con
+   mucho hueco entre columnas. En vez de encoger la tabla se agranda la letra y
+   el padding.
+   Existe como VARIANTE y no como `style` por página para que la segunda tabla
+   que necesite esto no vuelva a inventar sus propios números: si la densidad
+   cómoda cambia, cambia aquí para todas. */
+.cr-table--comoda thead th,
+.cr-table--comoda thead th.num { font-size: 12px; letter-spacing: .05em; padding: 16px 20px; }
+.cr-table--comoda tbody td { padding: 18px 20px; font-size: 14px; }
+.cr-table--comoda tbody td.num { font-size: 14px; }
 
 /* Columnas sticky (SKU + descripción) — solo desktop */
 @media (min-width: 1024px) {
@@ -647,10 +861,15 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
   position: fixed; inset: 0; background: rgba(10,12,18,0.32); z-index: 35;
 }
 
+/* Encabezado de PAGINA: suelto, sin recuadro ni franja.
+   Antes era una banda blanca con borde inferior y 56px de alto minimo, fuera
+   del area de contenido. La franja no aportaba —el contenido ya va sobre el
+   lienzo— y costaba ~34px de alto, que es una fila mas de tabla. Ahora vive
+   DENTRO de .cr-page-content y hereda su padding, asi que el titulo arranca en
+   la misma vertical que las cards y los paneles de abajo. */
 .cr-page-head {
-  background: #fff; border-bottom: 1px solid var(--cr-line-soft);
-  padding: 12px; display: flex; flex-wrap: wrap; gap: 12px;
-  align-items: center; justify-content: space-between; min-height: 56px;
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between;
 }
 /* Cabecera de detalle: título con badges, una línea de métricas y la barra de
    pestañas abajo. Reemplaza a .cr-page-head cuando la página tiene secciones,
@@ -674,13 +893,20 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
 
 .cr-page-content { flex: 1; min-width: 0; padding: 12px 12px 24px; background: var(--cr-bg); }
 
-/* Columna con el ritmo vertical estandar de una pantalla. Lo usan las vistas
-   que se montan dentro de un componente cliente —Proveedores, Peticiones— y
-   por tanto no pueden poner el gap en el div de la pagina. Estaba en el markup
-   de las dos SIN regla detras, asi que sus bloques salian pegados mientras el
-   resto de pantallas respiraban 20px. Mismo numero que el `gap-5` que usan
-   dashboard y retail: si cambia uno, cambian los dos. */
+/* Columna con el ritmo vertical estandar de una pantalla. Es el ritmo que pone
+   el componente <Pagina>, asi que toda pantalla lo hereda sin escribirlo.
+   Tambien lo usan las vistas montadas dentro de un componente cliente
+   —Proveedores, Peticiones— que no pueden poner el gap en el div de la pagina.
+
+   ESTOS SON LOS DOS UNICOS RITMOS. Antes cada pantalla elegia el suyo con
+   `gap-5`, `gap-6` o `gap-8` sueltos en el markup y ninguna respiraba igual.
+   Si una pantalla necesita otra separacion, se discute y se cambia aqui —no se
+   inventa un `gap-N` en la pagina. */
 .cr-stack { display: flex; flex-direction: column; gap: 20px; }
+/* Amplio: para pantallas cuyos bloques son unidades independientes que no se
+   leen como una lista (la portada de retail: las cards de retailer y el bloque
+   de agregados son dos cosas distintas). */
+.cr-stack--amplio { gap: 32px; }
 
 /* Cambio de sección en una ficha con pestañas: el contenido nuevo entra en vez
    de aparecer de golpe. Sólo entrada —no hay salida— para no retrasar la
@@ -703,8 +929,11 @@ button.cr-viz-leyenda__item:hover { background: var(--cr-surface-2); border-colo
    224px, 40px de margen dejaban el contenido flotando muy adentro. Cabecera y
    cuerpo comparten el mismo numero horizontal en cada escalon, si no el titulo
    y las cards arrancan en verticales distintas. */
-@media (min-width: 768px)  { .cr-page-head, .cr-detalle-head { padding: 14px 16px; } .cr-page-content { padding: 16px; } }
-@media (min-width: 1280px) { .cr-page-head, .cr-detalle-head { padding: 16px 16px; } .cr-page-content { padding: 16px 16px 28px; } }
+/* .cr-page-head ya no lleva padding propio: va dentro de .cr-page-content y
+   hereda el suyo. Solo .cr-detalle-head sigue siendo una franja, porque lleva
+   las pestañas pegadas al borde de la cabecera. */
+@media (min-width: 768px)  { .cr-detalle-head { padding: 14px 16px; } .cr-page-content { padding: 16px; } }
+@media (min-width: 1280px) { .cr-detalle-head { padding: 16px 16px; } .cr-page-content { padding: 16px 16px 28px; } }
 
 @media (max-width: 1023.9px) {
   .cr-shell__main { padding-top: var(--cr-mobile-nav-height); }
@@ -1272,7 +1501,10 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
 .cr-callout p:last-child { margin-bottom: 0; }
 
 /* Los datos fiscales van plegados: hacen falta para auditar, no para decidir. */
-.cr-detalle-fiscal { margin-top: 16px; }
+/* Sin `margin-top`: la separacion la da el gap de la columna que lo contiene.
+   Con los dos, el bloque plegado quedaba a 32px del anterior y abria un hueco
+   que se leia como que faltaba algo. */
+.cr-detalle-fiscal { margin-top: 0; }
 .cr-detalle-fiscal > summary {
   cursor: pointer;
   color: var(--cr-ink-3);
@@ -1283,25 +1515,55 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
 /* Panel lateral de revisión de una petición.
    Va superpuesto y no debajo de la tabla: con la lista larga, el detalle
    quedaba fuera de pantalla y había que bajar a buscarlo cada vez. */
+/* Tres franjas, como un dialogo: cabecera fija, cuerpo con scroll propio y pie
+   de decision anclado abajo.
+   ANTES ERA UNA COLUMNA UNICA CON SCROLL. Con eso, los botones de aprobar y
+   rechazar quedaban al final del documento: en una factura con muchas lineas
+   habia que recorrer todo el panel para decidir, y en una corta se quedaban
+   flotando a media altura con un hueco vacio debajo. La decision es lo que se
+   viene a hacer aqui, asi que siempre esta a la vista. */
 .cr-revision {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
   width: min(560px, 100vw);
-  overflow-y: auto;
   background: var(--cr-bg);
   border-left: 1px solid var(--cr-line-2);
   box-shadow: -8px 0 32px rgba(10, 12, 18, 0.12);
   z-index: 36;
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
 }
 .cr-revision__head {
+  flex: none;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--cr-line-soft);
+}
+/* `min-height: 0` es lo que deja encoger a un hijo flex por debajo de su
+   contenido; sin el, el cuerpo crece y el scroll nunca aparece —el que se
+   desborda acaba siendo el panel entero. */
+.cr-revision__cuerpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cr-revision__pie {
+  flex: none;
+  padding: 12px 20px;
+  border-top: 1px solid var(--cr-line-soft);
+  background: var(--cr-surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* Confirmación de archivado.
@@ -1332,8 +1594,9 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
 /* Bloque de decisión del panel de revisión.
    Separado del contenido de arriba por una línea: es el punto donde se deja de
    leer y se actúa, y sin ese corte los botones se montaban sobre el campo. */
+/* El separador lo da el borde; la distancia, el gap de .cr-revision. Antes
+   llevaba tambien `margin-top: 20px` y los dos se sumaban. */
 .cr-decision {
-  margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--cr-line);
 }
@@ -1348,28 +1611,46 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
    Tarjetas y no filas de tabla: son cosas que se abren, y como enlace se ve
    que se pueden pulsar. Lo que falta se muestra apagado en vez de omitirse,
    porque "no lo subió" es información para quien decide. */
-.cr-docs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+/* Lista de documentos: filas separadas por linea, SIN recuadro por item.
+   Antes cada documento era su propia tarjeta con borde, dentro del panel que ya
+   es un recuadro —cajas dentro de cajas— y con `border-style: dashed` para los
+   que faltan, que es decoracion. Ahora es una lista plana: lo que separa son
+   lineas, y lo que falta se apaga con tinta, no con un borde distinto. */
+.cr-docs { display: flex; flex-direction: column; }
+/* El padding horizontal lo pone la FILA y no el cuerpo del panel: asi la lista
+   va de canto a canto —los separadores llegan a los dos bordes, como en una
+   tabla— y se ahorra el doble margen. El panel que la contiene va `sinPadding`. */
 .cr-doc {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--cr-line);
-  border-radius: 6px;
+  padding: 7px 18px;
   color: var(--cr-ink);
   text-decoration: none;
 }
-a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tint); }
-.cr-doc[data-falta="si"] { color: var(--cr-ink-3); border-style: dashed; }
+.cr-docs > .cr-doc:first-child { padding-top: 10px; }
+.cr-docs > .cr-doc:last-child { padding-bottom: 10px; }
+.cr-doc + .cr-doc { border-top: 1px solid var(--cr-line-soft); }
+/* Hover en TINTA. Era morado (`--cr-accent` + su tinte), y el morado esta
+   reservado a la IA: un XML que se puede abrir no es contenido generado. */
+a.cr-doc:hover { background: var(--cr-surface-2); }
+.cr-doc[data-falta="si"] { color: var(--cr-ink-3); }
+.cr-doc__nombre { flex: 1; min-width: 0; }
+.cr-doc__abrir { flex: none; color: var(--cr-ink-3); }
+.cr-doc__abrir svg { width: 13px; height: 13px; display: block; }
+a.cr-doc:hover .cr-doc__abrir { color: var(--cr-ink); }
+/* Chip de tipo: mismo lenguaje que `.cr-badge` —tinte y tinta, sin borde— y en
+   la escala de radios (era 4px sobre el gris del lienzo exterior). */
 .cr-doc__tipo {
   flex: none;
-  width: 40px;
+  width: 38px;
   text-align: center;
-  padding: 3px 0;
-  border-radius: 4px;
-  background: var(--cr-canvas);
+  padding: 2px 0;
+  border-radius: var(--cr-r-xs);
+  background: var(--cr-surface-3);
   font-family: var(--cr-font-mono);
-  font-size: 10px;
+  font-size: 9px;
+  letter-spacing: .08em;
   color: var(--cr-ink-3);
 }
 
@@ -1377,26 +1658,54 @@ a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tin
    de un vistazo, y la fila marcada cuando no cuadra. */
 .cr-comparativa td.cr-num,
 .cr-comparativa th.cr-num { text-align: right; font-variant-numeric: tabular-nums; }
-.cr-comparativa tr[data-diff="si"] td { background: var(--cr-danger-tint); }
+/* La diferencia se cuenta con el badge de su columna, NO rellenando la fila:
+   el color de estatus va en puntos, etiquetas y medidores, nunca como fondo de
+   una superficie. Una fila entera tintada ademas apaga el badge que si lleva
+   el dato. */
+/* Fila de totales. Se lee como cierre de la tabla, no como una fila mas:
+   franja gris, separador y AIRE. Antes iba con el padding normal de celda y,
+   como la tabla va de canto a canto dentro del panel, el total quedaba
+   aplastado entre su borde superior y el borde del panel. */
 .cr-comparativa tfoot td {
-  border-top: 2px solid var(--cr-line-2);
+  border-top: 1px solid var(--cr-line-2);
+  background: var(--cr-surface-2);
+  padding-top: 18px;
+  padding-bottom: 20px;
   font-weight: 600;
 }
+/* Los bordes de la tabla se alinean con los 18px de `.cr-panel__head`: la tabla
+   va de canto a canto dentro del panel, y con los 14px de celda por defecto el
+   total arrancaba cuatro pixeles antes que el titulo de arriba. Ese desfase es
+   parte de lo que se lee como apretado. */
+.cr-comparativa th:first-child,
+.cr-comparativa td:first-child { padding-left: 18px; }
+.cr-comparativa th:last-child,
+.cr-comparativa td:last-child { padding-right: 18px; }
+/* Aire tambien ENCIMA del separador: el pie no puede pegarse a la ultima linea
+   de datos. */
+.cr-comparativa tbody tr:last-child td { padding-bottom: 16px; }
 
 /* ================ Accesos por sección (alta de usuarios) ================
    Los permisos se agrupan igual que el menú lateral —General, Módulos,
    Proveedores, Sistema— y cada sección se despliega para ver las páginas
    que abre. Quien da de alta decide mirando lo mismo que verá el usuario,
    no una lista suelta de ids de módulo. */
-.cr-accesos { display: flex; flex-direction: column; gap: 6px; }
-
-.cr-acceso {
+/* UN solo marco para toda la lista, con las secciones separadas por linea.
+   Antes cada seccion era su propia tarjeta con borde y 6px de hueco entre
+   ellas: cuatro recuadros dentro del fieldset, dentro del dialogo, que ya es
+   una caja. Cajas dentro de cajas, y ademas los huecos rompian la lectura de
+   la lista como una sola cosa. */
+.cr-accesos {
+  display: flex; flex-direction: column;
   border: 1px solid var(--cr-line);
   border-radius: var(--cr-r-sm);
-  background: #fff;
   overflow: hidden;
 }
-.cr-acceso__head { display: flex; align-items: center; gap: 10px; padding: 9px 10px; }
+
+.cr-acceso { background: #fff; }
+.cr-acceso + .cr-acceso { border-top: 1px solid var(--cr-line-soft); }
+.cr-acceso__head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
+.cr-acceso__head:hover { background: var(--cr-surface-2); }
 .cr-acceso__check { flex: none; width: 14px; height: 14px; cursor: pointer; }
 .cr-acceso__check:disabled { cursor: default; opacity: .5; }
 
@@ -1419,8 +1728,8 @@ a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tin
 .cr-acceso__chevron--abierto { transform: rotate(90deg); }
 
 .cr-acceso__cuerpo {
-  display: flex; flex-direction: column; gap: 8px;
-  padding: 10px 10px 12px 34px;
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 9px 12px 11px 36px;
   border-top: 1px solid var(--cr-line-soft);
   background: var(--cr-surface-2);
 }
@@ -1460,18 +1769,26 @@ a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tin
   border-radius: var(--cr-r-sm);
   box-shadow: 0 16px 48px rgba(10, 12, 18, 0.24);
 }
-.cr-modal__head { flex: none; padding: 18px 20px 12px; }
+/* Cabecera rectangulo, separada por hairline: mismo lenguaje que
+   `.cr-panel__head` y que el panel de revision. Antes no tenia separador y el
+   titulo flotaba sobre el cuerpo. */
+.cr-modal__head {
+  flex: none;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--cr-line-soft);
+}
 /* `min-height: 0` es lo que deja encoger a un hijo flex por debajo de su
    contenido; sin él la caja crece y el scroll nunca aparece. */
 .cr-modal__cuerpo {
   flex: 1; min-height: 0; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 16px;
-  padding: 2px 20px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 16px 20px;
 }
 .cr-modal__pie {
   flex: none; display: flex; justify-content: flex-end; gap: 8px;
   padding: 14px 20px;
   border-top: 1px solid var(--cr-line-soft);
+  background: var(--cr-surface-2);   /* franja de acciones */
 }
 
 @media (max-width: 640px) {
@@ -1589,6 +1906,9 @@ a.cr-doc:hover { border-color: var(--cr-accent); background: var(--cr-accent-tin
   position: relative; overflow: hidden;
   border-color: var(--cr-accent-tint-2);
   box-shadow: var(--cr-shadow-ai);
+  /* 18px de .cr-card + los 2px de la cinta, para que el contenido no arranque
+     pegado a ella. */
+  padding-top: 20px;
 }
 .cr-card--ai::before {
   content: ""; position: absolute; inset: 0 0 auto 0;
