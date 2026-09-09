@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { CatalogoModulo } from "@/components/catalogo/CatalogoModulo";
 import { AccesoDenegado } from "@/components/dashboard/AccesoDenegado";
-import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Pagina } from "@/components/dashboard/Pagina";
 import { getSessionUser } from "@/lib/auth/guards";
 import { canAccess } from "@/lib/rbac";
 
@@ -15,17 +15,14 @@ export default async function CatalogoPage() {
   if (!canAccess(usuario, "catalogo")) return <AccesoDenegado modulo="Catálogo" />;
 
   return (
-    <>
-      <PageHeader
-        title="Catálogo"
-        description="Los productos de KPS y el código con el que los compra cada cadena"
-      />
-      <div className="cr-page-content">
-        {/* El botón de carga no va en las acciones de la cabecera: necesita el
-            input de archivo y el estado de la subida, así que vive dentro del
-            componente de cliente, junto a las pestañas. */}
-        <CatalogoModulo />
-      </div>
-    </>
+    <Pagina
+      title="Catálogo"
+      description="Los productos de KPS y el código con el que los compra cada cadena"
+    >
+      {/* El botón de carga no va en `acciones`: necesita el input de archivo y
+          el estado de la subida, así que vive dentro del componente de cliente,
+          junto a las pestañas. */}
+      <CatalogoModulo />
+    </Pagina>
   );
 }

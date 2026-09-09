@@ -28,6 +28,7 @@ export function TablaCatalogo({
   totalCarga,
   pagina,
   paginas,
+  porPagina,
   busqueda,
   onBusqueda,
   filtros,
@@ -42,6 +43,7 @@ export function TablaCatalogo({
   totalCarga: number;
   pagina: number;
   paginas: number;
+  porPagina: number;
   busqueda: string;
   onBusqueda: (v: string) => void;
   filtros: FiltroSelect[];
@@ -165,7 +167,14 @@ export function TablaCatalogo({
         </table>
       </div>
 
-      <Paginacion pagina={pagina} paginas={paginas} total={total} onCambiar={onPagina} />
+      <Paginacion
+        pagina={pagina}
+        paginas={paginas}
+        total={total}
+        porPagina={porPagina}
+        onCambiar={onPagina}
+        sustantivo="productos"
+      />
     </section>
   );
 }

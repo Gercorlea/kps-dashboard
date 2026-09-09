@@ -301,7 +301,7 @@ export function CatalogoModulo() {
 
   if (!cargandoDatos && !carga) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="cr-stack">
         {error ? (
           <Aviso tono="danger" titulo={error.titulo} icono={<AlertTriangle strokeWidth={1.75} />}>
             {error.detalle}
@@ -328,7 +328,7 @@ export function CatalogoModulo() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="cr-stack">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <BarraSegmentada
           opciones={VISTAS}
@@ -380,6 +380,7 @@ export function CatalogoModulo() {
           totalCarga={productos.length}
           pagina={paginaActual}
           paginas={paginas}
+          porPagina={PRODUCTOS_POR_PAGINA_CATALOGO}
           busqueda={busqueda}
           onBusqueda={buscar}
           filtros={[
@@ -413,6 +414,7 @@ export function CatalogoModulo() {
           huerfanos={carga?.huerfanos ?? 0}
           pagina={paginaActual}
           paginas={paginas}
+          porPagina={PRODUCTOS_POR_PAGINA_CATALOGO}
           busqueda={busqueda}
           onBusqueda={buscar}
           filtros={[
