@@ -64,6 +64,33 @@ const ID_AREA = "cr-area-ventas-netas";
  *  principal de la portada y no una de cuatro series compitiendo. */
 const ALTO = 340;
 
+/**
+ * Curva de entrada del trazo. Sale disparada y frena largo, en vez del `ease`
+ * por omisión de recharts, que arranca lento: la línea se dibuja de izquierda a
+ * derecha, y con un arranque perezoso los primeros meses se sienten trabados.
+ * El frenado largo es lo que hace que el último mes ATERRICE en vez de cortarse
+ * en seco.
+ *
+ * No vive en viz.tsx porque allá la heredarían las cuatro series de /retail,
+ * donde cuatro trazos frenando largo terminan juntos y se leen como un rebote.
+ */
+const CURVA = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+/**
+ * Lo que tardan el lavado y la línea del año anterior, contra los VIZ_ANIM de
+ * la línea de tinta. Van más lentos A PROPÓSITO, cada uno por su razón:
+ *
+ * - El lavado, porque recharts revela un Area recortando en X y una Line
+ *   dibujando a lo largo del TRAZO, y el trazo es más largo que su ancho: con
+ *   la misma duración el relleno le gana a su propio borde. Dándole más tiempo
+ *   la mancha queda rellenando DETRÁS de la línea, que es el orden natural.
+ *   No se calcula el desfase exacto contra el largo del path porque depende de
+ *   la forma del año; un margen holgado sirve para cualquiera.
+ * - El año anterior, porque es contexto: el año actual aterriza primero y la
+ *   referencia se acomoda después, y ese desfase ordena las dos lecturas.
+ */
+const ANIM_SECUNDARIA = VIZ_ANIM + 140;
+
 /** Una casilla del eje: el mes existe siempre, el dato puede faltar. */
 export interface Casilla {
   mes: number; // 1..12
@@ -581,14 +608,22 @@ export function VentasNetasChart({ datos }: { datos: VentasNetas }) {
                   );
                 }}
               />
+              {/* El lavado ahora entra con la línea en vez de aparecer entero
+                  de golpe, que es lo que hacía con `isAnimationActive={false}`:
+                  el relleno estaba completo mientras el trazo apenas iba por
+                  marzo. Va con ANIM_SECUNDARIA para quedar rellenando DETRÁS
+                  del borde y no delante. (En /retail sí van sin animar, pero
+                  ahí son cuatro lavados superpuestos y animarlos es ruido;
+                  aquí hay uno solo y es la pieza principal.) */}
               <Area
                 type="monotone"
                 dataKey="total"
                 stroke="none"
                 fill={`url(#${ID_AREA})`}
                 connectNulls={false}
-                isAnimationActive={false}
                 activeDot={false}
+                animationDuration={ANIM_SECUNDARIA}
+                animationEasing={CURVA}
               />
               {/* El año anterior va DESPUÉS del área y ANTES de la línea de
                   tinta. Debajo del área, el lavado al 14% lo teñiría donde se
@@ -601,10 +636,20 @@ export function VentasNetasChart({ datos }: { datos: VentasNetas }) {
                   misma medida en otro tiempo. Tinta clara contra tinta plena
                   separa por luminosidad, el canal que sobrevive al daltonismo.
 
-                  Sin animación: una referencia no se dibuja con
-                  fanfarria. */}
+                  Se dibuja en vez de aparecer de golpe: prender el interruptor
+                  es una pregunta ("¿cómo veníamos?") y el trazo entrando es la
+                  respuesta llegando. Va un poco más lento que la línea de
+                  tinta, así el año actual aterriza primero y la referencia se
+                  acomoda después — ese desfase ordena las dos lecturas en vez
+                  de dejarlas competir.
+
+                  La `key` fija es lo que evita que, al prender o apagar el
+                  interruptor, React vea otro arreglo de hijos y remonte la
+                  línea de tinta: sin ella el año actual se volvía a dibujar
+                  entero cada vez, animando lo único que NO había cambiado. */}
               {comparando ? (
                 <Line
+                  key="previo"
                   type="monotone"
                   dataKey="previo"
                   name={String(comparativa.anioPrevio)}
@@ -615,12 +660,14 @@ export function VentasNetasChart({ datos }: { datos: VentasNetas }) {
                   dot={false}
                   activeDot={{ r: 3, strokeWidth: 2, stroke: VIZ_SUPERFICIE }}
                   connectNulls={false}
-                  isAnimationActive={false}
+                  animationDuration={ANIM_SECUNDARIA}
+                  animationEasing={CURVA}
                 />
               ) : null}
               {/* `connectNulls` apagado a propósito: un mes sin reporte se
                   corta, no se interpola ni cae al suelo. */}
               <Line
+                key="actual"
                 type="monotone"
                 dataKey="total"
                 name="Ventas netas"
@@ -649,6 +696,7 @@ export function VentasNetasChart({ datos }: { datos: VentasNetas }) {
                 activeDot={{ r: 4, strokeWidth: 2, stroke: VIZ_SUPERFICIE }}
                 connectNulls={false}
                 animationDuration={VIZ_ANIM}
+                animationEasing={CURVA}
               />
             </ComposedChart>
             </ResponsiveContainer>
