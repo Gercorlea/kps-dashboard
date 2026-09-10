@@ -72,7 +72,9 @@ export function TablaCatalogo({
         />
       </header>
 
-      <div className="cr-table-scroll">
+      {/* Scroll vertical propio: con 40 filas por página, sin acotar el alto
+          el pie de paginación queda muy por debajo del pliegue. */}
+      <div className="cr-table-scroll cr-table-scroll--alto">
         <table className="cr-table cr-table--head-lg">
           <thead>
             <tr>

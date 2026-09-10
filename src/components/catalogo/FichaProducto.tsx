@@ -108,7 +108,11 @@ export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () =
           </button>
         </div>
 
-        <div className="flex flex-col gap-5 p-4">
+        {/* `cr-revision__cuerpo` y no un div propio: es la clase que lleva el
+            `flex:1; min-height:0; overflow-y:auto` que hace scrollear el cajón.
+            Sin ella el contenido crece por debajo del panel y en pantallas
+            bajas la parte inferior queda inalcanzable. */}
+        <div className="cr-revision__cuerpo">
           {error ? (
             <Aviso tono="danger" titulo="No se pudo abrir el producto">
               {error}
