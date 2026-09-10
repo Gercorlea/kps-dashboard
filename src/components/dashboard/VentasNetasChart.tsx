@@ -287,6 +287,12 @@ export function VentasNetasChart({ datos }: { datos: VentasNetas }) {
       ? conDato.reduce((t, c) => t + (c.total ?? 0), 0) / conDato.length
       : null;
 
+  // Total del año elegido. `null` y no 0 cuando no hay un solo mes reportado:
+  // un "Ventas totales de 2027: $0" diría que no se vendió nada, cuando lo que
+  // pasa es que todavía no llega ningún reporte. Sin base, "—" (§8.1).
+  const totalAnio =
+    conDato.length > 0 ? conDato.reduce((t, c) => t + (c.total ?? 0), 0) : null;
+
   const selector = (
     <label className="cr-field">
       <select
@@ -309,6 +315,12 @@ export function VentasNetasChart({ datos }: { datos: VentasNetas }) {
 
   return (
     <Panel title="Ventas netas del año" acciones={selector}>
+      {/* Sale del mismo estado que la gráfica y no del año en curso, así que
+          cambiar el filtro lo mueve con ella: el subtítulo nunca puede quedar
+          nombrando un año distinto al que está dibujado. */}
+      <p className="cr-viz-sub">
+        Ventas netas de {anio}: {totalAnio === null ? "—" : formatearMoneda(totalAnio)}
+      </p>
 
       {conDato.length === 0 ? (
         // Doce nulos pintarían una reja con ejes y sin línea, que se lee como
