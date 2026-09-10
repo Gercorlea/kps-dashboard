@@ -145,12 +145,15 @@ export interface Faceta {
   filas: number;
 }
 
+/**
+ * Lo que devuelve /api/catalogo/resumen.
+ *
+ * No trae las opciones de los filtros: su conteo depende de qué otros filtros
+ * estén puestos, así que se calculan en el navegador con `facetasCon`.
+ */
 export interface ResumenCatalogo {
   /** null = nunca se ha cargado un catálogo. */
   carga: CargaActiva | null;
-  lineas: Faceta[];
-  estatus: Faceta[];
-  canales: (Faceta & { conocido: boolean })[];
   /** Productos de la carga sin ninguna fila de mapeo: el dato accionable. */
   productosSinMapeo: number;
 }

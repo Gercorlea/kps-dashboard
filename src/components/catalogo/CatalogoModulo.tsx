@@ -19,6 +19,7 @@ import {
   type FilaMapeo,
   type ResumenCatalogo,
 } from "@/lib/catalogo/tipos";
+import { facetasCon } from "@/lib/catalogo/facetas";
 import { normalizarBusqueda, paginar, totalPaginas } from "@/lib/retail/analisis/filtrar";
 import { ErrorExcel, LIMITE_AVISO_BYTES } from "@/lib/retail/analisis/parsear";
 import {
@@ -242,14 +243,15 @@ export function CatalogoModulo() {
 
   const termino = useMemo(() => normalizarBusqueda(busqueda), [busqueda]);
 
-  const productosFiltrados = useMemo(() => {
-    return productos.filter((p) => {
-      if (linea && p.line.toLowerCase() !== linea) return false;
-      if (estatus && p.status.toLowerCase() !== estatus) return false;
-      if (!termino) return true;
+  // Cada criterio va por separado, y no en un único filtro, porque los menús de
+  // filtro necesitan combinarlos de otra forma: el conteo de un filtro se cuenta
+  // con TODOS los demás aplicados pero SIN el suyo propio (ver más abajo).
+  const buscaProducto = useCallback(
+    (p: FilaCatalogo) =>
+      !termino ||
       // Se busca en TODAS las columnas visibles: con el UPC y la línea a la
       // vista, teclear cualquiera de los dos y no encontrar nada sorprendería.
-      return textoDe([
+      textoDe([
         p.item,
         p.description,
         p.salesUnit,
@@ -258,19 +260,74 @@ export function CatalogoModulo() {
         p.upc,
         p.launchDate,
         p.launchDateText,
-      ]).includes(termino);
-    });
-  }, [productos, linea, estatus, termino]);
+      ]).includes(termino),
+    [termino]
+  );
 
-  const mapeosFiltrados = useMemo(() => {
-    return mapeos.filter((m) => {
-      if (canal && m.channel !== canal) return false;
-      if (!termino) return true;
-      return textoDe([m.sku, m.channelName, m.channel, m.customerCode, m.description]).includes(
-        termino
-      );
-    });
-  }, [mapeos, canal, termino]);
+  const productosPorLinea = useMemo(
+    () => productos.filter((p) => !linea || p.line.toLowerCase() === linea),
+    [productos, linea]
+  );
+  const productosPorEstatus = useMemo(
+    () => productos.filter((p) => !estatus || p.status.toLowerCase() === estatus),
+    [productos, estatus]
+  );
+
+  const productosFiltrados = useMemo(
+    () =>
+      productosPorLinea.filter(
+        (p) => (!estatus || p.status.toLowerCase() === estatus) && buscaProducto(p)
+      ),
+    [productosPorLinea, estatus, buscaProducto]
+  );
+
+  /**
+   * Opciones de los dos menús, contadas sobre lo que dejan los OTROS filtros.
+   *
+   * Cada uno se excluye a sí mismo a propósito: si Línea se contara con su
+   * propia selección aplicada, elegir "bloom" dejaría el menú con una sola
+   * opción y no habría manera de cambiar de línea sin limpiar antes el filtro.
+   */
+  const facetasLinea = useMemo(
+    () =>
+      facetasCon(productos, productosPorEstatus.filter(buscaProducto), (p) => ({
+        id: p.line.toLowerCase(),
+        etiqueta: p.line,
+      })),
+    [productos, productosPorEstatus, buscaProducto]
+  );
+
+  const facetasEstatus = useMemo(
+    () =>
+      facetasCon(productos, productosPorLinea.filter(buscaProducto), (p) => ({
+        id: p.status.toLowerCase(),
+        etiqueta: p.status,
+      })),
+    [productos, productosPorLinea, buscaProducto]
+  );
+
+  const buscaMapeo = useCallback(
+    (m: FilaMapeo) =>
+      !termino ||
+      textoDe([m.sku, m.channelName, m.channel, m.customerCode, m.description]).includes(termino),
+    [termino]
+  );
+
+  const mapeosFiltrados = useMemo(
+    () => mapeos.filter((m) => (!canal || m.channel === canal) && buscaMapeo(m)),
+    [mapeos, canal, buscaMapeo]
+  );
+
+  // Canal es el único filtro de su tabla, así que "los demás filtros" es sólo la
+  // búsqueda; el canal elegido se excluye igual que arriba.
+  const facetasCanal = useMemo(
+    () =>
+      facetasCon(mapeos, mapeos.filter(buscaMapeo), (m) => ({
+        id: m.channel,
+        etiqueta: m.channelName || m.channel,
+      })),
+    [mapeos, buscaMapeo]
+  );
 
   const enCatalogo = vista === "catalogo";
   // Las dos vistas comparten el estado de página, así que el total de páginas
@@ -387,7 +444,7 @@ export function CatalogoModulo() {
             {
               etiqueta: "Línea",
               valor: linea,
-              opciones: resumen?.lineas ?? [],
+              opciones: facetasLinea,
               onCambio: (v) => {
                 setLinea(v);
                 setPagina(1);
@@ -396,7 +453,7 @@ export function CatalogoModulo() {
             {
               etiqueta: "Estatus",
               valor: estatus,
-              opciones: resumen?.estatus ?? [],
+              opciones: facetasEstatus,
               onCambio: (v) => {
                 setEstatus(v);
                 setPagina(1);
@@ -421,7 +478,7 @@ export function CatalogoModulo() {
             {
               etiqueta: "Canal",
               valor: canal,
-              opciones: resumen?.canales ?? [],
+              opciones: facetasCanal,
               onCambio: (v) => {
                 setCanal(v);
                 setPagina(1);
