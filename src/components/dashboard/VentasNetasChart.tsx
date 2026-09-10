@@ -409,23 +409,36 @@ export function VentasNetasChart({ datos }: { datos: VentasNetas }) {
         </select>
       </label>
 
-      {/* Deshabilitado y no oculto: un control que desaparece al pasear por los
+      {/* Botón que se queda hundido, no un botón de acción: `aria-pressed` es
+          lo que lo convierte en interruptor para el lector de pantalla, que si
+          no lo anunciaría como si cada clic disparara algo nuevo en vez de
+          prender y apagar un estado. Mismo patrón que los ítems de la leyenda
+          en viz.tsx.
+
+          El color lo dan las variantes que ya existen y no CSS nuevo:
+          `--secondary` (blanco con borde) apagado y `--primary` (tinta llena)
+          encendido, que es el estado activo estándar del design system. El
+          texto va dentro del botón, así que no hace falta etiqueta aparte.
+
+          Deshabilitado y no oculto: un control que desaparece al pasear por los
           años hace saltar la cabecera y no enseña nada; el title dice por qué.
+          `.cr-btn:disabled` ya lo atenúa.
+
           Se pinta `comparando` —el derivado— y no `comparar`: al caer en un año
-          sin comparación posible la casilla se desmarca sola, en vez de quedar
-          marcada sin línea fantasma en pantalla, que sería el control mintiendo
+          sin comparación posible el botón se suelta solo, en vez de quedarse
+          hundido sin línea fantasma en pantalla, que sería el control mintiendo
           sobre lo que está dibujado. La intención no se pierde: al volver a un
-          año comparable se remarca. La etiqueta envolvente ya da el nombre
-          accesible, así que aquí no va aria-label. */}
-      <label className="cr-check" title={puedeComparar ? undefined : razonSinComparar}>
-        <input
-          type="checkbox"
-          checked={comparando}
-          disabled={!puedeComparar}
-          onChange={(e) => setComparar(e.target.checked)}
-        />
+          año comparable se vuelve a hundir. */}
+      <button
+        type="button"
+        className={`cr-btn cr-btn--sm ${comparando ? "cr-btn--primary" : "cr-btn--secondary"}`}
+        aria-pressed={comparando}
+        disabled={!puedeComparar}
+        title={puedeComparar ? undefined : razonSinComparar}
+        onClick={() => setComparar(!comparando)}
+      >
         Comparar con {comparativa.anioPrevio}
-      </label>
+      </button>
     </div>
   );
 

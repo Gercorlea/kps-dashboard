@@ -153,10 +153,6 @@ input[type="radio"] { accent-color: var(--cr-ink); }
   font-size: 13px; color: var(--cr-ink); cursor: pointer;
 }
 .cr-check input { flex: none; width: 14px; height: 14px; cursor: pointer; }
-/* Deshabilitada: el navegador apaga la casilla nativa pero deja el texto en
-   tinta plena, y la fila entera se sigue leyendo activa. Se atenua el conjunto,
-   igual que .cr-page-btn:disabled. */
-.cr-check:has(input:disabled) { opacity: .42; cursor: not-allowed; }
 
 /* Campo de busqueda: hueco para la lupa a la izquierda y para la X a la derecha.
    TIENE que vivir aqui y no como `pl-9` de Tailwind en el markup: este archivo
