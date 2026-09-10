@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   casillasDelAnio,
+  compararConAnioAnterior,
   faltantesDelMes,
   filasDelMes,
   rangosPorRetailer,
+  variacionMes,
   type Casilla,
+  type CasillaComparada,
 } from "@/components/dashboard/VentasNetasChart";
 import type { PuntoVentasNetas } from "@/lib/retail/stats";
 
@@ -184,5 +187,159 @@ describe("filasDelMes", () => {
     expect(filas.every((f) => typeof f.color === "string" && f.color.length > 0)).toBe(true);
     // Colores distintos: el desglose es lo único que distingue las partes.
     expect(new Set(filas.map((f) => f.color)).size).toBe(2);
+  });
+});
+
+describe("compararConAnioAnterior", () => {
+  it("siempre devuelve 12 filas, aun sin año anterior", () => {
+    const c = compararConAnioAnterior([punto("2024-03", { walmart: 10 })], 2024);
+    expect(c.filas).toHaveLength(12);
+    expect(c.anioPrevio).toBe(2023);
+    expect(c.hayPrevio).toBe(false);
+  });
+
+  it("un mes sin dato en el previo es null, no 0: el fantasma se corta", () => {
+    const c = compararConAnioAnterior(
+      [punto("2025-01", { walmart: 5 }), punto("2026-01", { walmart: 8 })],
+      2026
+    );
+    expect(c.filas[0].previo).toBe(5);
+    expect(c.filas[1].previo).toBeNull();
+  });
+
+  // Misma trampa del `||` que ya se fija para `total`, ahora del lado del previo.
+  it("un mes de cero en el previo es 0 y NO null", () => {
+    const c = compararConAnioAnterior(
+      [punto("2025-02", { walmart: 0 }), punto("2026-02", { walmart: 8 })],
+      2026
+    );
+    expect(c.filas[1].previo).toBe(0);
+    expect(c.filas[1].previo).not.toBeNull();
+  });
+
+  // EL test que justifica escribir esta función: compararAnios tiene la regla
+  // pero no la tiene pinada. Doce meses del año pasado contra cuatro del actual
+  // no puede dar una caída del 70%.
+  it("los totales cuentan SÓLO los meses con dato en los dos años", () => {
+    const serie = [
+      ...Array.from({ length: 12 }, (_, i) =>
+        punto(`2025-${String(i + 1).padStart(2, "0")}`, { walmart: 100 })
+      ),
+      ...Array.from({ length: 4 }, (_, i) =>
+        punto(`2026-${String(i + 1).padStart(2, "0")}`, { walmart: 100 })
+      ),
+    ];
+    const c = compararConAnioAnterior(serie, 2026);
+    expect(c.mesesComparables).toBe(4);
+    expect(c.totalActual).toBe(400);
+    // 400 y no 1200: sólo los cuatro meses compartidos.
+    expect(c.totalPrevio).toBe(400);
+    expect(c.variacion).toBe(0);
+  });
+
+  it("sin meses compartidos, los tres totales son null pero hayPrevio es true", () => {
+    const c = compararConAnioAnterior(
+      [punto("2025-01", { walmart: 10 }), punto("2026-07", { walmart: 20 })],
+      2026
+    );
+    expect(c.mesesComparables).toBe(0);
+    expect(c.totalActual).toBeNull();
+    expect(c.totalPrevio).toBeNull();
+    expect(c.variacion).toBeNull();
+    expect(c.hayPrevio).toBe(true);
+  });
+
+  it("un previo de cero en los meses compartidos da variacion null, no infinito", () => {
+    const c = compararConAnioAnterior(
+      [punto("2025-01", { walmart: 0 }), punto("2026-01", { walmart: 500 })],
+      2026
+    );
+    expect(c.mesesComparables).toBe(1);
+    expect(c.totalPrevio).toBe(0);
+    expect(c.variacion).toBeNull();
+    expect(Number.isFinite(c.variacion as number)).toBe(false);
+  });
+
+  it("hayPrevio es false sin año anterior y true aunque no comparta ningún mes", () => {
+    expect(compararConAnioAnterior([punto("2026-01", { walmart: 1 })], 2026).hayPrevio).toBe(
+      false
+    );
+    expect(
+      compararConAnioAnterior(
+        [punto("2025-09", { walmart: 1 }), punto("2026-01", { walmart: 1 })],
+        2026
+      ).hayPrevio
+    ).toBe(true);
+  });
+
+  it("da el signo correcto en subida y en bajada", () => {
+    const sube = compararConAnioAnterior(
+      [punto("2025-01", { walmart: 100 }), punto("2026-01", { walmart: 150 })],
+      2026
+    );
+    expect(sube.variacion).toBeCloseTo(0.5);
+    const baja = compararConAnioAnterior(
+      [punto("2025-01", { walmart: 100 }), punto("2026-01", { walmart: 40 })],
+      2026
+    );
+    expect(baja.variacion).toBeCloseTo(-0.6);
+  });
+
+  it("no se cuela un mes de anio - 2", () => {
+    const c = compararConAnioAnterior(
+      [punto("2024-01", { walmart: 999 }), punto("2026-01", { walmart: 10 })],
+      2026
+    );
+    expect(c.filas[0].previo).toBeNull();
+    expect(c.hayPrevio).toBe(false);
+    expect(c.mesesComparables).toBe(0);
+  });
+
+  it("aguanta la serie vacía", () => {
+    const c = compararConAnioAnterior([], 2026);
+    expect(c.filas).toHaveLength(12);
+    expect(c.filas.every((f) => f.total === null && f.previo === null)).toBe(true);
+    expect(c.hayPrevio).toBe(false);
+    expect(c.totalActual).toBeNull();
+  });
+
+  // Protege la decisión de `extends Casilla`: si alguien renombra `total`, esto
+  // truena antes que la gráfica.
+  it("una CasillaComparada sigue sirviendo a filasDelMes", () => {
+    const c = compararConAnioAnterior(
+      [punto("2026-01", { walmart: 100, "san-pablo": 300 })],
+      2026
+    );
+    const filas = filasDelMes(c.filas[0], [
+      { id: "san-pablo", nombre: "San Pablo" },
+      { id: "walmart", nombre: "Walmart" },
+    ]);
+    expect(filas.map((f) => f.clave)).toEqual(["san-pablo", "walmart"]);
+  });
+});
+
+describe("variacionMes", () => {
+  function fila(total: number | null, previo: number | null): CasillaComparada {
+    return { mes: 1, periodo: "2026-01", total, porRetailer: {}, previo };
+  }
+
+  it("es null si falta cualquiera de los dos", () => {
+    expect(variacionMes(fila(null, 100))).toBeNull();
+    expect(variacionMes(fila(100, null))).toBeNull();
+    expect(variacionMes(fila(null, null))).toBeNull();
+  });
+
+  it("es null si el previo es cero: sin base no hay porcentaje", () => {
+    expect(variacionMes(fila(500, 0))).toBeNull();
+  });
+
+  it("calcula la fracción con signo cuando existen los dos", () => {
+    expect(variacionMes(fila(150, 100))).toBeCloseTo(0.5);
+    expect(variacionMes(fila(40, 100))).toBeCloseTo(-0.6);
+  });
+
+  // Un mes de cero ventas real SÍ tiene variación: -100%, no null.
+  it("un actual de cero contra un previo positivo da -100%, no null", () => {
+    expect(variacionMes(fila(0, 100))).toBeCloseTo(-1);
   });
 });
