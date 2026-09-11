@@ -622,6 +622,29 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
    en lugar de en la tabla. */
 .cr-table-scroll { overflow-x: auto; max-width: 100%; }
 
+/* Tabla con scroll vertical PROPIO, para listas de página larga.
+
+   POR QUE. Con cuarenta filas el panel mide unos 1.600px: el pie de paginación
+   queda muy por debajo del pliegue y para cambiar de página hay que recorrer
+   toda la tabla. Acotando el alto, el panel deja de crecer con el número de
+   filas, la página se queda corta y las filas se recorren dentro de la caja.
+   Es lo que ya hace la tabla de productos de la ficha de retailer.
+
+   POR QUE `vh` Y NO UN ALTO EN REM. El hueco disponible depende del alto de la
+   ventana: un número fijo que va bien en un portátil deja media pantalla vacía
+   en un monitor. La variable permite ajustarlo por tabla sin tocar esta regla.
+
+   EL ENCABEZADO SE QUEDA FIJO. Sin esto la primera pasada de scroll se lleva
+   los títulos y quedan siete columnas sin identificar, que es peor que la
+   página larga que se venía a arreglar. El borde inferior va como `box-shadow`
+   y no como `border-bottom`: el borde de un elemento sticky se pinta fuera de
+   su caja y desaparece al desplazar. */
+.cr-table-scroll--alto { overflow-y: auto; max-height: var(--cr-tabla-alto, 60vh); }
+.cr-table-scroll--alto thead th {
+  position: sticky; top: 0; z-index: 2;
+  box-shadow: inset 0 -1px 0 rgba(10,12,18,.06);
+}
+
 /* ============================ Barras de progreso ============================ */
 
 .cr-meter { height: 5px; background: rgba(10,12,18,.08); border-radius: 2px; overflow: hidden; }
@@ -634,6 +657,11 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
    Cromo de las gráficas de retail (tooltip, leyenda, cifra de cabecera). Los
    colores de las series NO viven aquí: son los tokens --viz-* de globals.css,
    que es la paleta categórica validada. Esto es todo lo que rodea al dato. */
+
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-wrapper :focus,
+.recharts-wrapper :focus-visible { outline: none; }
 
 /* Tooltip propio. El de recharts es una caja blanca con borde gris y la
    tipografía del navegador; esta habla el idioma del design system. */
@@ -1546,6 +1574,10 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Al llegar al final del cajón, la rueda deja de propagarse al documento:
+     sin esto el fondo se desplaza por debajo y al cerrar el panel la tabla
+     ya no está donde se la dejó. */
+  overscroll-behavior: contain;
   padding: 14px 20px;
   display: flex;
   flex-direction: column;

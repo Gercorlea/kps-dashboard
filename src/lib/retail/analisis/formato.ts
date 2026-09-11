@@ -73,6 +73,30 @@ export function formatearMonedaCompacta(n: number): string {
   return conSimbolo(formatearCompacto(n));
 }
 
+const nfCompacto2 = new Intl.NumberFormat(LOCALE, {
+  notation: "compact",
+  maximumFractionDigits: 2,
+});
+
+/**
+ * Importe compacto con dos decimales, para una cifra ROTULADA sobre la gráfica:
+ * 5977383 → "$5.98 M".
+ *
+ * Un decimal alcanza para un eje, donde las marcas se leen como escala, pero no
+ * para una etiqueta que se lee como el dato: con `formatearMonedaCompacta` una
+ * venta de 5,977,383 y un promedio de 6,410,000 se rotulan "$6 M" y "$6.4 M",
+ * y el mes queda pareciendo redondo y por debajo del promedio por casi nada.
+ * El segundo decimal es lo que separa esas dos cifras a la vista.
+ *
+ * Vive aquí y no en la gráfica por lo mismo que el resto del archivo: la cifra
+ * del extremo y la del promedio se rotulan con esta función, y con dos
+ * formateadores uno de los dos acabaría redondeando distinto.
+ */
+export function formatearMonedaEtiqueta(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return conSimbolo(Math.abs(n) >= 10_000 ? nfCompacto2.format(n) : formatearNumero(n));
+}
+
 /**
  * Marca de eje. Igual que `formatearCompacto` pero abrevia desde el millar y no
  * desde la decena de millar: en un eje las marcas se leen COMO COLUMNA, y

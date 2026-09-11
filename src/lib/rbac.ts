@@ -7,6 +7,7 @@
 
 export const MODULES = [
   { id: "retail", name: "Retail" },
+  { id: "catalogo", name: "Catálogo" },
   { id: "cronos-ia", name: "KPS AI" },
   { id: "proveedores-alta", name: "Proveedores" },
   { id: "peticiones", name: "Peticiones" },
@@ -82,6 +83,7 @@ export const NAV_SECTIONS: NavSection[] = [
     name: "Módulos",
     items: [
       { href: "/retail", label: "Retail", module: "retail" },
+      { href: "/catalogo", label: "Catálogo", module: "catalogo" },
       { href: "/cronos-ia", label: "KPS AI", module: "cronos-ia" },
     ],
   },

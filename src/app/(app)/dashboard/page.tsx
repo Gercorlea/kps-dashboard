@@ -1,11 +1,12 @@
 import type { CSSProperties } from "react";
 import { redirect } from "next/navigation";
+import { VentasNetasChart } from "@/components/dashboard/VentasNetasChart";
 import { Pagina } from "@/components/dashboard/Pagina";
 import { fmtFecha, fmtNum, fmtPct } from "@/components/lib/fmt";
 import { Kpi, Meter, Panel } from "@/components/ui/basicos";
 import { getSessionUser } from "@/lib/auth/guards";
 import { formatearMoneda, formatearMonedaCompacta } from "@/lib/retail/analisis/formato";
-import { detalleRetailers } from "@/lib/retail/stats";
+import { detalleRetailers, ventasNetasMensuales } from "@/lib/retail/stats";
 
 // Portada general: no repite las cards ni la gráfica en unidades/12 meses de
 // /retail —eso habla de cuánto se movió recientemente—, sino un ranking en
@@ -25,7 +26,13 @@ export default async function DashboardPage() {
   const usuario = await getSessionUser();
   if (!usuario) redirect("/login");
 
-  const retailers = await detalleRetailers();
+  // Las dos consultas son independientes: van en paralelo. La de la gráfica no
+  // agrega latencia — lo caro de detalleRetailers son sus dos $addToSet sobre
+  // los itemNbr distintos, y la de ventas netas es un $sum a secas.
+  const [retailers, ventasNetas] = await Promise.all([
+    detalleRetailers(),
+    ventasNetasMensuales(),
+  ]);
   const ranking = [...retailers].sort((a, b) => b.importe - a.importe);
 
   const ventasTotales = ranking.reduce((t, r) => t + r.importe, 0);
@@ -59,6 +66,11 @@ export default async function DashboardPage() {
             detalle="Productos distintos vendidos, todos los retailers"
           />
         </div>
+
+        {/* La evolución antes del ranking: primero cómo va el año, después
+            quién lo compone. El panel dice su año y el ranking dice su
+            periodo, porque son dos ventanas distintas de lo mismo. */}
+        <VentasNetasChart datos={ventasNetas} />
 
         <Panel
           title="Ranking de ventas por retailer"
