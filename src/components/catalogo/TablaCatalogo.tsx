@@ -1,5 +1,6 @@
 "use client";
 
+import type { RefObject } from "react";
 import { Paginacion } from "@/components/dashboard/Paginacion";
 import { fmtFecha } from "@/components/lib/fmt";
 import { BuscadorTabla, type FiltroSelect } from "@/components/catalogo/BuscadorTabla";
@@ -23,6 +24,7 @@ const COLUMNAS: { campo: keyof FilaCatalogo; etiqueta: string; mono?: boolean }[
 export const COLUMNAS_BUSCADAS = COLUMNAS.map((c) => c.etiqueta);
 
 export function TablaCatalogo({
+  ancla,
   filas,
   total,
   totalCarga,
@@ -36,6 +38,7 @@ export function TablaCatalogo({
   onAbrir,
 }: {
   /** Ya filtradas y paginadas. */
+  ancla: RefObject<HTMLDivElement | null>;
   filas: FilaCatalogo[];
   /** Cuántas hay tras filtrar. */
   total: number;
@@ -57,7 +60,7 @@ export function TablaCatalogo({
       <header className="cr-panel__head flex-wrap gap-3">
         <div className="flex flex-col gap-1">
           <h3 className="cr-h3">Catálogo de productos</h3>
-          <span className="cr-small">
+          <span className="cr-small cr-ink-3">
             {filtrando
               ? `${total.toLocaleString("es-MX")} de ${totalCarga.toLocaleString("es-MX")} productos`
               : `${totalCarga.toLocaleString("es-MX")} productos`}
@@ -72,10 +75,9 @@ export function TablaCatalogo({
         />
       </header>
 
-      {/* Scroll vertical propio: con 40 filas por página, sin acotar el alto
-          el pie de paginación queda muy por debajo del pliegue. */}
-      <div className="cr-table-scroll cr-table-scroll--alto">
-        <table className="cr-table cr-table--head-lg">
+      <div ref={ancla}>
+        <table className="cr-table cr-table--fija cr-catalogo__tabla">
+          <colgroup><col className="cr-catalogo__item" /><col /><col className="cr-catalogo__estatus" /><col className="cr-catalogo__linea" /><col className="cr-catalogo__upc" /><col className="cr-catalogo__unidad" /><col className="cr-catalogo__fecha" /></colgroup>
           <thead>
             <tr>
               {COLUMNAS.map((c) => (
@@ -88,7 +90,7 @@ export function TablaCatalogo({
           <tbody>
             {filas.length === 0 ? (
               <tr>
-                <td colSpan={COLUMNAS.length} className="cr-body py-10 text-center">
+                <td colSpan={COLUMNAS.length} className="cr-catalogo__sin-resultados">
                   {busqueda.trim()
                     ? `Ningún producto coincide con «${busqueda.trim()}».`
                     : "Sin productos que mostrar."}
@@ -169,7 +171,9 @@ export function TablaCatalogo({
         </table>
       </div>
 
+      {total === 0 ? <div className="cr-catalogo__pie-vacio" data-paginacion>Sin productos</div> : null}
       <Paginacion
+        siempreVisible
         pagina={pagina}
         paginas={paginas}
         total={total}

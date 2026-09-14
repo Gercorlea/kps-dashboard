@@ -1,6 +1,6 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import type { Faceta } from "@/lib/catalogo/tipos";
 
 export interface FiltroSelect {
@@ -36,47 +36,27 @@ export function BuscadorTabla({
   filtros?: FiltroSelect[];
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="cr-catalogo__controles">
+      <div className="cr-busqueda-tabla">
+        <Search size={14} strokeWidth={1.75} aria-hidden="true" className="cr-busqueda-tabla__lupa" />
+        <input type="search" className="cr-input cr-input--sm cr-input--busca"
+          aria-label={placeholder} placeholder={placeholder}
+          title={columnasBuscadas.length ? 'Busca en: ' + columnasBuscadas.join(', ') : undefined}
+          value={busqueda} onChange={(e) => onBusqueda(e.target.value)} />
+        {busqueda ? <button type="button" className="cr-busqueda-tabla__limpiar"
+          aria-label="Limpiar búsqueda" title="Limpiar búsqueda"
+          onClick={() => onBusqueda('')}><X size={13} /></button> : null}
+      </div>
       {filtros.map((f) => (
-        <label key={f.etiqueta} className="relative">
+        <label key={f.etiqueta} className="cr-catalogo__filtro">
           <span className="sr-only">{f.etiqueta}</span>
-          <select
-            className="cr-input"
-            style={{ width: "10rem" }}
-            value={f.valor}
-            onChange={(e) => f.onCambio(e.target.value)}
-          >
-            <option value="">{f.etiqueta}: todas</option>
-            {f.opciones.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.etiqueta} ({o.filas})
-              </option>
-            ))}
+          <select className="cr-input cr-input--sm" value={f.valor}
+            onChange={(e) => f.onCambio(e.target.value)}>
+            <option value="">{f.etiqueta}: {f.etiqueta === 'Línea' ? 'todas' : 'todos'}</option>
+            {f.opciones.map((o) => <option key={o.id} value={o.id}>{o.etiqueta} ({o.filas})</option>)}
           </select>
         </label>
       ))}
-
-      <label className="relative">
-        <span className="sr-only">{placeholder}</span>
-        <Search
-          size={13}
-          strokeWidth={2}
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2"
-          style={{ color: "var(--cr-ink-3)" }}
-        />
-        <input
-          type="search"
-          className="cr-input"
-          style={{ paddingLeft: 28, width: "16rem" }}
-          placeholder={placeholder}
-          title={
-            columnasBuscadas.length > 0 ? `Busca en: ${columnasBuscadas.join(", ")}` : undefined
-          }
-          value={busqueda}
-          onChange={(e) => onBusqueda(e.target.value)}
-        />
-      </label>
     </div>
   );
 }
