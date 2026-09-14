@@ -43,3 +43,36 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string) {
     `,
   });
 }
+
+function escaparHtml(valor: string): string {
+  return valor.replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[c] ?? c);
+}
+
+export async function sendOperationalEmail(datos: {
+  to: string | string[];
+  subject: string;
+  title: string;
+  paragraphs: string[];
+  attachment?: { filename: string; content: Uint8Array };
+}) {
+  await resend().emails.send({
+    from: from(),
+    to: datos.to,
+    subject: datos.subject,
+    html: `
+      <div style="font-family:ui-sans-serif,system-ui,sans-serif;color:#15171c;max-width:640px;margin:0 auto;padding:24px">
+        <p style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#777">KPS · Portal de proveedores</p>
+        <h1 style="font-size:20px">${escaparHtml(datos.title)}</h1>
+        ${datos.paragraphs.map((p) => `<p style="font-size:14px;line-height:1.6">${escaparHtml(p)}</p>`).join("")}
+      </div>`,
+    ...(datos.attachment
+      ? { attachments: [{ filename: datos.attachment.filename, content: Buffer.from(datos.attachment.content) }] }
+      : {}),
+  });
+}

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Download, RotateCcw, Search, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { BellRing, Check, Download, Pause, RotateCcw, Search, Send, Sparkles, X } from "lucide-react";
 import { Paginacion } from "@/components/dashboard/Paginacion";
-import { api, ClientApiError } from "@/components/lib/api-client";
+import { api, ClientApiError, fetchConSesion } from "@/components/lib/api-client";
 import { useFilasQueCaben } from "@/components/lib/useFilasQueCaben";
 import { Aviso, Badge, Campo, EstadoVacio, Panel, Tabla } from "@/components/ui/basicos";
 import { Modal } from "@/components/ui/Modal";
@@ -31,10 +31,21 @@ interface Fila {
   total: string;
   moneda: string;
   ordenCompra: string | null;
+  entrada: string | null;
   enviada: string | null;
   /** Fecha en que se archivó, o null si sigue en la bandeja. */
   archivada: string | null;
   motivoArchivo: string | null;
+  enEspera: boolean;
+  credito: EstadoCredito;
+}
+
+interface EstadoCredito {
+  inicio: string | null;
+  vencimiento: string | null;
+  dias: number | null;
+  diasRestantes: number | null;
+  vencida: boolean;
 }
 
 interface Validacion {
@@ -64,7 +75,40 @@ interface Cobertura {
   monedaOrden: string;
 }
 
+interface Cotejo {
+  summary: string;
+  canProceed: boolean;
+  receiptTotal: string;
+  invoiceTotal: string;
+  ranAt?: string;
+  lineas?: Array<{
+    descripcion: string;
+    cantidadPedida: string | null;
+    cantidadRecibida: string | null;
+    cantidadFacturada: string | null;
+    importeRecibido: string | null;
+    importeFacturado: string | null;
+    diferencia: string | null;
+  }>;
+}
+
+interface ResultadoDecision {
+  folio: string;
+  estatus: string;
+  sap?: { registrada: boolean; docNum?: number; detalle?: string; avisoAdjuntos?: string | null };
+  enEspera?: boolean;
+}
+
 interface Peticion extends Fila {
+  serie: string | null;
+  folioFiscal: string | null;
+  fechaEmision: string | null;
+  retenidos: string;
+  metodoPago: string | null;
+  formaPago: string | null;
+  comentarioProveedor: string | null;
+  sapDocNum: number | null;
+  sapError: string | null;
   uuid: string | null;
   rfcEmisor: string | null;
   rfcReceptor: string | null;
@@ -74,12 +118,29 @@ interface Peticion extends Fila {
   xmlFileKey: string | null;
   pdfFileKey: string | null;
   evidencias: { title: string; description: string; fileKey: string }[];
+  esperaDesde: string | null;
+  pago: {
+    comprobanteFileKey: string | null;
+    comprobanteCargadoEl: string | null;
+    complementoEstatus: "NO_HABILITADO" | "PENDIENTE" | "RECIBIDO";
+    complementoLimite: string | null;
+    complementoXmlFileKey: string | null;
+    complementoPdfFileKey: string | null;
+  };
 }
 
 interface Detalle {
   peticion: Peticion;
   cobertura: Cobertura | null;
+  cotejo: Cotejo | null;
+  bitacora: Array<{ de: string | null; a: string; comentario: string | null; cuando: string | null }>;
   validaciones: Validacion[];
+  polizaPrevia: {
+    etapa: "VALIDACION_PREVIA";
+    importe: string;
+    moneda: string;
+    movimientos: Array<{ tipo: "CARGO" | "ABONO"; cuenta: string; descripcion: string }>;
+  };
 }
 
 /**
@@ -170,6 +231,14 @@ function fecha(iso: string | null): string {
   return `${dd}/${mm} ${hh}:${mi}`;
 }
 
+function textoCredito(credito: EstadoCredito): string {
+  if (!credito.inicio) return "Inicia al liberar";
+  if (credito.diasRestantes === null) return "Plazo sin configurar";
+  if (credito.diasRestantes < 0) return `${Math.abs(credito.diasRestantes)} d vencida`;
+  if (credito.diasRestantes === 0) return "Vence hoy";
+  return `${credito.diasRestantes} d restantes`;
+}
+
 type Filtro = "pendientes" | "todas" | "cerradas" | "archivadas";
 
 const ETIQUETA_FILTRO: Record<Filtro, string> = {
@@ -243,6 +312,11 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
   const [abierta, setAbierta] = useState<Detalle | null>(null);
   const [motivo, setMotivo] = useState("");
   const [decidiendo, setDecidiendo] = useState(false);
+  const [enviandoDispersion, setEnviandoDispersion] = useState(false);
+  const [descargandoDispersion, setDescargandoDispersion] = useState(false);
+  const [enviandoAlertas, setEnviandoAlertas] = useState(false);
+  const [subiendoComprobante, setSubiendoComprobante] = useState(false);
+  const [analizandoSello, setAnalizandoSello] = useState(false);
 
   /** La fila cuyo archivado se está confirmando, y el folio que se está guardando. */
   const [porArchivar, setPorArchivar] = useState<Fila | null>(null);
@@ -285,6 +359,8 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
       termino
         ? filas.filter((f) =>
             [
+              f.entrada ?? "",
+              f.entrada ? `Entrada ${f.entrada}` : "",
               f.ordenCompra ?? "",
               f.ordenCompra ? `OC ${f.ordenCompra}` : "",
               f.proveedor,
@@ -309,7 +385,37 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
   // actual puede quedar fuera de rango: se sujeta al pintar en vez de arrastrar
   // un estado imposible.
   const paginaActual = Math.min(pagina, paginas);
-  const enPagina = visibles.slice((paginaActual - 1) * tamano, paginaActual * tamano);
+  const ordenadas = [...visibles].sort((a, b) =>
+    a.proveedor.localeCompare(b.proveedor, "es-MX") ||
+    (a.enviada ?? "").localeCompare(b.enviada ?? "")
+  );
+  const enPagina = ordenadas.slice((paginaActual - 1) * tamano, paginaActual * tamano);
+  const gruposPagina = enPagina.reduce<Array<{
+    clave: string;
+    proveedor: string;
+    cardCode: string;
+    filas: Fila[];
+    vencido: number;
+    moneda: string;
+  }>>((salida, fila) => {
+    let grupo = salida.at(-1);
+    if (!grupo || grupo.clave !== fila.cardCode) {
+      grupo = {
+        clave: fila.cardCode,
+        proveedor: fila.proveedor,
+        cardCode: fila.cardCode,
+        filas: [],
+        vencido: 0,
+        moneda: fila.moneda,
+      };
+      salida.push(grupo);
+    }
+    grupo.filas.push(fila);
+    if (fila.credito.vencida && fila.moneda === grupo.moneda) {
+      grupo.vencido += Number(fila.total) || 0;
+    }
+    return salida;
+  }, []);
 
   function cambiarFiltro(f: Filtro) {
     setCargando(true);
@@ -329,15 +435,45 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
     }
   }
 
-  async function decidir(decision: "aprobar" | "corregir" | "rechazar") {
+  async function reintentarSap() {
     if (!abierta) return;
     setDecidiendo(true);
     try {
-      const r = await api<{ folio: string; estatus: string }>(
+      const r = await api<ResultadoDecision>(`/api/peticiones/${abierta.peticion.folio}`, {
+        method: "PUT",
+      });
+      toast.ok(
+        r.sap?.registrada ? `${r.folio} · registrada en SAP` : `${r.folio} · registro pendiente`,
+        r.sap?.registrada
+          ? `Factura SAP ${r.sap.docNum ?? "—"}.${r.sap.avisoAdjuntos ? ` ${r.sap.avisoAdjuntos}` : ""}`
+          : r.sap?.detalle
+      );
+      await abrir(abierta.peticion.folio);
+      await cargar(filtro);
+    } catch (e) {
+      toast.error("No se pudo reintentar el registro", e instanceof ClientApiError ? e.message : undefined);
+    } finally {
+      setDecidiendo(false);
+    }
+  }
+
+  async function decidir(decision: "aprobar" | "esperar" | "corregir" | "rechazar") {
+    if (!abierta) return;
+    setDecidiendo(true);
+    try {
+      const r = await api<ResultadoDecision>(
         `/api/peticiones/${abierta.peticion.folio}`,
         { method: "POST", body: JSON.stringify({ decision, motivo: motivo || undefined }) }
       );
-      toast.ok(`${r.folio} · ${ETIQUETA[r.estatus] ?? r.estatus}`, abierta.peticion.proveedor);
+      const detalleSap = r.sap?.registrada === false
+        ? `Registro en SAP pendiente: ${r.sap.detalle ?? "reintenta desde la petición"}.`
+        : r.sap?.docNum
+          ? `Factura SAP ${r.sap.docNum}.`
+          : "";
+      toast.ok(
+        `${r.folio} · ${r.enEspera ? "En espera" : ETIQUETA[r.estatus] ?? r.estatus}`,
+        `${abierta.peticion.proveedor}${detalleSap ? ` · ${detalleSap}` : ""}${r.sap?.avisoAdjuntos ? ` ${r.sap.avisoAdjuntos}` : ""}`
+      );
       setAbierta(null);
       await cargar(filtro);
     } catch (e) {
@@ -347,6 +483,98 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
       );
     } finally {
       setDecidiendo(false);
+    }
+  }
+
+  async function enviarDispersion() {
+    setEnviandoDispersion(true);
+    try {
+      const r = await api<{ enviadas: number; destino: string }>("/api/peticiones/dispersion", {
+        method: "POST",
+      });
+      toast.ok("Dispersión enviada", `${r.enviadas} pago(s) enviados a ${r.destino}.`);
+      await cargar(filtro);
+    } catch (e) {
+      toast.error("No se pudo enviar la dispersión", e instanceof ClientApiError ? e.message : undefined);
+    } finally {
+      setEnviandoDispersion(false);
+    }
+  }
+
+  async function descargarDispersion() {
+    setDescargandoDispersion(true);
+    try {
+      const res = await fetchConSesion("/api/peticiones/dispersion");
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null) as { error?: { message?: string } } | null;
+        throw new Error(cuerpo?.error?.message ?? "No se pudo generar el Excel");
+      }
+      const href = URL.createObjectURL(await res.blob());
+      const enlace = document.createElement("a");
+      enlace.href = href;
+      enlace.download = `dispersion-kps-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      enlace.click();
+      URL.revokeObjectURL(href);
+    } catch (e) {
+      toast.error("No se pudo generar el Excel", e instanceof Error ? e.message : undefined);
+    } finally {
+      setDescargandoDispersion(false);
+    }
+  }
+
+  async function enviarAlertas() {
+    setEnviandoAlertas(true);
+    try {
+      const r = await api<{ pendientes: number; escaladas: number; faltaDestinoEscalamiento?: boolean }>(
+        "/api/peticiones/alertas",
+        { method: "POST" }
+      );
+      toast.ok(
+        "Alertas enviadas",
+        `${r.pendientes} factura(s); ${r.escaladas} escalada(s).${r.faltaDestinoEscalamiento ? " Falta configurar el correo de contabilidad." : ""}`
+      );
+    } catch (e) {
+      toast.error("No se pudieron enviar las alertas", e instanceof ClientApiError ? e.message : undefined);
+    } finally {
+      setEnviandoAlertas(false);
+    }
+  }
+
+  async function subirComprobante(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!abierta) return;
+    setSubiendoComprobante(true);
+    try {
+      const r = await api<{ complementoLimite: string }>(
+        `/api/peticiones/${abierta.peticion.folio}/comprobante`,
+        { method: "POST", body: new FormData(e.currentTarget) }
+      );
+      toast.ok("Comprobante guardado", `El complemento vence ${fecha(r.complementoLimite)}.`);
+      await abrir(abierta.peticion.folio);
+    } catch (e) {
+      toast.error("No se pudo cargar el comprobante", e instanceof ClientApiError ? e.message : undefined);
+    } finally {
+      setSubiendoComprobante(false);
+    }
+  }
+
+  async function analizarSello() {
+    if (!abierta) return;
+    setAnalizandoSello(true);
+    try {
+      const r = await api<{ selloEncontrado: boolean; confianza: number; firmaAlmacenEncontrada: boolean }>(
+        `/api/peticiones/${abierta.peticion.folio}/sello`,
+        { method: "POST" }
+      );
+      toast.ok(
+        r.selloEncontrado ? "Sello detectado" : "Sello no detectado",
+        `${Math.round(r.confianza * 100)}% de confianza · ${r.firmaAlmacenEncontrada ? "firma detectada" : "firma no detectada"}`
+      );
+      await abrir(abierta.peticion.folio);
+    } catch (e) {
+      toast.error("No se pudo analizar el sello", e instanceof ClientApiError ? e.message : undefined);
+    } finally {
+      setAnalizandoSello(false);
     }
   }
 
@@ -417,6 +645,8 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
 
   const bloqueantes =
     abierta?.validaciones.filter((v) => !v.pasa && v.severidad === "BLOQUEANTE") ?? [];
+  const selloAprobado =
+    abierta?.validaciones.some((v) => v.regla === "SELLO_ALMACEN" && v.pasa) ?? false;
 
   const pestanas: Filtro[] = esAdmin
     ? ["pendientes", "todas", "cerradas", "archivadas"]
@@ -437,8 +667,8 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
             setBusqueda(e.target.value);
             setPagina(1);
           }}
-          placeholder="Orden, proveedor o folio"
-          aria-label="Filtrar por orden, proveedor o folio"
+          placeholder="Orden, entrada, proveedor o folio"
+          aria-label="Filtrar por orden, entrada, proveedor o folio"
         />
         {busqueda ? (
           <button
@@ -454,6 +684,30 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
           </button>
         ) : null}
       </div>
+      <button
+        type="button"
+        className="cr-btn cr-btn--secondary cr-btn--sm"
+        disabled={descargandoDispersion}
+        onClick={() => void descargarDispersion()}
+      >
+        <Download strokeWidth={1.75} /> {descargandoDispersion ? "Generando…" : "Excel"}
+      </button>
+      <button
+        type="button"
+        className="cr-btn cr-btn--secondary cr-btn--sm"
+        disabled={enviandoDispersion}
+        onClick={() => void enviarDispersion()}
+      >
+        <Send strokeWidth={1.75} /> {enviandoDispersion ? "Enviando…" : "Enviar a tesorería"}
+      </button>
+      <button
+        type="button"
+        className="cr-btn cr-btn--secondary cr-btn--sm"
+        disabled={enviandoAlertas}
+        onClick={() => void enviarAlertas()}
+      >
+        <BellRing strokeWidth={1.75} /> {enviandoAlertas ? "Enviando…" : "Alertar pendientes"}
+      </button>
       {/* Segmentado y no cuatro botones sueltos: son vistas excluyentes de la
           misma lista, y con botones el activo se leía como una acción. */}
       <div className="cr-segment">
@@ -521,6 +775,7 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                 <col style={{ width: 124 }} />
                 <col style={{ width: 104 }} />
                 <col style={{ width: 148 }} />
+                <col style={{ width: 124 }} />
                 {filtro !== "pendientes" ? <col style={{ width: 132 }} /> : null}
                 <col style={{ width: 104 }} />
                 <col style={{ width: esAdmin ? 176 : 96 }} />
@@ -531,6 +786,7 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                   <th>Folio</th>
                   <th>Orden</th>
                   <th className="cr-num">Importe</th>
+                  <th>Crédito</th>
                   {/* El estatus solo cuando puede variar: en Pendientes todas
                       dicen lo mismo y la columna no aporta nada. */}
                   {filtro !== "pendientes" ? <th>Estatus</th> : null}
@@ -539,7 +795,18 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                 </tr>
               </thead>
               <tbody>
-                {enPagina.map((f) => (
+                {gruposPagina.map((grupo) => (
+                  <Fragment key={grupo.clave}>
+                    <tr className="cr-grupo-proveedor">
+                      <td colSpan={filtro !== "pendientes" ? 8 : 7}>
+                        <strong>{grupo.proveedor}</strong> · {grupo.cardCode} · {grupo.filas.length}{" "}
+                        {grupo.filas.length === 1 ? "factura" : "facturas"}
+                        {grupo.vencido > 0
+                          ? ` · Total vencido ${money(String(grupo.vencido), grupo.moneda)}`
+                          : " · Sin saldo vencido"}
+                      </td>
+                    </tr>
+                    {grupo.filas.map((f) => (
                   <tr key={f.folio} className="whitespace-nowrap">
                     {/* Una fila, una línea: el código del proveedor va INLINE
                         junto al nombre, no en un segundo renglón. */}
@@ -550,11 +817,17 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                       </span>
                     </td>
                     <td className="cr-mono">{f.folio}</td>
-                    <td className="cr-mono">{f.ordenCompra ? `OC ${f.ordenCompra}` : "—"}</td>
+                    <td className="cr-mono">
+                      {f.ordenCompra ? `OC ${f.ordenCompra}` : "—"}
+                      {f.entrada ? <span className="block text-[10px] text-[color:var(--cr-ink-3)]">Entrada {f.entrada}</span> : null}
+                    </td>
                     <td className="cr-num">{money(f.total, f.moneda)}</td>
+                    <td><Badge tono={f.credito.vencida ? "danger" : undefined}>{textoCredito(f.credito)}</Badge></td>
                     {filtro !== "pendientes" ? (
                       <td>
-                        <Badge tono={TONO[f.estatus]}>{ETIQUETA[f.estatus] ?? f.estatus}</Badge>
+                        <Badge tono={f.enEspera ? "warn" : TONO[f.estatus]}>
+                          {f.enEspera ? "En espera" : ETIQUETA[f.estatus] ?? f.estatus}
+                        </Badge>
                       </td>
                     ) : null}
                     <td
@@ -599,6 +872,8 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                       </div>
                     </td>
                   </tr>
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
             </Tabla>
@@ -693,6 +968,7 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                 <div className="cr-small cr-mono">
                   {money(abierta.peticion.total, abierta.peticion.moneda)}
                   {abierta.peticion.ordenCompra ? ` · OC ${abierta.peticion.ordenCompra}` : ""}
+                  {abierta.peticion.entrada ? ` · Entrada ${abierta.peticion.entrada}` : ""}
                   {` · ${abierta.peticion.folio}`}
                 </div>
               </div>
@@ -722,6 +998,39 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                 No se pudo leer la OC {abierta.peticion.ordenCompra} en Business One: no se sabe
                 cuánto falta. No es lo mismo que estar cubierta.
               </Aviso>
+            ) : null}
+
+            {abierta.peticion.comentarioProveedor ? (
+              <Aviso tono="warn" titulo="Comentario del proveedor">
+                {abierta.peticion.comentarioProveedor}
+              </Aviso>
+            ) : null}
+
+            {abierta.cotejo ? (
+              <Panel title={`Entrada ${abierta.peticion.entrada ?? "—"} contra factura`} sinPadding>
+                <p className="cr-body px-[18px] py-3">{abierta.cotejo.summary}</p>
+                <div className="cr-table-scroll">
+                  <table className="cr-table cr-table--compact">
+                    <thead>
+                      <tr><th>Concepto</th><th className="cr-num">Recibido</th><th className="cr-num">Facturado</th><th className="cr-num">Importe recibido</th><th className="cr-num">Importe CFDI</th></tr>
+                    </thead>
+                    <tbody>
+                      {(abierta.cotejo.lineas ?? []).map((linea, indice) => (
+                        <tr key={indice}>
+                          <td>{linea.descripcion}</td>
+                          <td className="cr-num">{linea.cantidadRecibida ?? "—"}</td>
+                          <td className="cr-num">{linea.cantidadFacturada ?? "—"}</td>
+                          <td className="cr-num">{linea.importeRecibido === null ? "—" : cifra(linea.importeRecibido)}</td>
+                          <td className="cr-num">{linea.importeFacturado === null ? "—" : cifra(linea.importeFacturado)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr><td>Total con impuestos · {abierta.peticion.moneda}</td><td /><td /><td className="cr-num">{cifra(abierta.cotejo.receiptTotal)}</td><td className="cr-num">{cifra(abierta.cotejo.invoiceTotal)}</td></tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </Panel>
             ) : null}
 
             {bloqueantes.length > 0 ? (
@@ -857,6 +1166,18 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
               </div>
             </Panel>
 
+            {abierta.peticion.tipo === "MERCANCIA" && abierta.peticion.evidencias.length ? (
+              <button
+                type="button"
+                className="cr-btn cr-btn--secondary cr-btn--sm"
+                disabled={analizandoSello}
+                onClick={() => void analizarSello()}
+              >
+                <Sparkles strokeWidth={1.75} />
+                {analizandoSello ? "Analizando sello…" : selloAprobado ? "Volver a analizar sello" : "Analizar sello con IA"}
+              </button>
+            ) : null}
+
             {/* Plegado y SIN panel a propósito: hace falta para auditar, no para
                 decidir. Como disclosure ligero se lee como nota al pie y no
                 compite con los dos bloques de arriba, que sí son la revisión. */}
@@ -864,6 +1185,17 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
               <summary className="cr-small">Datos fiscales del CFDI</summary>
               <table className="cr-table cr-table--compact">
                 <tbody>
+                  <tr>
+                    <td>Folio del portal</td>
+                    <td className="cr-mono">{abierta.peticion.folio}</td>
+                  </tr>
+                  <tr>
+                    <td>Serie y folio del CFDI</td>
+                    <td className="cr-mono">{[abierta.peticion.serie, abierta.peticion.folioFiscal].filter(Boolean).join(" · ") || "—"}</td>
+                  </tr>
+                  <tr><td>Emitida</td><td className="cr-mono">{fecha(abierta.peticion.fechaEmision)}</td></tr>
+                  <tr><td>Método y forma de pago</td><td className="cr-mono">{abierta.peticion.metodoPago ?? "—"} · {abierta.peticion.formaPago ?? "—"}</td></tr>
+                  <tr><td>Retenciones</td><td className="cr-mono">{money(abierta.peticion.retenidos, abierta.peticion.moneda)}</td></tr>
                   <tr>
                     <td>UUID</td>
                     <td className="cr-mono">{abierta.peticion.uuid || "—"}</td>
@@ -891,6 +1223,71 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
               </table>
             </details>
 
+            <details className="cr-detalle-fiscal">
+              <summary className="cr-small">Historial de la factura</summary>
+              <ul className="cr-small">
+                {abierta.bitacora.map((evento, indice) => (
+                  <li key={indice}>{fecha(evento.cuando)} · {ETIQUETA[evento.a] ?? evento.a}{evento.comentario ? `: ${evento.comentario}` : ""}</li>
+                ))}
+              </ul>
+            </details>
+
+            {abierta.peticion.sapError ? <Aviso tono="danger" titulo="Registro SAP pendiente">{abierta.peticion.sapError}</Aviso> : null}
+            {abierta.peticion.sapDocNum ? <p className="cr-body">Factura en SAP: <strong>{abierta.peticion.sapDocNum}</strong></p> : null}
+
+            {abierta.peticion.credito.inicio ? (
+              <Aviso tono={abierta.peticion.credito.vencida ? "danger" : "ok"} titulo="Plazo de crédito">
+                Inició al liberarse el {fecha(abierta.peticion.credito.inicio)} · {textoCredito(abierta.peticion.credito)}
+                {abierta.peticion.credito.vencimiento ? ` · vencimiento ${fecha(abierta.peticion.credito.vencimiento)}` : " · días no configurados"}
+              </Aviso>
+            ) : null}
+
+            {abierta.peticion.tipo === "MERCANCIA" ? (
+              <Panel title="Validación visual de la póliza" sinPadding>
+                <p className="cr-body px-[18px] py-3">Vista previa antes del registro automático en SAP.</p>
+                <table className="cr-table cr-table--compact">
+                  <thead><tr><th>Movimiento</th><th>Cuenta</th><th>Descripción</th><th className="cr-num">Importe</th></tr></thead>
+                  <tbody>
+                    {abierta.polizaPrevia.movimientos.map((movimiento) => (
+                      <tr key={`${movimiento.tipo}-${movimiento.cuenta}`}>
+                        <td>{movimiento.tipo === "CARGO" ? "Cargo" : "Abono"}</td>
+                        <td className="cr-mono">{movimiento.cuenta}</td>
+                        <td>{movimiento.descripcion}</td>
+                        <td className="cr-num">{money(abierta.polizaPrevia.importe, abierta.polizaPrevia.moneda)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Panel>
+            ) : null}
+
+            {abierta.peticion.estatus === "PAGADA" ? (
+              <Panel title="Comprobante y complemento de pago">
+                {abierta.peticion.pago.comprobanteFileKey ? (
+                  <Documento tipo="PAGO" fileKey={abierta.peticion.pago.comprobanteFileKey} nombre="Comprobante de transferencia" />
+                ) : (
+                  <form onSubmit={subirComprobante} className="grid gap-3">
+                    <label className="cr-label" htmlFor="comprobante-transferencia">Comprobante de tesorería</label>
+                    <input id="comprobante-transferencia" className="cr-input" name="archivo" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required />
+                    <button className="cr-btn cr-btn--secondary cr-btn--sm" type="submit" disabled={subiendoComprobante}>
+                      {subiendoComprobante ? "Cargando…" : "Cargar y habilitar complemento"}
+                    </button>
+                  </form>
+                )}
+                {abierta.peticion.pago.complementoEstatus === "PENDIENTE" ? (
+                  <Aviso tono="danger" titulo="Complemento pendiente">Vence {fecha(abierta.peticion.pago.complementoLimite)}. Después se bloquean nuevas facturas y dispersiones.</Aviso>
+                ) : abierta.peticion.pago.complementoEstatus === "RECIBIDO" ? (
+                  <Aviso tono="ok" titulo="Complemento recibido">El proveedor cumplió con el complemento.</Aviso>
+                ) : null}
+              </Panel>
+            ) : null}
+
+            {abierta.peticion.estatus === "APROBADA_PAGO" ? (
+              <button className="cr-btn cr-btn--primary cr-btn--sm" disabled={decidiendo} onClick={() => void reintentarSap()}>
+                Reintentar registro en SAP
+              </button>
+            ) : null}
+
             {/* Pago simulado. Solo para facturas ya registradas en B1 y solo con
                 la bandera de pruebas: en produccion no aparece y la ruta
                 responde 403. */}
@@ -915,6 +1312,10 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
             {/* Pie de decisión: anclado abajo y siempre visible. El motivo va
                 aquí y no en el cuerpo porque devolver y rechazar lo exigen, y
                 tenerlo lejos de sus botones obliga a subir y bajar. */}
+            {[
+              "EN_REVISION",
+              "NC_EN_REVISION",
+            ].includes(abierta.peticion.estatus) ? (
             <div className="cr-revision__pie">
               <input
                 className="cr-input cr-input--sm"
@@ -928,10 +1329,28 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                   type="button"
                   className="cr-btn cr-btn--primary cr-btn--sm"
                   onClick={() => void decidir("aprobar")}
-                  disabled={decidiendo}
+                  disabled={decidiendo || bloqueantes.length > 0 || (
+                    abierta.peticion.tipo === "MERCANCIA" && (
+                      !selloAprobado ||
+                      !abierta.cotejo?.canProceed ||
+                      !abierta.peticion.xmlFileKey ||
+                      !abierta.peticion.pdfFileKey ||
+                      !abierta.peticion.evidencias.length
+                    )
+                  )}
                 >
                   <Check strokeWidth={1.75} /> Aprobar para pago
                 </button>
+                {!abierta.peticion.enEspera ? (
+                  <button
+                    type="button"
+                    className="cr-btn cr-btn--secondary cr-btn--sm"
+                    onClick={() => void decidir("esperar")}
+                    disabled={decidiendo}
+                  >
+                    <Pause strokeWidth={1.75} /> Dejar en espera
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="cr-btn cr-btn--secondary cr-btn--sm"
@@ -952,6 +1371,7 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                 </button>
               </div>
             </div>
+            ) : null}
           </aside>
         </>
       ) : null}

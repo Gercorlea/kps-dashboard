@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { handleApiError } from "@/lib/api";
-import { requireModule } from "@/lib/auth/guards";
-import { StoredDocument } from "@/models/proveedores";
+import { ApiError, handleApiError } from "@/lib/api";
+import { requireUser } from "@/lib/auth/guards";
+import { canAccess } from "@/lib/rbac";
+import { Invoice, StoredDocument } from "@/models/proveedores";
 
 // Descarga de un archivo cargado por un proveedor: el XML, el PDF o la
 // evidencia.
@@ -11,14 +12,18 @@ import { StoredDocument } from "@/models/proveedores";
 // el mismo origen, y no corren. Por eso una ruta propia sobre la misma colección.
 //
 // La clave NO es la autorización: cada descarga exige sesión con el módulo
-// `proveedores`. Sin eso bastaría con tener una clave para leer la factura de
-// cualquier empresa.
+// de proveedores o de peticiones. Los revisores solo acceden a documentos
+// vinculados a una factura; la clave por sí sola nunca autoriza la descarga.
 
 export const runtime = "nodejs";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ key: string }> }) {
   try {
-    await requireModule("proveedores-alta");
+    const user = await requireUser();
+    const puedeVerProveedor = canAccess(user, "proveedores-alta");
+    if (!puedeVerProveedor && !canAccess(user, "peticiones")) {
+      throw new ApiError(403, "SIN_PERMISO", "No tienes acceso a estos documentos.");
+    }
     const { key } = await params;
 
     const doc = await StoredDocument().findById(key).lean();
@@ -27,6 +32,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ key: st
         { ok: false, error: { code: "NO_ENCONTRADO", message: "Ese archivo no existe." } },
         { status: 404 }
       );
+    }
+
+    if (!puedeVerProveedor) {
+      const vinculada = await Invoice().exists({
+        $or: [
+          { xmlFileKey: key },
+          { pdfFileKey: key },
+          { "evidence.fileKey": key },
+          { transferReceiptFileKey: key },
+          { complementXmlFileKey: key },
+          { complementPdfFileKey: key },
+        ],
+      });
+      if (!vinculada) throw new ApiError(403, "SIN_PERMISO", "El archivo no pertenece a una petición.");
     }
 
     // `doc.bytes` llega como Binary de BSON; `.buffer` da los bytes crudos.

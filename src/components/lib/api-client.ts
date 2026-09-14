@@ -19,10 +19,11 @@ type Envelope<T> =
   | { ok: false; error: { code: string; message: string; details?: unknown } };
 
 async function llamar(url: string, init?: RequestInit): Promise<Response> {
+  const esFormulario = typeof FormData !== "undefined" && init?.body instanceof FormData;
   return fetch(url, {
     ...init,
     headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.body && !esFormulario ? { "Content-Type": "application/json" } : {}),
       ...init?.headers,
     },
   });

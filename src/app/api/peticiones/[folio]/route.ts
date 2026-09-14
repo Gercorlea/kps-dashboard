@@ -4,6 +4,7 @@ import { ApiError, handleApiError, ok, parseJson } from "@/lib/api";
 import { requireModule, requireSuperadmin } from "@/lib/auth/guards";
 import { sapFetch } from "@/lib/sap/service-layer";
 import { calcularCobertura, type Cobertura, type LineaFacturada } from "@/lib/proveedores/cobertura";
+import { diasCreditoDe, estadoCredito, vencimientoCredito } from "@/lib/proveedores/credito";
 import { registrarFacturaEnSap, RegistroSapError, REGISTRABLE } from "@/lib/proveedores/registrar-sap";
 import { AuditLog, Invoice, InvoiceEvent, Supplier, ValidationResult } from "@/models/proveedores";
 
@@ -30,6 +31,48 @@ interface LineaSap {
   ItemCode?: string | null;
   ItemDescription?: string | null;
   Quantity: number;
+}
+
+interface CondicionPagoSap {
+  GroupNumber: number;
+  NumberOfAdditionalDays?: number | null;
+  NumberOfAdditionalMonths?: number | null;
+}
+
+let condicionesPagoCache: CondicionPagoSap[] | null = null;
+
+/**
+ * La condición de la orden manda sobre la ficha del proveedor: una compra puede
+ * pactarse a un plazo distinto. Si SAP no responde, se conserva el plazo de la
+ * ficha o la política general configurada.
+ */
+async function diasCreditoAplicable(
+  factura: { poDocEntry?: number | null },
+  proveedor: { creditDays?: unknown; paymentTerms?: unknown } | null
+): Promise<number | null> {
+  if (factura.poDocEntry) {
+    try {
+      const orden = await sapFetch<{ PaymentGroupCode?: number | null }>(
+        `/PurchaseOrders(${factura.poDocEntry})?$select=PaymentGroupCode`
+      );
+      if (orden.PaymentGroupCode !== null && orden.PaymentGroupCode !== undefined) {
+        if (!condicionesPagoCache) {
+          const respuesta = await sapFetch<{ value?: CondicionPagoSap[] }>(
+            "/PaymentTermsTypes?$select=GroupNumber,NumberOfAdditionalDays,NumberOfAdditionalMonths&$top=100"
+          );
+          condicionesPagoCache = respuesta.value ?? [];
+        }
+        const condicion = condicionesPagoCache.find((c) => c.GroupNumber === orden.PaymentGroupCode);
+        if (condicion) {
+          return (condicion.NumberOfAdditionalDays ?? 0) +
+            (condicion.NumberOfAdditionalMonths ?? 0) * 30;
+        }
+      }
+    } catch {
+      // La caída de un catálogo no invalida la decisión: se usa el plazo local.
+    }
+  }
+  return diasCreditoDe(proveedor);
 }
 
 /** Las lineas de una factura del portal, en la forma que espera el calculo. */
@@ -123,6 +166,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
         folio: f.folio,
         uuid: f.uuid ?? null,
         serie: f.serie ?? null,
+        folioFiscal: f.cfdiFolio ?? null,
+        comentarioProveedor: f.supplierComment ?? null,
+        sapDocNum: f.sapDocNum ?? null,
+        sapError: f.sapError ?? null,
         tipo: f.type,
         estatus: f.status,
         cardCode: f.supplierCode,
@@ -144,7 +191,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
         evidencias: Array.isArray(f.evidence) ? f.evidence : [],
         conceptos: Array.isArray(f.lines) ? f.lines : [],
         motivoRechazo: f.rejectionReason ?? null,
+        enEspera: f.onHoldAt != null,
+        esperaDesde: f.onHoldAt?.toISOString() ?? null,
         enviada: (f.submittedAt ?? f.createdAt)?.toISOString() ?? null,
+        credito: estadoCredito({
+          inicio: f.paymentApprovedAt ?? f.creditStartsAt ?? null,
+          vencimiento: f.creditDueAt ?? f.sapDocDueDate ?? null,
+          dias: f.creditDays ?? null,
+        }),
+        pago: {
+          comprobanteFileKey: f.transferReceiptFileKey ?? null,
+          comprobanteCargadoEl: f.transferReceiptUploadedAt?.toISOString() ?? null,
+          complementoEstatus: f.complementStatus ?? "NO_HABILITADO",
+          complementoLimite: f.complementDueAt?.toISOString() ?? null,
+          complementoXmlFileKey: f.complementXmlFileKey ?? null,
+          complementoPdfFileKey: f.complementPdfFileKey ?? null,
+        },
       },
       validaciones: reglas.map((r) => ({
         regla: r.rule,
@@ -153,6 +215,28 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
         detalle: r.detail,
       })),
       cobertura,
+      cotejo: f.matchResult ?? null,
+      polizaPrevia: {
+        etapa: "VALIDACION_PREVIA",
+        importe: String(
+          typeof f.matchResult?.receiptTotal === "string" || typeof f.matchResult?.receiptTotal === "number"
+            ? f.matchResult.receiptTotal
+            : f.total ?? "0.00"
+        ),
+        moneda: f.currency ?? "MXN",
+        movimientos: [
+          {
+            tipo: "CARGO",
+            cuenta: process.env.SAP_BRIDGE_ACCOUNT?.trim() || "2010030000",
+            descripcion: "Cancelación de cuenta puente de mercancía recibida",
+          },
+          {
+            tipo: "ABONO",
+            cuenta: String((proveedor as unknown as Record<string, unknown> | null)?.payablesAccount ?? "Por confirmar en DEP-03"),
+            descripcion: `Pasivo del proveedor ${f.supplierCode}`,
+          },
+        ],
+      },
       bitacora: eventos.map((e) => ({
         de: e.fromStatus,
         a: e.toStatus,
@@ -174,6 +258,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
  */
 const DESTINO = {
   aprobar: "APROBADA_PAGO",
+  // Esperar es una marca, no otro estado del ciclo: la factura sigue pendiente
+  // y el portal hermano continúa entendiendo EN_REVISION.
+  esperar: "EN_REVISION",
   corregir: "EN_CORRECCION",
   rechazar: "RECHAZADA",
 } as const;
@@ -182,7 +269,7 @@ const DESTINO = {
 const DECIDIBLES = ["EN_REVISION", "NC_EN_REVISION"];
 
 const EsquemaDecision = z.object({
-  decision: z.enum(["aprobar", "corregir", "rechazar"]),
+  decision: z.enum(["aprobar", "esperar", "corregir", "rechazar"]),
   motivo: z.string().trim().max(1000).optional(),
 });
 
@@ -205,7 +292,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ folio: 
 
     // Devolver o rechazar sin decir por qué deja al proveedor sin nada que
     // corregir. §06 es explícito: no se le dice "no" sin decirle qué falla.
-    if (decision !== "aprobar" && !motivo) {
+    if ((decision === "corregir" || decision === "rechazar") && !motivo) {
       throw new ApiError(
         422,
         "FALTA_MOTIVO",
@@ -215,8 +302,42 @@ export async function POST(req: Request, { params }: { params: Promise<{ folio: 
       );
     }
 
-    const destino = DESTINO[decision];
+    if (decision === "aprobar" && f.type === "MERCANCIA") {
+      const evidencias = f.evidence as Array<{ fileKey?: string; title?: string; description?: string }>;
+      const bloqueantes = await ValidationResult().countDocuments({ invoiceFolio: folio, severity: "BLOQUEANTE", passed: false });
+      const selloValidado = await ValidationResult().exists({ invoiceFolio: folio, rule: "SELLO_ALMACEN", passed: true });
+      if (!f.xmlFileKey || !f.pdfFileKey || !evidencias.some(e => e.fileKey && e.title?.trim() && e.description?.trim())) {
+        throw new ApiError(422, "DOCUMENTOS_INCOMPLETOS", "Devuelve la factura para completar XML, PDF y evidencia antes de aprobarla.");
+      }
+      if (!f.baseEntry || f.matchResult?.canProceed !== true || bloqueantes > 0) {
+        throw new ApiError(422, "COTEJO_PENDIENTE", "La factura necesita un cotejo válido contra su entrada. Devuélvela para que el proveedor la guarde y envíe de nuevo.");
+      }
+      if (!selloValidado) {
+        throw new ApiError(422, "SELLO_PENDIENTE", "La evidencia debe pasar el reconocimiento del sello de almacén antes de aprobarse.");
+      }
+    }
+
     const ahora = new Date();
+    const destino = DESTINO[decision];
+    const proveedor = decision === "aprobar"
+      ? await Supplier().findOne({ supplierCode: f.supplierCode }).lean()
+      : null;
+    const diasCredito = decision === "aprobar"
+      ? await diasCreditoAplicable(f, proveedor)
+      : null;
+    const datosCredito =
+      decision === "aprobar"
+        ? {
+            creditStartsAt: ahora,
+            paymentApprovedAt: ahora,
+            paymentApprovedBy: usuario.id,
+            creditDays: diasCredito,
+            creditDueAt: diasCredito === null ? null : vencimientoCredito(ahora, diasCredito),
+          }
+        : {};
+    const datosEspera = decision === "esperar"
+      ? { onHoldAt: ahora, onHoldBy: usuario.id, onHoldReason: motivo ?? null }
+      : { onHoldAt: null, onHoldBy: null, onHoldReason: null };
 
     // El filtro repite el estado: entre el `findOne` de arriba y este update
     // otra persona pudo decidir la misma petición, y sin esta condición la
@@ -228,7 +349,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ folio: 
           status: destino,
           reviewedBy: usuario.id,
           reviewedAt: ahora,
-          rejectionReason: decision === "aprobar" ? null : (motivo ?? null),
+          rejectionReason:
+            decision === "corregir" || decision === "rechazar" ? (motivo ?? null) : null,
+          ...datosCredito,
+          ...datosEspera,
         },
       }
     );
@@ -276,7 +400,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ folio: 
     //
     // El reintento es seguro: `registrarFacturaEnSap` busca por UUID antes de
     // crear, así que aunque la factura ya haya entrado no se duplica.
-    if (decision !== "aprobar") return ok({ folio, estatus: destino });
+    if (decision !== "aprobar") return ok({ folio, estatus: destino, enEspera: decision === "esperar" });
 
     try {
       const sap = await registrarFacturaEnSap({

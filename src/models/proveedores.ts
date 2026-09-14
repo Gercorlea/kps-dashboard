@@ -44,6 +44,7 @@ export interface ISupplier {
   fiscalAddress: Record<string, unknown>;
   contact: Record<string, unknown>;
   paymentTerms: string;
+  creditDays: number | null;
   currency: string | null;
   groupCode: number | null;
   sapValid: boolean | null;
@@ -66,6 +67,7 @@ const SupplierSchema = new Schema<ISupplier>(
     fiscalAddress: { type: Schema.Types.Mixed, default: {} },
     contact: { type: Schema.Types.Mixed, default: {} },
     paymentTerms: { type: String, default: "" },
+    creditDays: { type: Number, default: null },
     currency: { type: String, default: null },
     groupCode: { type: Number, default: null },
     sapValid: { type: Boolean, default: null },
@@ -90,6 +92,13 @@ export interface IInvoice {
   status: string;
   uuid: string | null;
   serie: string | null;
+  cfdiFolio: string | null;
+  supplierComment: string | null;
+  matchResult: Record<string, unknown> | null;
+  poDocEntry: number | null;
+  baseEntry: number | null;
+  sapDocNum: number | null;
+  sapError: string | null;
   issueDate: Date | null;
   issuerTaxId: string | null;
   receiverTaxId: string | null;
@@ -111,6 +120,23 @@ export interface IInvoice {
   reviewedBy: string | null;
   reviewedAt: Date | null;
   rejectionReason: string | null;
+  onHoldAt: Date | null;
+  onHoldBy: string | null;
+  onHoldReason: string | null;
+  creditStartsAt: Date | null;
+  paymentApprovedAt: Date | null;
+  paymentApprovedBy: string | null;
+  creditDueAt: Date | null;
+  creditDays: number | null;
+  sapDocDueDate: Date | null;
+  paidAt: Date | null;
+  complementoLimite: Date | null;
+  transferReceiptFileKey: string | null;
+  transferReceiptUploadedAt: Date | null;
+  complementStatus: "NO_HABILITADO" | "PENDIENTE" | "RECIBIDO";
+  complementDueAt: Date | null;
+  complementXmlFileKey: string | null;
+  complementPdfFileKey: string | null;
   /**
    * Archivado: se saca de la bandeja sin borrar nada.
    *
@@ -134,6 +160,13 @@ const InvoiceSchema = new Schema<IInvoice>(
     status: { type: String, required: true },
     uuid: { type: String, default: null },
     serie: { type: String, default: null },
+    cfdiFolio: { type: String, default: null },
+    supplierComment: { type: String, default: null },
+    matchResult: { type: Schema.Types.Mixed, default: null },
+    poDocEntry: { type: Number, default: null },
+    baseEntry: { type: Number, default: null },
+    sapDocNum: { type: Number, default: null },
+    sapError: { type: String, default: null },
     issueDate: { type: Date, default: null },
     issuerTaxId: { type: String, default: null },
     receiverTaxId: { type: String, default: null },
@@ -156,6 +189,23 @@ const InvoiceSchema = new Schema<IInvoice>(
     reviewedBy: { type: String, default: null },
     reviewedAt: { type: Date, default: null },
     rejectionReason: { type: String, default: null },
+    onHoldAt: { type: Date, default: null },
+    onHoldBy: { type: String, default: null },
+    onHoldReason: { type: String, default: null },
+    creditStartsAt: { type: Date, default: null },
+    paymentApprovedAt: { type: Date, default: null },
+    paymentApprovedBy: { type: String, default: null },
+    creditDueAt: { type: Date, default: null },
+    creditDays: { type: Number, default: null },
+    sapDocDueDate: { type: Date, default: null },
+    paidAt: { type: Date, default: null },
+    complementoLimite: { type: Date, default: null },
+    transferReceiptFileKey: { type: String, default: null },
+    transferReceiptUploadedAt: { type: Date, default: null },
+    complementStatus: { type: String, default: "NO_HABILITADO" },
+    complementDueAt: { type: Date, default: null },
+    complementXmlFileKey: { type: String, default: null },
+    complementPdfFileKey: { type: String, default: null },
     archivedAt: { type: Date, default: null },
     archivedBy: { type: String, default: null },
     archiveReason: { type: String, default: null },
@@ -315,6 +365,63 @@ const StoredDocumentSchema = new Schema<IStoredDocument>(
 );
 
 // ---------------------------------------------------------------------------
+// Notas de crédito
+// ---------------------------------------------------------------------------
+//
+// El CFDI de tipo E que el proveedor sube por el portal para corregir una
+// factura que cobra de más. Aquí llega ya validado —el portal comprueba que sea
+// tipo E, que relacione el UUID de la factura, el tipo de relación, el ejercicio
+// fiscal, la moneda y el importe—; lo que falta es la decisión humana y, tras
+// ella, el documento en Business One.
+//
+// LOS IMPORTES SON Decimal128 Y NO NUMBER. Es dinero: pasar por coma flotante le
+// quita centavos, y el portal los escribe con ese tipo. Convertirlos a number
+// aquí para pintarlos rompería el redondeo justo en los documentos que existen
+// para cuadrar una diferencia.
+
+export type CreditNoteStatus = "PENDIENTE" | "APROBADA" | "RECHAZADA";
+
+export interface ICreditNote {
+  _id: Types.ObjectId;
+  /** Folio de la factura del portal que esta nota corrige. */
+  invoiceFolio: string;
+  uuid: string;
+  /** DocEntry de la nota en B1. Nulo mientras no se haya registrado allí. */
+  sapDocEntry: number | null;
+  amount: Types.Decimal128;
+  currency: string;
+  issueDate: Date | null;
+  xmlFileKey: string;
+  pdfFileKey: string;
+  status: CreditNoteStatus;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
+  reason: string | null;
+  sapAdjustedAt: Date | null;
+  createdAt: Date;
+}
+
+const CreditNoteSchema = new Schema<ICreditNote>(
+  {
+    invoiceFolio: { type: String, required: true },
+    uuid: { type: String, required: true },
+    sapDocEntry: { type: Number, default: null },
+    amount: { type: Schema.Types.Decimal128, required: true },
+    currency: { type: String, default: "MXN" },
+    issueDate: { type: Date, default: null },
+    xmlFileKey: { type: String, required: true },
+    pdfFileKey: { type: String, required: true },
+    status: { type: String, required: true },
+    reviewedBy: { type: String, default: null },
+    reviewedAt: { type: Date, default: null },
+    reason: { type: String, default: null },
+    sapAdjustedAt: { type: Date, default: null },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { strict: false, collection: "creditNotes", versionKey: false }
+);
+
+// ---------------------------------------------------------------------------
 // Registro perezoso
 // ---------------------------------------------------------------------------
 //
@@ -336,3 +443,4 @@ export const ValidationResult = () =>
 export const StoredDocument = () =>
   modelo<IStoredDocument>("StoredDocument", StoredDocumentSchema);
 export const PortalUser = () => modelo<IPortalUser>("PortalUser", PortalUserSchema);
+export const CreditNote = () => modelo<ICreditNote>("CreditNote", CreditNoteSchema);
