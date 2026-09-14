@@ -382,7 +382,9 @@ function AnalisisTableBase({
         pagina={pagina}
         paginas={paginas}
         total={totalFiltradas}
+        porPagina={porPagina}
         onCambiar={onPagina}
+        sustantivo="filas"
       />
     </section>
   );

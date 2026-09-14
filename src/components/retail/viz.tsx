@@ -119,6 +119,11 @@ export function CajaTooltip({
       {total ? (
         <div className="cr-viz-tip__fila cr-viz-tip__total">
           <span className="cr-viz-tip__nombre">{total.etiqueta}</span>
+          {/* La nota también aquí, como en las filas de arriba: `total` está
+              tipado como FilaViz y `nota` es un campo general de la interfaz.
+              Faltaba, y el aviso de "parcial · falta …" que la gráfica de
+              ventas netas ya calculaba nunca llegó a pintarse. */}
+          {total.nota ? <span className="cr-viz-tip__nota">{total.nota}</span> : null}
           <span className="cr-viz-tip__valor">{total.valor}</span>
         </div>
       ) : null}

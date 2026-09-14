@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { AccesoDenegado } from "@/components/dashboard/AccesoDenegado";
-import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Pagina } from "@/components/dashboard/Pagina";
 import { VentasRetailersChart } from "@/components/dashboard/VentasRetailersChart";
 import { RetailerCards } from "@/components/retail/RetailerCards";
 import { Kpi, Panel } from "@/components/ui/basicos";
@@ -31,12 +31,13 @@ export default async function RetailPage() {
   const [retailers, summary] = await Promise.all([detalleRetailers(), resumenDashboard()]);
 
   return (
-    <>
-      <PageHeader
-        title="Retailers"
-        description="Abre un retailer para ver su histórico y sus reportes"
-      />
-      <div className="cr-page-content cr-page-content--pegado flex flex-col gap-8">
+    <Pagina
+      title="Retailers"
+      description="Abre un retailer para ver su histórico y sus reportes"
+      // Las cards de retailer y el bloque de agregados son dos unidades
+      // distintas, no una lista: piden más aire entre sí.
+      ritmo="amplio"
+    >
         <RetailerCards retailers={retailers} serie={summary.serie} />
 
         {/* Los agregados leen como un bloque: la fila de KPIs es el titular y
@@ -89,7 +90,6 @@ export default async function RetailPage() {
             <VentasRetailersChart serie={summary.serie} retailers={summary.retailers} />
           </Panel>
         </div>
-      </div>
-    </>
+    </Pagina>
   );
 }

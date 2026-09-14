@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Package,
   Sparkles,
   Table2,
   Inbox,
@@ -29,6 +30,7 @@ export interface UsuarioUI {
 const ICONOS: Record<string, React.ReactNode> = {
   "/dashboard": <LayoutDashboard strokeWidth={1.75} />,
   "/retail": <Table2 strokeWidth={1.75} />,
+  "/catalogo": <Package strokeWidth={1.75} />,
   "/cronos-ia": <Sparkles strokeWidth={1.75} />,
   "/proveedores": <Truck strokeWidth={1.75} />,
   "/peticiones": <Inbox strokeWidth={1.75} />,

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { canAccess, expandirModulos } from "@/lib/rbac";
+import { canAccess, expandirModulos, MODULE_IDS, NAV_SECTIONS } from "@/lib/rbac";
 
 process.env.JWT_SECRET = "secreto-de-prueba-para-vitest";
 process.env.JWT_REFRESH_SECRET = "otro-secreto-de-prueba";
@@ -59,6 +59,32 @@ describe("canAccess (§5.4)", () => {
 
   it("sin usuario no hay acceso", () => {
     expect(canAccess(null, "retail")).toBe(false);
+  });
+
+  // El catálogo es un módulo aparte de Retail aunque comparta sección en el
+  // menú: quien carga reportes de venta no tiene por qué poder reemplazar el
+  // catálogo completo de la empresa.
+  it("catalogo es un permiso propio, no lo arrastra retail", () => {
+    const u = { role: "user", modules: ["retail"] };
+    expect(canAccess(u, "retail")).toBe(true);
+    expect(canAccess(u, "catalogo")).toBe(false);
+
+    const v = { role: "user", modules: ["catalogo"] };
+    expect(canAccess(v, "catalogo")).toBe(true);
+    expect(canAccess(v, "retail")).toBe(false);
+  });
+
+  it("catalogo está en la lista maestra y se puede asignar", () => {
+    // MODULE_IDS es lo que ofrece la pantalla de alta de usuarios; si el módulo
+    // no está ahí, nadie puede concederlo y la página queda inalcanzable.
+    expect(MODULE_IDS).toContain("catalogo");
+    expect(expandirModulos(["catalogo"])).toEqual(["catalogo"]);
+  });
+
+  it("catalogo tiene entrada de menú en la sección de módulos", () => {
+    const modulos = NAV_SECTIONS.find((s) => s.id === "modulos");
+    expect(modulos?.items.map((i) => i.href)).toContain("/catalogo");
+    expect(modulos?.items.find((i) => i.href === "/catalogo")?.module).toBe("catalogo");
   });
 });
 

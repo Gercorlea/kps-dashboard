@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Notificaciones } from "@/components/dashboard/Notificaciones";
 import { Sidebar } from "@/components/dashboard/Sidebar";
+import { ToastProvider } from "@/components/ui/Toast";
 import { getSessionUser } from "@/lib/auth/guards";
 import { connectDB } from "@/lib/db";
 import { User } from "@/models/User";
@@ -28,18 +29,22 @@ export default async function AppLayout({
     modules: user.modules.map(String),
   };
 
+  // El proveedor de avisos envuelve todo el dashboard: cualquier pantalla puede
+  // llamar a `useToast()` sin montar nada propio.
   return (
-    <div className="cr-shell">
-      <Sidebar usuario={usuario} />
-      <main className="cr-shell__main">
-        {/* Barra superior. Arranca justo despues del borde del sidebar, como en
-            Industria Real. Solo en escritorio: en movil ya hay .cr-mobile-nav y
-            dos barras apiladas se comerian media pantalla. */}
-        <div className="cr-topbar">
-          <Notificaciones />
-        </div>
-        {children}
-      </main>
-    </div>
+    <ToastProvider>
+      <div className="cr-shell">
+        <Sidebar usuario={usuario} />
+        <main className="cr-shell__main">
+          {/* Barra superior. Arranca justo despues del borde del sidebar, como
+              en Industria Real. Solo en escritorio: en movil ya hay
+              .cr-mobile-nav y dos barras apiladas se comerian media pantalla. */}
+          <div className="cr-topbar">
+            <Notificaciones />
+          </div>
+          {children}
+        </main>
+      </div>
+    </ToastProvider>
   );
 }

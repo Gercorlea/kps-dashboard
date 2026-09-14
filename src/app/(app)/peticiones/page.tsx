@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { AccesoDenegado } from "@/components/dashboard/AccesoDenegado";
-import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Pagina } from "@/components/dashboard/Pagina";
 import { PeticionesAdmin } from "@/components/dashboard/PeticionesAdmin";
 import { getSessionUser } from "@/lib/auth/guards";
 import { canAccess } from "@/lib/rbac";
@@ -13,18 +13,15 @@ export default async function PeticionesPage() {
   if (!canAccess(usuario, "peticiones")) return <AccesoDenegado modulo="Peticiones" />;
 
   return (
-    <>
-      <PageHeader
-        title="Peticiones"
-        description="Facturas recibidas por el portal, pendientes de decisión"
-      />
-      <div className="cr-page-content">
-        {/* Archivar es solo de superadmin. El componente es de cliente y no
-            puede consultar el rol, así que se decide aquí. Ocultar el botón no
-            es la protección: la de verdad la hace `requireSuperadmin` en el
-            PATCH, esto solo evita ofrecer algo que va a devolver 403. */}
-        <PeticionesAdmin esAdmin={usuario.role === "superadmin"} />
-      </div>
-    </>
+    <Pagina
+      title="Peticiones"
+      description="Facturas recibidas por el portal, pendientes de decisión"
+    >
+      {/* Archivar es solo de superadmin. El componente es de cliente y no
+          puede consultar el rol, así que se decide aquí. Ocultar el botón no
+          es la protección: la de verdad la hace `requireSuperadmin` en el
+          PATCH, esto solo evita ofrecer algo que va a devolver 403. */}
+      <PeticionesAdmin esAdmin={usuario.role === "superadmin"} />
+    </Pagina>
   );
 }

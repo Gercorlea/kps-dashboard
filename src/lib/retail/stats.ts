@@ -344,3 +344,121 @@ function ordenRetailer(id: string): number {
   const i = ORDEN_RETAILERS.indexOf(id);
   return i === -1 ? ORDEN_RETAILERS.length : i;
 }
+
+// --- Ventas netas mensuales (gráfica de /dashboard) --------------------
+
+/** Un mes CON reporte. Los meses sin reporte no existen en la serie. */
+export interface PuntoVentasNetas {
+  periodo: string; // "2026-03"
+  /** Suma de los retailers que SÍ reportaron ese mes. Nunca null aquí. */
+  total: number;
+  /** Importe por retailer; la clave FALTA en el que no reportó. */
+  porRetailer: Record<string, number>;
+}
+
+export interface VentasNetas {
+  /** Todo el histórico, cronológico, sólo meses con reporte. */
+  serie: PuntoVentasNetas[];
+  /** Años seleccionables, descendente. Siempre incluye `anioActual`. */
+  anios: number[];
+  /** Año en curso en UTC, resuelto en el servidor: el filtro por omisión. */
+  anioActual: number;
+  /** Las cuentas cuyo importe se suma, en el orden de RETAILERS. */
+  retailers: { id: string; nombre: string }[];
+}
+
+interface VentaMesMoneda {
+  _id: { account: string; periodo: string };
+  importe: number;
+}
+
+/**
+ * Venta neta mensual sumada de todos los retailers, todo el histórico.
+ *
+ * Sale sólo de SalesReport y no de la unión de dos colecciones que hace
+ * `resumenDashboard`: el dinero vive únicamente aquí. DailySale —la ingesta por
+ * hojas fijas de San Pablo— guarda `units` y ningún campo de importe, así que no
+ * hay nada suyo que sumar en un eje de pesos.
+ *
+ * Devuelve el histórico COMPLETO y el filtro por año se aplica en el cliente
+ * (ver VentasNetasChart). Un `?anio=` en la URL volvería a ejecutar el render de
+ * /dashboard, y con él `detalleRetailers()` —medido en 2.9 s sin caché—, así que
+ * cada clic en un año pagaría ese scan y repintaría el ranking, que no tiene
+ * nada que ver con el año. La serie entera son ~30 meses: unos 2 KB. Es el mismo
+ * criterio, ya medido, del bundle de /api/retail/analisis/resumen.
+ *
+ * Cero y null NO son lo mismo, y de aquí sale la distinción que respeta la
+ * gráfica: un 0 viene de filas que reportaron cero —eso lo cubre el $ifNull— y
+ * la ausencia viene de que no hay bucket en el $group. Un mes cuyas filas suman
+ * genuinamente $0 es un dato y debe pintarse como 0; un mes sin reporte corta la
+ * línea. Por eso `total` es `number` y no `number | null`: un mes que está en la
+ * serie tiene filas, y la nulabilidad aparece sólo al armar las doce casillas
+ * del año en el cliente.
+ */
+export async function ventasNetasMensuales(): Promise<VentasNetas> {
+  await connectDB();
+
+  // Sin $match ni $sort: son ~120 filas (cuentas × meses) y ordenarlas en JS
+  // por texto es más barato que pedirle a Mongo otra etapa. Sin $addToSet, que
+  // es lo que hace lenta a `detalleRetailers`, así que esta agregación se
+  // esconde entera bajo la latencia de aquella cuando corren en paralelo.
+  const filas = await SalesReport.aggregate<VentaMesMoneda>([
+    {
+      $group: {
+        _id: {
+          account: "$account",
+          // Sin `timezone`, $dateToString formatea en UTC, y `date` se guarda a
+          // medianoche UTC: la clave es la misma que construye claveMes.
+          periodo: { $dateToString: { format: "%Y-%m", date: "$date" } },
+        },
+        importe: { $sum: { $ifNull: ["$posSales", 0] } },
+      },
+    },
+  ]);
+
+  const porPeriodo = new Map<string, Record<string, number>>();
+  for (const f of filas) {
+    const mes = porPeriodo.get(f._id.periodo) ?? {};
+    mes[f._id.account] = (mes[f._id.account] ?? 0) + f.importe;
+    porPeriodo.set(f._id.periodo, mes);
+  }
+
+  // Los periodos ordenan como texto porque son "YYYY-MM": nada de construir
+  // Date sólo para compararlos, que es de donde salen los corrimientos de zona.
+  const serie: PuntoVentasNetas[] = [...porPeriodo.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([periodo, porRetailer]) => ({
+      periodo,
+      total: Object.values(porRetailer).reduce((t, v) => t + v, 0),
+      porRetailer,
+    }));
+
+  // Una cuenta desconocida con dinero TIENE que entrar en la suma: si no, unas
+  // "ventas netas de todos los retailers" reportarían de menos sin decirlo.
+  // colorRetailer ya le da el color de sobra (--viz-6) para el tooltip.
+  const ids = [
+    ...RETAILERS.map((r) => r.id),
+    ...[...new Set(filas.map((f) => f._id.account))].filter(
+      (id) => !RETAILERS.some((r) => r.id === id)
+    ),
+  ];
+
+  // El año en curso se resuelve aquí y no en el navegador: allá saldría en la
+  // zona LOCAL mientras que cada clave de mes se armó en UTC, y un new Date()
+  // durante el render arriesga un desajuste de hidratación.
+  const anioActual = new Date().getUTCFullYear();
+
+  // El año en curso siempre es seleccionable, aunque no tenga un solo reporte:
+  // "todavía no hay nada de 2026" es información, y caer por omisión al año
+  // anterior dejaría leer sus cifras como las de este.
+  const anios = [...new Set([anioActual, ...serie.map((p) => Number(p.periodo.slice(0, 4)))])].sort(
+    (a, b) => b - a
+  );
+
+  return {
+    serie,
+    anios,
+    anioActual,
+    retailers: ids.map((id) => ({ id, nombre: nombreRetailer(id) })),
+  };
+}

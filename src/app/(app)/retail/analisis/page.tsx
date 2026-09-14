@@ -2,7 +2,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AccesoDenegado } from "@/components/dashboard/AccesoDenegado";
-import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Pagina } from "@/components/dashboard/Pagina";
 import { AnalisisExcel } from "@/components/retail/AnalisisExcel";
 import { getSessionUser } from "@/lib/auth/guards";
 import { canAccess } from "@/lib/rbac";
@@ -29,23 +29,20 @@ export default async function AnalisisPage({
   if (!id || !RETAILERS.some((r) => r.id === id)) redirect("/retail");
 
   return (
-    <>
-      <PageHeader
-        title={`Cargar un Excel · ${nombreRetailer(id)}`}
-        description={`Sube el .xlsx del reporte: se analiza en tu navegador y se guarda solo en el histórico de ${nombreRetailer(id)}`}
-        acciones={
-          // La vuelta al panel del que se vino. Va aquí y no en el <AnalisisExcel>
-          // porque el retailer es el mismo de la URL y no depende de nada que
-          // pase en el cliente.
-          <Link href={`/retail/${id}`} className="cr-btn cr-btn--secondary cr-btn--sm">
-            <ArrowLeft strokeWidth={1.75} />
-            Volver a {nombreRetailer(id)}
-          </Link>
-        }
-      />
-      <div className="cr-page-content">
-        <AnalisisExcel retailer={id} />
-      </div>
-    </>
+    <Pagina
+      title={`Cargar un Excel · ${nombreRetailer(id)}`}
+      description={`Sube el .xlsx del reporte: se analiza en tu navegador y se guarda solo en el histórico de ${nombreRetailer(id)}`}
+      acciones={
+        // La vuelta al panel del que se vino. Va aquí y no en el <AnalisisExcel>
+        // porque el retailer es el mismo de la URL y no depende de nada que
+        // pase en el cliente.
+        <Link href={`/retail/${id}`} className="cr-btn cr-btn--secondary cr-btn--sm">
+          <ArrowLeft strokeWidth={1.75} />
+          Volver a {nombreRetailer(id)}
+        </Link>
+      }
+    >
+      <AnalisisExcel retailer={id} />
+    </Pagina>
   );
 }

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { AccesoDenegado } from "@/components/dashboard/AccesoDenegado";
-import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Pagina } from "@/components/dashboard/Pagina";
 import { UsuariosAdmin } from "@/components/dashboard/UsuariosAdmin";
 import { getSessionUser } from "@/lib/auth/guards";
 import { canAccess } from "@/lib/rbac";
@@ -13,14 +13,11 @@ export default async function AdminUsuariosPage() {
   if (!canAccess(usuario, "admin-usuarios")) return <AccesoDenegado modulo="Usuarios" />;
 
   return (
-    <>
-      <PageHeader
-        title="Usuarios"
-        description="Altas, permisos por módulo y control de sesiones"
-      />
-      <div className="cr-page-content">
-        <UsuariosAdmin esSuperadmin={usuario.role === "superadmin"} />
-      </div>
-    </>
+    <Pagina
+      title="Usuarios"
+      description="Altas, permisos por módulo y control de sesiones"
+    >
+      <UsuariosAdmin esSuperadmin={usuario.role === "superadmin"} />
+    </Pagina>
   );
 }

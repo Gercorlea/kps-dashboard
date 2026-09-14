@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { AccesoDenegado } from "@/components/dashboard/AccesoDenegado";
-import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Pagina } from "@/components/dashboard/Pagina";
 import { ProveedoresAdmin } from "@/components/dashboard/ProveedoresAdmin";
 import { getSessionUser } from "@/lib/auth/guards";
 import { canAccess } from "@/lib/rbac";
@@ -16,11 +16,8 @@ export default async function ProveedoresPage() {
   if (!canAccess(usuario, "proveedores-alta")) return <AccesoDenegado modulo="Proveedores" />;
 
   return (
-    <>
-      <PageHeader title="Proveedores" />
-      <div className="cr-page-content">
-        <ProveedoresAdmin />
-      </div>
-    </>
+    <Pagina title="Proveedores">
+      <ProveedoresAdmin />
+    </Pagina>
   );
 }
