@@ -46,6 +46,27 @@ interface SocioSap {
 const CACHE_MS = 60_000;
 let cache: { at: number; items: SocioSap[] } | null = null;
 let cargando: Promise<SocioSap[]> | null = null;
+let condicionesPago: Array<{
+  GroupNumber: number;
+  PaymentTermsGroupName?: string | null;
+  NumberOfAdditionalDays?: number | null;
+  NumberOfAdditionalMonths?: number | null;
+}> | null = null;
+
+async function condicionPago(codigo: number | null | undefined) {
+  if (codigo === null || codigo === undefined) return null;
+  try {
+    if (!condicionesPago) {
+      const r = await sapFetch<{ value?: NonNullable<typeof condicionesPago> }>(
+        "/PaymentTermsTypes?$select=GroupNumber,PaymentTermsGroupName,NumberOfAdditionalDays,NumberOfAdditionalMonths&$top=100"
+      );
+      condicionesPago = r.value ?? [];
+    }
+    return condicionesPago.find((c) => c.GroupNumber === codigo) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 async function traerPadron(): Promise<SocioSap[]> {
   const todos: SocioSap[] = [];
@@ -286,6 +307,10 @@ export async function POST(req: Request) {
     }
 
     const anterior = await Supplier().findOne({ supplierCode: cardCode }).lean();
+    const terminoPago = await condicionPago(bp.PayTermsGrpCode);
+    const diasCredito = terminoPago
+      ? (terminoPago.NumberOfAdditionalDays ?? 0) + (terminoPago.NumberOfAdditionalMonths ?? 0) * 30
+      : null;
 
     // Si KPS lo bloqueó por un recibo de pago pendiente, refrescar desde SAP no
     // debe desbloquearlo por la puerta de atrás.
@@ -307,6 +332,9 @@ export async function POST(req: Request) {
             currency: bp.Currency ?? null,
             groupCode: bp.GroupCode ?? null,
             sapValid: bp.Valid !== "tNO",
+            paymentTerms: terminoPago?.PaymentTermsGroupName ?? anterior?.paymentTerms ?? "",
+            creditDays: diasCredito ?? anterior?.creditDays ?? null,
+            paymentTermsCode: bp.PayTermsGrpCode ?? null,
             status,
             type,
             syncedAt: new Date(),
@@ -316,7 +344,6 @@ export async function POST(req: Request) {
           $setOnInsert: {
             supplierCode: cardCode,
             fiscalAddress: {},
-            paymentTerms: "",
             blocked: false,
             services: [],
             onboarding: null,

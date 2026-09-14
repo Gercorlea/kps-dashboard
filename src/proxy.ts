@@ -163,10 +163,12 @@ export const config = {
      * - /api/auth (login/refresh/recuperar gestionan su propia auth; además, si
      *   /api/auth/refresh pasara por aquí, la renovación se llamaría a sí misma)
      * - /api/sap (integración del equipo en main; sin sesión de dashboard)
+     * - /api/peticiones/alertas (el GET del cron usa Bearer CRON_SECRET; el
+     *   POST interactivo exige sesión dentro de la propia ruta)
      * - /_next (estáticos e imágenes)
      * - archivos públicos con extensión (png, ico, svg…)
      */
     "/((?!api/auth|api/sap|_next/static|_next/image|favicon\\.ico|.*\\..*).*)",
-    "/api/((?!auth|sap).*)",
+    "/api/((?!auth|sap|peticiones/alertas).*)",
   ],
 };

@@ -1,6 +1,7 @@
 import { handleApiError, ok } from "@/lib/api";
 import { requireModule } from "@/lib/auth/guards";
 import { Invoice, Supplier } from "@/models/proveedores";
+import { estadoCredito } from "@/lib/proveedores/credito";
 
 // Bandeja de peticiones: las facturas que los proveedores enviaron por el
 // portal y esperan decisión de KPS.
@@ -11,7 +12,7 @@ export const runtime = "nodejs";
 const CERRADAS = ["CERRADA", "RECHAZADA", "DUPLICADA", "PAGADA"];
 
 /** Lo que espera trabajo de KPS. */
-export const PENDIENTES = ["EN_REVISION", "NC_EN_REVISION"];
+const PENDIENTES = ["EN_REVISION", "NC_EN_REVISION"];
 
 function importe(v: unknown): string {
   // Decimal128 llega como objeto; `String()` da el valor exacto sin pasar por
@@ -79,12 +80,19 @@ export async function GET(req: Request) {
         total: importe(f.total),
         moneda: f.currency ?? "MXN",
         ordenCompra: f.poNumber ?? null,
+        entrada: f.goodsReceiptNumber ?? null,
         enviada: (f.submittedAt ?? f.createdAt)?.toISOString() ?? null,
         archivada: f.archivedAt?.toISOString() ?? null,
         motivoArchivo: f.archiveReason ?? null,
+        enEspera: f.onHoldAt != null,
         xmlFileKey: f.xmlFileKey ?? null,
         pdfFileKey: f.pdfFileKey ?? null,
         evidencias: Array.isArray(f.evidence) ? f.evidence.length : 0,
+        credito: estadoCredito({
+          inicio: f.paymentApprovedAt ?? f.creditStartsAt ?? null,
+          vencimiento: f.creditDueAt ?? f.sapDocDueDate ?? null,
+          dias: f.creditDays ?? null,
+        }),
       })),
     });
   } catch (e) {

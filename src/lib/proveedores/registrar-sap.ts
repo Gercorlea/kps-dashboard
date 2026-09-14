@@ -390,6 +390,9 @@ export async function registrarFacturaEnSap(datos: {
           // local permitiría colgar la factura del proveedor equivocado.
           CardCode: entradaLeida.CardCode,
           DocDate: fechaB1(f.issueDate),
+          // El vencimiento se ancla a la liberación de cuentas por pagar. No se
+          // deja que B1 lo recalcule desde la entrega o la emisión del CFDI.
+          ...(f.creditDueAt ? { DocDueDate: fechaB1(f.creditDueAt) } : {}),
           // NO se manda `DocCurrency`. B1 la hereda de la entrada, igual que
           // hereda precios e impuestos, y mandarla solo puede estropearlo: el
           // CFDI escribe el peso mexicano como `MXN` y la localizacion de B1

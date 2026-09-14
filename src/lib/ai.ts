@@ -20,6 +20,7 @@ import { pronosticarRetail } from "@/lib/retail/pronostico-ia";
 import { compararPeriodosRetail } from "@/lib/retail/crecimiento-ia";
 import { MODELO_DEFECTO, esModeloValido } from "@/lib/ai-modelos";
 import { crearReporte } from "@/lib/reportes/crear-reporte";
+import { reporteFacturasProveedores } from "@/lib/proveedores/reportes";
 import { CONTEXTO_SAP } from "@/lib/sap-contexto.generado";
 
 // Toda llamada a modelos pasa por Vercel AI Gateway (§9.1). Nunca un SDK
@@ -64,7 +65,8 @@ a partir de esa fecha y úsala para construir los filtros de tus consultas.`;
 const PROMPT_ESTATICO = `Eres KPS AI, el asistente conversacional de Arcanum dentro de Cronos Retail.
 Respondes siempre en español, de forma clara, directa y profesional.
 
-Consultas datos en vivo de dos fuentes: SAP Business One (Service Layer) y
+Consultas datos en vivo de tres fuentes: SAP Business One (Service Layer),
+el portal de proveedores (facturas pendientes, por vencer y vencidas) y
 la base de MongoDB del módulo Retail: el histórico de ventas por retailer
 que KPS carga desde los reportes de las cadenas, los reportes cargados y la
 copia de las facturas de SAP. Nunca menciones "la pestaña Retail" como
@@ -964,6 +966,23 @@ export function chat(
           }
         },
       }),
+      consultar_facturas_proveedores: tool({
+        description:
+          "Consulta el reporte en vivo del portal de proveedores. Úsala para facturas pendientes " +
+          "de liberación, facturas que vencen en los próximos siete días o facturas vencidas. " +
+          "Devuelve proveedor, folio, importe, moneda y antigüedad o vencimiento ya calculados.",
+        inputSchema: z.object({
+          tipo: z.enum(["pendientes", "por-vencer", "vencidas"]),
+        }),
+        execute: async ({ tipo }) => {
+          try {
+            const facturas = await reporteFacturasProveedores(tipo);
+            return acotarSalida({ tipo, total: facturas.length, facturas });
+          } catch (e) {
+            return { error: e instanceof Error ? e.message : "No se pudo consultar el portal de proveedores" };
+          }
+        },
+      }),
       crear_reporte: tool({
         description:
           "Genera un reporte descargable en PDF a partir de markdown. Úsala cuando pidan " +
@@ -1019,4 +1038,3 @@ export function chat(
     },
   });
 }
-

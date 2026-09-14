@@ -376,6 +376,11 @@ select.cr-input { appearance: none; background-image: url("data:image/svg+xml,%3
 .cr-table tbody td { padding: 12px 14px; color: #15171c;
   border-bottom: 1px solid rgba(10,12,18,.06); vertical-align: middle; }
 .cr-table tbody tr:hover td { background: #fafaf9; }
+.cr-table tbody .cr-grupo-proveedor td {
+  background: var(--cr-surface-3); color: var(--cr-ink-2);
+  font-size: 11px; letter-spacing: .02em; padding-top: 8px; padding-bottom: 8px;
+}
+.cr-table tbody .cr-grupo-proveedor:hover td { background: var(--cr-surface-3); }
 .cr-table .num { font-family: var(--cr-font-mono); font-size: 12px;
   text-align: right; font-variant-numeric: tabular-nums; }
 /* `.cr-table .num` (0,2,0) le ganaba a `.cr-table thead th` (0,1,2), así que
