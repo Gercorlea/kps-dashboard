@@ -62,7 +62,7 @@ const ID_AREA = "cr-area-ventas-netas";
 
 /** Alto del área de dibujo. Más que las gráficas de /retail: aquí es la pieza
  *  principal de la portada y no una de cuatro series compitiendo. */
-const ALTO = 340;
+const ALTO = 260;
 
 /**
  * Curva de entrada del trazo. Sale disparada y frena largo, en vez del `ease`

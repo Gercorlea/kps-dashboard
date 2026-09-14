@@ -2207,6 +2207,47 @@ a.cr-doc:hover .cr-doc__abrir { color: var(--cr-ink); }
   text-transform: none; letter-spacing: 0; color: #0E1116; margin-bottom: 7px;
 }
 
+/* ============================ Dashboard ============================ */
+
+/* La portada resume el negocio; sus tres indicadores y los dos paneles que
+   siguen son bloques de lectura, no tarjetas de marketing. Por eso no hereda
+   la cinta superior de los KPI genéricos: el valor y su etiqueta ya bastan
+   para construir la jerarquía. */
+.cr-dashboard { display: flex; flex-direction: column; gap: 12px; }
+.cr-dashboard__indicadores {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+}
+.cr-dashboard .cr-kpi { padding: 13px 16px; }
+.cr-dashboard .cr-kpi::before { display: none; }
+.cr-dashboard .cr-kpi__value { margin-top: 6px; font-size: 24px; line-height: 1.2; }
+.cr-dashboard .cr-kpi .cr-small { margin-top: 3px; color: var(--cr-ink-3); }
+
+.cr-dashboard__rango { width: 56px; }
+.cr-dashboard__ventas { width: 190px; }
+.cr-dashboard__participacion { width: 230px; }
+.cr-dashboard__productos { width: 120px; }
+.cr-dashboard__fecha { width: 140px; }
+.cr-dashboard__nombre { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-dashboard__meter { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cr-dashboard__meter-barra { width: 136px; flex: none; }
+.cr-dashboard__meter .cr-mono { color: var(--cr-ink-2); font-size: 12px; }
+
+@media (max-width: 767px) {
+  .cr-dashboard__indicadores { grid-template-columns: 1fr; }
+  .cr-dashboard .cr-panel__head { align-items: flex-start; gap: 12px; }
+  .cr-dashboard__rango { width: 36px; }
+  .cr-dashboard__ventas { width: 100px; }
+  .cr-dashboard__participacion { width: 120px; }
+  .cr-dashboard__meter-barra { width: 84px; }
+  .cr-dashboard__productos, .cr-dashboard__fecha { display: none; }
+  .cr-dashboard .cr-table thead th,
+  .cr-dashboard .cr-table tbody td { padding: 10px 8px; }
+  .cr-dashboard .cr-table thead th:nth-child(5),
+  .cr-dashboard .cr-table tbody td:nth-child(5),
+  .cr-dashboard .cr-table thead th:nth-child(6),
+  .cr-dashboard .cr-table tbody td:nth-child(6) { display: none; }
+}
+
 /* La barra de participacion y la punta del sparkline redondean tambien. */
 .cr-rcard__barra { border-radius: 999px; }
 .cr-rcard__punta { border-radius: 50%; }
