@@ -18,13 +18,14 @@ export default async function AppLayout({
 
   await connectDB();
   const user = await User.findById(session.id)
-    .select({ name: 1, role: 1, modules: 1, active: 1 })
+    .select({ name: 1, email: 1, role: 1, modules: 1, active: 1 })
     .lean();
   if (!user || !user.active) redirect("/login");
 
   const usuario = {
     id: String(user._id),
     name: user.name,
+    email: user.email,
     role: user.role,
     modules: user.modules.map(String),
   };
@@ -40,6 +41,10 @@ export default async function AppLayout({
               en Industria Real. Solo en escritorio: en movil ya hay
               .cr-mobile-nav y dos barras apiladas se comerian media pantalla. */}
           <div className="cr-topbar">
+            <div className="cr-topbar__contexto">
+              <span className="cr-topbar__producto">Dashboard</span>
+              <span className="cr-topbar__organizacion">KPS</span>
+            </div>
             <Notificaciones />
           </div>
           {children}

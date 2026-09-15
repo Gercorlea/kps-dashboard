@@ -299,6 +299,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
         </Aviso>
       ) : null}
 
+      <div className="cr-usuarios">
       <Panel
         title="Usuarios"
         subtitulo={
@@ -346,33 +347,33 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
               <tbody>
                 {enPagina.map((u) => (
                   <tr key={u.id} className="whitespace-nowrap">
-                    <td className="min-w-0 truncate" title={u.name}>
+                    <td className="min-w-0 truncate" title={u.name} data-label="Nombre">
                       {u.name}
                     </td>
-                    <td className="cr-mono min-w-0 truncate" title={u.email}>
+                    <td className="cr-mono min-w-0 truncate" title={u.email} data-label="Correo">
                       {u.email}
                     </td>
-                    <td>
+                    <td data-label="Rol">
                       {u.role === "superadmin" ? (
                         <Badge tono="danger">superadmin</Badge>
                       ) : (
                         <Badge>user</Badge>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Accesos">
                       <Accesos usuario={u} />
                     </td>
-                    <td>
+                    <td data-label="Estado">
                       {u.active ? (
                         <Badge tono="ok">activo</Badge>
                       ) : (
                         <Badge tono="danger">inactivo</Badge>
                       )}
                     </td>
-                    <td className="cr-mono">{fmtFecha(u.createdAt)}</td>
+                    <td className="cr-mono" data-label="Alta">{fmtFecha(u.createdAt)}</td>
                     {esSuperadmin ? (
-                      <td>
-                        <div className="flex justify-end gap-1">
+                      <td data-label="Acciones">
+                        <div className="cr-usuarios__acciones">
                           {/* `aria-label` y no solo `title`: un botón que solo
                               tiene un icono dentro no tiene nombre accesible, y
                               el `title` no cuenta como tal de forma fiable. */}
@@ -396,6 +397,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                             }
                           >
                             <Pencil strokeWidth={1.75} />
+                            <span className="cr-usuarios__accion-texto">Editar</span>
                           </button>
                           <button
                             type="button"
@@ -405,6 +407,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                             onClick={() => accion(u, "reset-password")}
                           >
                             <KeyRound strokeWidth={1.75} />
+                            <span className="cr-usuarios__accion-texto">Restablecer</span>
                           </button>
                           <button
                             type="button"
@@ -414,6 +417,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
                             onClick={() => accion(u, "revocar-sesiones")}
                           >
                             <ShieldOff strokeWidth={1.75} />
+                            <span className="cr-usuarios__accion-texto">Revocar</span>
                           </button>
                           {u.role !== "superadmin" ? (
                             <button
@@ -445,6 +449,7 @@ export function UsuariosAdmin({ esSuperadmin }: { esSuperadmin: boolean }) {
           />
         ) : null}
       </Panel>
+      </div>
 
       {form ? (
         <Modal
