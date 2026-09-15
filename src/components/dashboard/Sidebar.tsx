@@ -21,6 +21,7 @@ import { canAccess, NAV_SECTIONS } from "@/lib/rbac";
 export interface UsuarioUI {
   id: string;
   name: string;
+  email: string;
   role: "superadmin" | "user";
   modules: string[];
 }
@@ -100,8 +101,11 @@ export function Sidebar({ usuario }: { usuario: UsuarioUI }) {
           </div>
         ))}
       </nav>
-      <div className="border-t p-3" style={{ borderColor: "var(--cr-line-soft)" }}>
-        <div className="cr-small px-2 pb-2 truncate">{usuario.name}</div>
+      <div className="cr-sidebar__usuario">
+        <div className="cr-sidebar__identidad">
+          <div className="cr-sidebar__nombre" title={usuario.name}>{usuario.name}</div>
+          <div className="cr-sidebar__correo" title={usuario.email}>{usuario.email}</div>
+        </div>
         <button type="button" className="cr-navlink w-full" onClick={cerrarSesion}>
           <LogOut strokeWidth={1.75} />
           Cerrar sesión

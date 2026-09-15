@@ -33,8 +33,11 @@ function FormularioLogin() {
   }
 
   return (
-    <form onSubmit={enviar} className="flex flex-col gap-4">
-      <h1 className="cr-h2 text-center">Iniciar sesión</h1>
+    <form onSubmit={enviar} className="cr-auth__form">
+      <div className="cr-auth__encabezado">
+        <h1 className="cr-h2">Iniciar sesión</h1>
+        <p className="cr-small cr-ink-3">Accede al panel de operación de KPS.</p>
+      </div>
       <label className="cr-field">
         <span className="cr-label">Correo</span>
         <input
@@ -73,7 +76,7 @@ function FormularioLogin() {
         {cargando ? <Loader2 className="cr-spin" strokeWidth={1.75} /> : null}
         Entrar
       </button>
-      <a href="/recuperar" className="cr-small cr-link text-center">
+      <a href="/recuperar" className="cr-auth__recuperar cr-small cr-link">
         ¿Olvidaste tu contraseña?
       </a>
     </form>

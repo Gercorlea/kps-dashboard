@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { CircleAlert, Check, Loader2 } from "lucide-react";
 import { api, ClientApiError } from "@/components/lib/api-client";
 
 export default function RecuperarPage() {
@@ -29,10 +29,15 @@ export default function RecuperarPage() {
 
   if (message) {
     return (
-      <div className="flex flex-col gap-4 text-center">
-        <h1 className="cr-h2">Revisa tu correo</h1>
-        <p className="cr-body">{message}</p>
-        <a href="/login" className="cr-small cr-link">
+      <div className="cr-auth__form">
+        <div className="cr-auth__encabezado">
+          <span className="cr-auth__estado cr-auth__estado--ok" aria-hidden="true">
+            <Check strokeWidth={1.75} />
+          </span>
+          <h1 className="cr-h2">Revisa tu correo</h1>
+          <p className="cr-body">{message}</p>
+        </div>
+        <a href="/login" className="cr-auth__recuperar cr-small cr-link">
           Volver al inicio de sesión
         </a>
       </div>
@@ -40,11 +45,13 @@ export default function RecuperarPage() {
   }
 
   return (
-    <form onSubmit={enviar} className="flex flex-col gap-4">
-      <h1 className="cr-h2 text-center">Recuperar contraseña</h1>
-      <p className="cr-body text-center">
-        Te enviaremos un enlace de un solo uso para crear una nueva contraseña.
-      </p>
+    <form onSubmit={enviar} className="cr-auth__form">
+      <div className="cr-auth__encabezado">
+        <h1 className="cr-h2">Recuperar contraseña</h1>
+        <p className="cr-small cr-ink-3">
+          Recibirás un enlace de un solo uso para crear una nueva contraseña.
+        </p>
+      </div>
       <label className="cr-field">
         <span className="cr-label">Correo</span>
         <input
@@ -57,15 +64,16 @@ export default function RecuperarPage() {
         />
       </label>
       {error ? (
-        <p className="cr-small" style={{ color: "var(--cr-danger)" }} role="alert">
-          {error}
-        </p>
+        <div className="cr-aviso cr-aviso--danger" role="alert">
+          <span className="cr-aviso__icono"><CircleAlert size={16} strokeWidth={1.75} /></span>
+          <div className="cr-aviso__cuerpo"><div className="cr-aviso__titulo">{error}</div></div>
+        </div>
       ) : null}
-      <button type="submit" className="cr-btn cr-btn--primary justify-center" disabled={cargando}>
+      <button type="submit" className="cr-btn cr-btn--primary cr-btn--block" disabled={cargando}>
         {cargando ? <Loader2 className="cr-spin" strokeWidth={1.75} /> : null}
         Enviar enlace
       </button>
-      <a href="/login" className="cr-small cr-link text-center">
+      <a href="/login" className="cr-auth__recuperar cr-small cr-link">
         Volver al inicio de sesión
       </a>
     </form>
