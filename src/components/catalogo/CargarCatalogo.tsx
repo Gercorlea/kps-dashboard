@@ -41,7 +41,7 @@ export function CargarCatalogo({
   const trabajando = estado !== "inactivo";
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="cr-catalogo__carga">
       <input
         ref={inputRef}
         id="archivo-catalogo"
@@ -60,7 +60,7 @@ export function CargarCatalogo({
 
       <button
         type="button"
-        className="cr-btn cr-btn--primary"
+        className="cr-btn cr-btn--primary cr-btn--sm"
         disabled={trabajando}
         aria-busy={trabajando}
         onClick={() => inputRef.current?.click()}
@@ -79,14 +79,14 @@ export function CargarCatalogo({
       </button>
 
       {estado === "subiendo" ? (
-        <div style={{ width: "12rem" }}>
+        <div className="cr-catalogo__progreso">
           <Meter value={progreso} tono="ink" />
         </div>
       ) : carga ? (
         /* AutorReporte no sirve aquí: pinta nombre y correo en dos bloques,
            pensado para una celda de tabla. Esto es una línea de pie, así que va
            el nombre, y el correo en el title. */
-        <span className="cr-small truncate" style={{ maxWidth: "22rem" }}>
+        <span className="cr-catalogo__archivo" title={[carga.filename, carga.subidaPor?.nombre, carga.finalizadaEl ? fmtFechaHora(carga.finalizadaEl) : null].filter(Boolean).join(" · ")}>
           <span className="cr-mono">{carga.filename}</span>
           {carga.subidaPor ? (
             <span title={carga.subidaPor.email}> · {carga.subidaPor.nombre}</span>

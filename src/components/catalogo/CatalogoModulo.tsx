@@ -2,15 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Package } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { api, ClientApiError } from "@/components/lib/api-client";
 import { CargarCatalogo, type EstadoCarga } from "@/components/catalogo/CargarCatalogo";
 import { FichaProducto } from "@/components/catalogo/FichaProducto";
 import { TablaCatalogo } from "@/components/catalogo/TablaCatalogo";
 import { TablaMapeo } from "@/components/catalogo/TablaMapeo";
-import { AnalisisUploader } from "@/components/retail/AnalisisUploader";
+import { Pagina } from "@/components/dashboard/Pagina";
+import { useFilasQueCaben } from "@/components/lib/useFilasQueCaben";
+import { Cargando } from "@/components/ui/Cargando";
 import { BarraSegmentada } from "@/components/ui/BarraSegmentada";
-import { Aviso, EstadoVacio } from "@/components/ui/basicos";
+import { Aviso } from "@/components/ui/basicos";
 import { leerCatalogo } from "@/lib/catalogo/leer-excel";
 import {
   CAMPOS_CATALOGO,
@@ -24,7 +26,6 @@ import { normalizarBusqueda, paginar, totalPaginas } from "@/lib/retail/analisis
 import { ErrorExcel, LIMITE_AVISO_BYTES } from "@/lib/retail/analisis/parsear";
 import {
   MAX_FILAS_LOTE_CATALOGO,
-  PRODUCTOS_POR_PAGINA_CATALOGO,
 } from "@/lib/validation/catalogo";
 
 type Vista = "catalogo" | "mapeo";
@@ -333,16 +334,21 @@ export function CatalogoModulo() {
   // Las dos vistas comparten el estado de página, así que el total de páginas
   // es el de la tabla que se está mirando.
   const totalVisible = enCatalogo ? productosFiltrados.length : mapeosFiltrados.length;
-  const paginas = totalPaginas(totalVisible, PRODUCTOS_POR_PAGINA_CATALOGO);
+  const { ancla, filas: filasQueCaben } = useFilasQueCaben({
+    altoFila: 44, minimo: 1,
+    recalcularCon: [productos, mapeos, vista, cargandoDatos, error, aviso, resumen, totalVisible, estado],
+  });
+  const porPagina = filasQueCaben ?? 10;
+  const paginas = totalPaginas(totalVisible, porPagina);
   const paginaActual = Math.min(Math.max(1, pagina), paginas);
 
   const productosVisibles = useMemo(
-    () => paginar(productosFiltrados, paginaActual, PRODUCTOS_POR_PAGINA_CATALOGO),
-    [productosFiltrados, paginaActual]
+    () => paginar(productosFiltrados, paginaActual, porPagina),
+    [productosFiltrados, paginaActual, porPagina]
   );
   const mapeosVisibles = useMemo(
-    () => paginar(mapeosFiltrados, paginaActual, PRODUCTOS_POR_PAGINA_CATALOGO),
-    [mapeosFiltrados, paginaActual]
+    () => paginar(mapeosFiltrados, paginaActual, porPagina),
+    [mapeosFiltrados, paginaActual, porPagina]
   );
 
   /** Buscar o filtrar devuelve a la página 1: si no, se vería una tabla vacía. */
@@ -356,53 +362,14 @@ export function CatalogoModulo() {
 
   // --- Estado vacío --------------------------------------------------------
 
-  if (!cargandoDatos && !carga) {
-    return (
-      <div className="cr-stack">
-        {error ? (
-          <Aviso tono="danger" titulo={error.titulo} icono={<AlertTriangle strokeWidth={1.75} />}>
-            {error.detalle}
-          </Aviso>
-        ) : null}
-        <div className="cr-panel">
-          <EstadoVacio
-            title="Todavía no hay un catálogo cargado"
-            detalle="Sube el Excel con las dos hojas: el catálogo de productos y el mapeo con los códigos de cada cadena."
-          >
-            <Package strokeWidth={1.25} size={28} style={{ color: "var(--cr-ink-3)" }} />
-          </EstadoVacio>
-          <div className="px-4 pb-4">
-            <AnalisisUploader
-              onArchivo={alArchivo}
-              cargando={estado !== "inactivo"}
-              nombreArchivo={null}
-              nota="El archivo reemplaza por completo el catálogo actual."
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="cr-stack">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <BarraSegmentada
-          opciones={VISTAS}
-          valor={vista}
-          etiqueta="Vistas del catálogo"
-          onCambio={(v) => {
-            setVista(v);
-            setPagina(1);
-          }}
-        />
-        <CargarCatalogo
-          onArchivo={alArchivo}
-          estado={estado}
-          progreso={progreso}
-          carga={carga}
-        />
-      </div>
+    <Pagina title="Catálogo"
+      description="Los productos de KPS y el código con el que los compra cada cadena"
+      acciones={<CargarCatalogo onArchivo={alArchivo} estado={estado} progreso={progreso} carga={carga} />}
+    >
+    <div className="cr-catalogo cr-stack">
+      <BarraSegmentada opciones={VISTAS} valor={vista} etiqueta="Vistas del catálogo"
+        onCambio={(v) => { setVista(v); setPagina(1); }} />
 
       {error ? (
         <Aviso tono="danger" titulo={error.titulo} icono={<AlertTriangle strokeWidth={1.75} />}>
@@ -430,14 +397,26 @@ export function CatalogoModulo() {
         </Aviso>
       ) : null}
 
-      {enCatalogo ? (
+      {cargandoDatos ? (
+        <div className="cr-panel"><Cargando label="Cargando catálogo…" /></div>
+      ) : !carga ? (
+        <section className="cr-panel">
+          <header className="cr-panel__head"><h2 className="cr-h3">Catálogo de productos</h2></header>
+          <div className="cr-catalogo__vacio">
+            <h3 className="cr-h3">Todavía no hay un catálogo cargado</h3>
+            <p className="cr-small">Carga un Excel con las hojas de productos y mapeo por cadena usando «Cargar Excel».</p>
+            <p className="cr-small cr-ink-3">Cada archivo reemplaza el catálogo anterior cuando termina de procesarse.</p>
+          </div>
+        </section>
+      ) : enCatalogo ? (
         <TablaCatalogo
+          ancla={ancla}
           filas={productosVisibles}
           total={productosFiltrados.length}
           totalCarga={productos.length}
           pagina={paginaActual}
           paginas={paginas}
-          porPagina={PRODUCTOS_POR_PAGINA_CATALOGO}
+          porPagina={porPagina}
           busqueda={busqueda}
           onBusqueda={buscar}
           filtros={[
@@ -465,13 +444,14 @@ export function CatalogoModulo() {
         />
       ) : (
         <TablaMapeo
+          ancla={ancla}
           filas={mapeosVisibles}
           total={mapeosFiltrados.length}
           totalCarga={mapeos.length}
           huerfanos={carga?.huerfanos ?? 0}
           pagina={paginaActual}
           paginas={paginas}
-          porPagina={PRODUCTOS_POR_PAGINA_CATALOGO}
+          porPagina={porPagina}
           busqueda={busqueda}
           onBusqueda={buscar}
           filtros={[
@@ -491,8 +471,9 @@ export function CatalogoModulo() {
       )}
 
       {itemAbierto ? (
-        <FichaProducto item={itemAbierto} onCerrar={() => setItemAbierto(null)} />
+        <FichaProducto key={itemAbierto} item={itemAbierto} onCerrar={() => setItemAbierto(null)} />
       ) : null}
     </div>
+    </Pagina>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import type { RefObject } from "react";
 import { Paginacion } from "@/components/dashboard/Paginacion";
 import { BuscadorTabla, type FiltroSelect } from "@/components/catalogo/BuscadorTabla";
 import { Badge } from "@/components/ui/basicos";
@@ -8,6 +9,7 @@ import type { FilaMapeo } from "@/lib/catalogo/tipos";
 const COLUMNAS_BUSCADAS = ["SKU", "Canal", "Código cliente", "Descripción"];
 
 export function TablaMapeo({
+  ancla,
   filas,
   total,
   totalCarga,
@@ -21,6 +23,7 @@ export function TablaMapeo({
   onPagina,
   onAbrir,
 }: {
+  ancla: RefObject<HTMLDivElement | null>;
   filas: FilaMapeo[];
   total: number;
   totalCarga: number;
@@ -42,7 +45,7 @@ export function TablaMapeo({
       <header className="cr-panel__head flex-wrap gap-3">
         <div className="flex flex-col gap-1">
           <h3 className="cr-h3">Mapeo de productos</h3>
-          <span className="cr-small">
+          <span className="cr-small cr-ink-3">
             {filtrando
               ? `${total.toLocaleString("es-MX")} de ${totalCarga.toLocaleString("es-MX")} códigos`
               : `${totalCarga.toLocaleString("es-MX")} códigos`}
@@ -60,10 +63,9 @@ export function TablaMapeo({
         />
       </header>
 
-      {/* Scroll vertical propio: con 40 filas por página, sin acotar el alto
-          el pie de paginación queda muy por debajo del pliegue. */}
-      <div className="cr-table-scroll cr-table-scroll--alto">
-        <table className="cr-table cr-table--head-lg">
+      <div ref={ancla}>
+        <table className="cr-table cr-table--fija cr-catalogo__tabla">
+          <colgroup><col className="cr-catalogo__item" /><col className="cr-catalogo__canal" /><col className="cr-catalogo__codigo" /><col /></colgroup>
           <thead>
             <tr>
               <th scope="col">SKU</th>
@@ -75,10 +77,10 @@ export function TablaMapeo({
           <tbody>
             {filas.length === 0 ? (
               <tr>
-                <td colSpan={4} className="cr-body py-10 text-center">
+                <td colSpan={4} className="cr-catalogo__sin-resultados">
                   {busqueda.trim()
                     ? `Ningún código coincide con «${busqueda.trim()}».`
-                    : "El archivo no trae mapeo de productos."}
+                    : filtrando ? "No hay códigos con los filtros seleccionados." : filtrando ? "No hay códigos con los filtros seleccionados." : "El archivo no trae mapeo de productos."}
                 </td>
               </tr>
             ) : (
@@ -133,7 +135,7 @@ export function TablaMapeo({
                     <span className="block truncate" title={f.description}>
                       {f.description || "—"}
                       {!f.enCatalogo ? (
-                        <span className="cr-small"> · sin producto en el catálogo</span>
+                        <span className="cr-small cr-ink-3"> · sin producto en el catálogo</span>
                       ) : null}
                     </span>
                   </td>
@@ -144,7 +146,9 @@ export function TablaMapeo({
         </table>
       </div>
 
+      {total === 0 ? <div className="cr-catalogo__pie-vacio" data-paginacion>Sin códigos</div> : null}
       <Paginacion
+        siempreVisible
         pagina={pagina}
         paginas={paginas}
         total={total}

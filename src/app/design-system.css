@@ -2207,6 +2207,79 @@ a.cr-doc:hover .cr-doc__abrir { color: var(--cr-ink); }
   text-transform: none; letter-spacing: 0; color: #0E1116; margin-bottom: 7px;
 }
 
+/* Catálogo: composición CRONOS del portal, sin scroll en las listas. */
+.cr-catalogo { min-width: 0; }
+.cr-catalogo > .cr-segment { align-self: flex-start; height: 32px; max-width: 100%; }
+.cr-catalogo .cr-segment__item { padding: 6px 12px; font-size: 12px; }
+.cr-catalogo__controles { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.cr-catalogo__filtro { width: 150px; max-width: 100%; }
+.cr-busqueda-tabla { position: relative; width: 208px; max-width: 100%; }
+.cr-busqueda-tabla .cr-input { padding-left: 30px; padding-right: 26px; }
+.cr-busqueda-tabla .cr-input:focus, .cr-catalogo__filtro .cr-input:focus { outline: 2px solid var(--cr-ink); outline-offset: 2px; box-shadow: none; }
+.cr-busqueda-tabla input::-webkit-search-cancel-button { appearance: none; }
+.cr-busqueda-tabla__lupa { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--cr-ink-3); }
+.cr-busqueda-tabla__limpiar { position: absolute; right: 3px; top: 3px; width: 24px; height: 24px; display: grid; place-items: center; color: var(--cr-ink-2); cursor: pointer; }
+.cr-catalogo__carga { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; }
+.cr-catalogo__archivo { max-width: min(440px, 65vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cr-ink-3); font-size: 11px; }
+.cr-catalogo__archivo .cr-mono { font-size: 11px; color: inherit; }
+.cr-catalogo__progreso { width: 180px; }
+.cr-catalogo__tabla th { padding: 9px 14px; font-size: 9px; }
+.cr-catalogo__tabla td { height: 44px; padding: 8px 14px; white-space: nowrap; }
+.cr-catalogo__tabla td.cr-mono { font-size: 12px; }
+.cr-catalogo__tabla .cr-link { color: var(--cr-ink); text-decoration: none; }
+.cr-catalogo__tabla .cr-badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.cr-catalogo__item { width: 110px; }
+.cr-catalogo__estatus { width: 130px; }
+.cr-catalogo__linea { width: 130px; }
+.cr-catalogo__upc { width: 150px; }
+.cr-catalogo__unidad { width: 130px; }
+.cr-catalogo__fecha { width: 165px; }
+.cr-catalogo__canal { width: 220px; }
+.cr-catalogo__codigo { width: 190px; }
+.cr-catalogo [data-paginacion] { padding: 14px 16px; background: var(--cr-bg); }
+.cr-catalogo .cr-page-btn, .cr-producto .cr-page-btn { width: 34px; height: 28px; }
+.cr-catalogo__pie-vacio { border-top: 1px solid var(--cr-line-soft); color: var(--cr-ink-3); font-size: 12px; }
+.cr-catalogo__vacio { display: flex; flex-direction: column; gap: 8px; padding: 28px 18px; }
+.cr-catalogo__tabla td.cr-catalogo__sin-resultados { padding: 24px 18px; white-space: normal; color: var(--cr-ink-2); }
+.cr-cargando { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 32px 18px; }
+.cr-cargando--compacto { padding: 12px; }
+.cr-cargando__marca { animation: cr-cargando-pulso 1.4s ease-in-out infinite; }
+@keyframes cr-cargando-pulso { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .cr-cargando__marca { animation: none; } }
+.cr-producto { margin: auto; padding: 0; width: min(920px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 40px); border: 1px solid var(--cr-line); border-radius: 4px; color: var(--cr-ink); background: var(--cr-bg); box-shadow: var(--cr-shadow-2); }
+.cr-producto::backdrop { background: rgba(10,12,18,.32); }
+.cr-producto__interior { display: flex; flex-direction: column; max-height: calc(100dvh - 42px); }
+.cr-producto__head { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--cr-line); flex: none; }
+.cr-producto__head .cr-small { margin-top: 4px; }
+.cr-producto__cuerpo { min-height: 0; overflow-y: auto; padding: 20px; }
+.cr-producto__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; }
+.cr-producto__seccion { min-width: 0; }
+.cr-producto__seccion h4 { margin-bottom: 10px; color: var(--cr-ink-2); }
+.cr-producto__dato { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--cr-line-soft); }
+.cr-producto__dato > :last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.cr-producto__ventas { margin-top: 24px; border-top: 1px solid var(--cr-line); }
+.cr-producto__ventas-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 0; }
+.cr-producto__ventas-head h4 { color: var(--cr-ink-2); }
+.cr-producto__tabla .cr-table td { padding: 10px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-producto__tabla .cr-table th { padding: 9px 8px; }
+.cr-producto__tabla tfoot td { background: var(--cr-surface-2); }
+.cr-producto__pie { display: flex; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--cr-line); background: var(--cr-surface-2); flex: none; }
+@media (max-width: 1200px) {
+  .cr-catalogo__item { width: 88px; } .cr-catalogo__estatus { width: 112px; }
+  .cr-catalogo__linea { width: 95px; } .cr-catalogo__upc { width: 118px; }
+  .cr-catalogo__unidad { width: 94px; } .cr-catalogo__fecha { width: 128px; }
+  .cr-catalogo__tabla td, .cr-catalogo__tabla th { padding-left: 8px; padding-right: 8px; }
+}
+@media (max-width: 767px) {
+  .cr-catalogo__controles { width: 100%; }
+  .cr-catalogo__filtro { flex: 1; min-width: 110px; }
+  .cr-catalogo__tabla:has(.cr-catalogo__upc) col:nth-child(n+4),
+  .cr-catalogo__tabla:has(.cr-catalogo__upc) th:nth-child(n+4),
+  .cr-catalogo__tabla:has(.cr-catalogo__upc) td:nth-child(n+4) { display: none; }
+  .cr-catalogo__canal { width: 110px; } .cr-catalogo__codigo { width: 100px; }
+  .cr-producto__grid { grid-template-columns: 1fr; gap: 20px; }
+}
+
 /* ============================ Dashboard ============================ */
 
 /* La portada resume el negocio; sus tres indicadores y los dos paneles que

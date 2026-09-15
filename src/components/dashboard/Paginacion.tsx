@@ -22,6 +22,7 @@ export function Paginacion({
   porPagina,
   onCambiar,
   sustantivo = "registros",
+  siempreVisible = false,
 }: {
   pagina: number;
   paginas: number;
@@ -29,6 +30,8 @@ export function Paginacion({
   porPagina: number;
   onCambiar: (p: number) => void;
   sustantivo?: string;
+  /** Conserva las dos flechas deshabilitadas cuando solo hay una página. */
+  siempreVisible?: boolean;
 }) {
   if (total === 0) return null;
 
@@ -41,13 +44,13 @@ export function Paginacion({
     // este pie para medir su alto real en vez de estimarlo.
     <div
       data-paginacion
-      className="flex items-center justify-between gap-3 border-t border-[color:var(--cr-line-soft)] px-4 py-3"
+      className="flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--cr-line-soft)] px-4 py-3"
     >
       <span className="cr-small cr-ink-3">
         Mostrando {desde.toLocaleString("es-MX")} - {hasta.toLocaleString("es-MX")} de{" "}
         {total.toLocaleString("es-MX")} {sustantivo}
       </span>
-      {paginas > 1 ? (
+      {paginas > 1 || siempreVisible ? (
         <div className="flex items-center gap-2">
           <button
             type="button"

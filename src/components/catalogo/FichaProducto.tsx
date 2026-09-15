@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
+import { Cargando } from "@/components/ui/Cargando";
+import { BuscadorTabla } from "./BuscadorTabla";
+import { Paginacion } from "@/components/dashboard/Paginacion";
+import { normalizarBusqueda } from "@/lib/retail/analisis/filtrar";
 import { api, ClientApiError } from "@/components/lib/api-client";
 import { fmtDec, fmtFecha, fmtNum } from "@/components/lib/fmt";
 import { Aviso, Badge } from "@/components/ui/basicos";
@@ -10,7 +15,7 @@ import type { FichaProducto as Ficha } from "@/lib/catalogo/tipos";
 /** Un dato de la ficha. Vacío se pinta "—", nunca en blanco. */
 function Dato({ etiqueta, valor, mono }: { etiqueta: string; valor: string; mono?: boolean }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1">
+    <div className="cr-producto__dato">
       <span className="cr-small shrink-0">{etiqueta}</span>
       <span className={`text-right ${mono ? "cr-mono" : ""}`} title={valor || undefined}>
         {valor || "—"}
@@ -21,38 +26,23 @@ function Dato({ etiqueta, valor, mono }: { etiqueta: string; valor: string; mono
 
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-1">
-      <h4 className="cr-small font-semibold tracking-wide uppercase">{titulo}</h4>
-      <div className="flex flex-col divide-y" style={{ borderColor: "var(--cr-line-2)" }}>
+    <section className="cr-producto__seccion">
+      <h4 className="cr-label">{titulo}</h4>
+      <div className="cr-producto__datos">
         {children}
       </div>
     </section>
   );
 }
 
-function Esqueleto() {
-  return (
-    <div className="flex flex-col gap-4" aria-busy="true">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="flex flex-col gap-2">
-          <div className="cr-skel" style={{ height: 12, width: "40%" }} />
-          <div className="cr-skel" style={{ height: 32 }} />
-          <div className="cr-skel" style={{ height: 32 }} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /**
- * Cajón lateral con todo lo que la tabla no muestra, más las unidades vendidas
- * por cadena.
- *
- * Es el patrón `.cr-revision` de la bandeja de peticiones. Se elige cajón y no
- * página propia porque revisar productos es una tarea de recorrido: se abren
- * varios seguidos y no hay que perder el sitio en la tabla.
+ * Ficha de consulta sobre el listado. El diálogo conserva la página y los
+ * filtros al cerrar; contiene el foco y permite consultar los canales de venta.
  */
 export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () => void }) {
+  const dialogo = useRef<HTMLDialogElement>(null);
+  const [busqueda, setBusqueda] = useState("");
+  const [pagina, setPagina] = useState(1);
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,51 +66,54 @@ export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () =
     void cargar(item);
   }, [item, cargar]);
 
-  // Escape cierra. PeticionesAdmin no lo tiene; es una mejora de este cajón, no
-  // un cambio en el existente.
+  // El diálogo nativo contiene el foco, vuelve al botón de origen y admite Escape.
   useEffect(() => {
-    const alTeclear = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCerrar();
-    };
-    window.addEventListener("keydown", alTeclear);
-    return () => window.removeEventListener("keydown", alTeclear);
-  }, [onCerrar]);
+    const el = dialogo.current;
+    const previo = document.activeElement as HTMLElement | null;
+    el?.showModal();
+    return () => { el?.close(); previo?.focus(); };
+  }, []);
 
+  const termino = normalizarBusqueda(busqueda);
+  const canales = (ficha?.mapeos ?? []).filter((m) => normalizarBusqueda(
+    [m.channelName, m.channel, m.customerCode, m.ventas?.unidades, m.ventas?.importe].join(' ')
+  ).includes(termino));
+  const paginas = Math.max(1, Math.ceil(canales.length / 5));
+  const paginaActual = Math.min(pagina, paginas);
   const p = ficha?.producto;
 
   return (
-    <>
-      <div className="cr-backdrop" onClick={onCerrar} />
-      <aside className="cr-revision" role="dialog" aria-modal="true" aria-label={`Producto ${item}`}>
-        <div className="cr-revision__head">
+      <dialog ref={dialogo} className="cr-producto" aria-label={`Producto ${item}`}
+        onCancel={(e) => { e.preventDefault(); onCerrar(); }}
+        onClick={(e) => { if (e.target === e.currentTarget) { const r = e.currentTarget.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onCerrar(); } }}>
+      <div className="cr-producto__interior">
+        <div className="cr-producto__head">
           <div className="min-w-0">
-            <h3 className="cr-h3 cr-mono">{item}</h3>
+            <h3 className="cr-h3">{item}</h3>
             <div className="cr-small truncate" title={p?.description}>
-              {p?.description ?? "Cargando…"}
+              {p?.description ?? "Ficha de producto"}
             </div>
           </div>
           <button
             type="button"
             className="cr-btn cr-btn--ghost cr-btn--sm"
             onClick={onCerrar}
+            aria-label="Cerrar ficha de producto" title="Cerrar ficha"
           >
-            Cerrar
+            <X size={16} />
           </button>
         </div>
 
-        {/* `cr-revision__cuerpo` y no un div propio: es la clase que lleva el
-            `flex:1; min-height:0; overflow-y:auto` que hace scrollear el cajón.
-            Sin ella el contenido crece por debajo del panel y en pantallas
-            bajas la parte inferior queda inalcanzable. */}
-        <div className="cr-revision__cuerpo">
+        <div className="cr-producto__cuerpo">
           {error ? (
             <Aviso tono="danger" titulo="No se pudo abrir el producto">
               {error}
             </Aviso>
           ) : !ficha || !p ? (
-            <Esqueleto />
+            <Cargando label="Cargando producto…" />
           ) : (
             <>
+              <div className="cr-producto__grid">
               <Seccion titulo="Identificación">
                 <Dato etiqueta="UPC" valor={p.upc} mono />
                 <Dato etiqueta="Clave SAT" valor={p.satCode} mono />
@@ -129,17 +122,17 @@ export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () =
               </Seccion>
 
               <Seccion titulo="Comercial">
-                <div className="flex items-baseline justify-between gap-3 py-1">
+                <div className="cr-producto__dato">
                   <span className="cr-small shrink-0">ECOM</span>
                   <span>{p.ecom ? <Badge>{p.ecom}</Badge> : "—"}</span>
                 </div>
-                <div className="flex items-baseline justify-between gap-3 py-1">
+                <div className="cr-producto__dato">
                   <span className="cr-small shrink-0">Trello</span>
                   <span>{p.trello ? <Badge>{p.trello}</Badge> : "—"}</span>
                 </div>
                 {/* Mismo badge y mismo tono que la columna Estatus de la tabla:
                     el dato tiene que leerse igual se mire donde se mire. */}
-                <div className="flex items-baseline justify-between gap-3 py-1">
+                <div className="cr-producto__dato">
                   <span className="cr-small shrink-0">Estatus</span>
                   <span>
                     {p.status ? <Badge tono={tonoEstatus(p.status)}>{p.status}</Badge> : "—"}
@@ -180,10 +173,14 @@ export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () =
                 )}
               </Seccion>
 
-              <section className="flex flex-col gap-2">
-                <h4 className="cr-small font-semibold tracking-wide uppercase">
-                  Unidades vendidas por canal
+              </div>
+              <section className="cr-producto__ventas">
+                <div className="cr-producto__ventas-head">
+                <h4 className="cr-label">
+                  Ventas por canal
                 </h4>
+                <BuscadorTabla busqueda={busqueda} onBusqueda={(v) => { setBusqueda(v); setPagina(1); }} placeholder="Buscar canal…" columnasBuscadas={["Canal", "Código", "Unidades", "Importe"]} />
+                </div>
 
                 {ficha.mapeos.length === 0 ? (
                   <p className="cr-body">
@@ -192,22 +189,22 @@ export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () =
                   </p>
                 ) : (
                   <>
-                    <div className="cr-table-scroll">
-                      <table className="cr-table cr-table--compact">
+                    <div className="cr-producto__tabla">
+                      <table className="cr-table cr-table--fija">
                         <thead>
                           <tr>
                             <th scope="col">Canal</th>
                             <th scope="col">Código</th>
-                            <th scope="col" className="num">
+                            <th scope="col" className="cr-num">
                               Unidades
                             </th>
-                            <th scope="col" className="num">
+                            <th scope="col" className="cr-num">
                               Importe
                             </th>
                           </tr>
                         </thead>
                         <tbody>
-                          {ficha.mapeos.map((m) => {
+                          {canales.slice((paginaActual - 1) * 5, paginaActual * 5).map((m) => {
                             // Tres estados distintos, y sólo el primero es un
                             // aviso: "no se puede cruzar" no es lo mismo que
                             // "se cruzó y no hay ventas".
@@ -231,10 +228,10 @@ export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () =
                                   </td>
                                 ) : (
                                   <>
-                                    <td className="num">
+                                    <td className="cr-num">
                                       {m.ventas ? fmtNum(m.ventas.unidades) : "—"}
                                     </td>
-                                    <td className="num">
+                                    <td className="cr-num">
                                       {m.ventas ? fmtDec(m.ventas.importe) : "—"}
                                     </td>
                                   </>
@@ -242,18 +239,20 @@ export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () =
                               </tr>
                             );
                           })}
+                          {canales.length === 0 ? <tr><td colSpan={4}>No hay canales para esta búsqueda.</td></tr> : null}
                         </tbody>
                         {ficha.totales.canalesConVenta > 0 ? (
                           <tfoot>
                             <tr>
-                              <td colSpan={2}>Total</td>
-                              <td className="num">{fmtNum(ficha.totales.unidades)}</td>
-                              <td className="num">{fmtDec(ficha.totales.importe)}</td>
+                              <td colSpan={2}>Total del producto</td>
+                              <td className="cr-num">{fmtNum(ficha.totales.unidades)}</td>
+                              <td className="cr-num">{fmtDec(ficha.totales.importe)}</td>
                             </tr>
                           </tfoot>
                         ) : null}
                       </table>
                     </div>
+                    <Paginacion siempreVisible pagina={paginaActual} paginas={paginas} total={canales.length} porPagina={5} onCambiar={setPagina} sustantivo="canales" />
 
                     {ficha.totales.canalesConVenta === 0 ? (
                       <p className="cr-small">
@@ -267,7 +266,8 @@ export function FichaProducto({ item, onCerrar }: { item: string; onCerrar: () =
             </>
           )}
         </div>
-      </aside>
-    </>
+        <footer className="cr-producto__pie"><button type="button" className="cr-btn cr-btn--secondary cr-btn--sm" onClick={onCerrar}>Cerrar ficha</button></footer>
+      </div>
+      </dialog>
   );
 }
