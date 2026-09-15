@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, Check, Download, Pause, RotateCcw, Search, Send, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BellRing, Check, ChevronDown, Download, Pause, RotateCcw, Search, Send, Sparkles, X } from "lucide-react";
 import { Paginacion } from "@/components/dashboard/Paginacion";
 import { api, ClientApiError, fetchConSesion } from "@/components/lib/api-client";
 import { useFilasQueCaben } from "@/components/lib/useFilasQueCaben";
@@ -390,32 +390,6 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
     (a.enviada ?? "").localeCompare(b.enviada ?? "")
   );
   const enPagina = ordenadas.slice((paginaActual - 1) * tamano, paginaActual * tamano);
-  const gruposPagina = enPagina.reduce<Array<{
-    clave: string;
-    proveedor: string;
-    cardCode: string;
-    filas: Fila[];
-    vencido: number;
-    moneda: string;
-  }>>((salida, fila) => {
-    let grupo = salida.at(-1);
-    if (!grupo || grupo.clave !== fila.cardCode) {
-      grupo = {
-        clave: fila.cardCode,
-        proveedor: fila.proveedor,
-        cardCode: fila.cardCode,
-        filas: [],
-        vencido: 0,
-        moneda: fila.moneda,
-      };
-      salida.push(grupo);
-    }
-    grupo.filas.push(fila);
-    if (fila.credito.vencida && fila.moneda === grupo.moneda) {
-      grupo.vencido += Number(fila.total) || 0;
-    }
-    return salida;
-  }, []);
 
   function cambiarFiltro(f: Filtro) {
     setCargando(true);
@@ -653,7 +627,7 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
     : ["pendientes", "todas", "cerradas"];
 
   const controles = (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="cr-peticiones__controles">
       <div className="relative">
         <Search
           className="pointer-events-none absolute top-1/2 left-2.5 h-3 w-3 -translate-y-1/2 text-[color:var(--cr-ink-3)]"
@@ -684,30 +658,6 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
           </button>
         ) : null}
       </div>
-      <button
-        type="button"
-        className="cr-btn cr-btn--secondary cr-btn--sm"
-        disabled={descargandoDispersion}
-        onClick={() => void descargarDispersion()}
-      >
-        <Download strokeWidth={1.75} /> {descargandoDispersion ? "Generando…" : "Excel"}
-      </button>
-      <button
-        type="button"
-        className="cr-btn cr-btn--secondary cr-btn--sm"
-        disabled={enviandoDispersion}
-        onClick={() => void enviarDispersion()}
-      >
-        <Send strokeWidth={1.75} /> {enviandoDispersion ? "Enviando…" : "Enviar a tesorería"}
-      </button>
-      <button
-        type="button"
-        className="cr-btn cr-btn--secondary cr-btn--sm"
-        disabled={enviandoAlertas}
-        onClick={() => void enviarAlertas()}
-      >
-        <BellRing strokeWidth={1.75} /> {enviandoAlertas ? "Enviando…" : "Alertar pendientes"}
-      </button>
       {/* Segmentado y no cuatro botones sueltos: son vistas excluyentes de la
           misma lista, y con botones el activo se leía como una acción. */}
       <div className="cr-segment">
@@ -722,6 +672,22 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
           </button>
         ))}
       </div>
+      <details className="cr-peticiones__menu">
+        <summary className="cr-btn cr-btn--secondary cr-btn--sm">
+          Operaciones <ChevronDown strokeWidth={1.75} />
+        </summary>
+        <div className="cr-peticiones__menu-lista">
+          <button type="button" disabled={descargandoDispersion} onClick={() => void descargarDispersion()}>
+            <Download strokeWidth={1.75} /> {descargandoDispersion ? "Generando…" : "Descargar Excel"}
+          </button>
+          <button type="button" disabled={enviandoDispersion} onClick={() => void enviarDispersion()}>
+            <Send strokeWidth={1.75} /> {enviandoDispersion ? "Enviando…" : "Enviar a tesorería"}
+          </button>
+          <button type="button" disabled={enviandoAlertas} onClick={() => void enviarAlertas()}>
+            <BellRing strokeWidth={1.75} /> {enviandoAlertas ? "Enviando…" : "Alertar pendientes"}
+          </button>
+        </div>
+      </details>
     </div>
   );
 
@@ -733,6 +699,7 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
         </Aviso>
       ) : null}
 
+      <div className="cr-peticiones">
       <Panel
         title="Bandeja"
         subtitulo={
@@ -774,9 +741,10 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                     folio quedaba pegado a la orden de la columna siguiente. */}
                 <col style={{ width: 124 }} />
                 <col style={{ width: 104 }} />
+                <col style={{ width: 104 }} />
                 <col style={{ width: 148 }} />
                 <col style={{ width: 124 }} />
-                {filtro !== "pendientes" ? <col style={{ width: 132 }} /> : null}
+                <col style={{ width: 132 }} />
                 <col style={{ width: 104 }} />
                 <col style={{ width: esAdmin ? 176 : 96 }} />
               </colgroup>
@@ -785,58 +753,45 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                   <th>Proveedor</th>
                   <th>Folio</th>
                   <th>Orden</th>
+                  <th>Entrada</th>
                   <th className="cr-num">Importe</th>
                   <th>Crédito</th>
-                  {/* El estatus solo cuando puede variar: en Pendientes todas
-                      dicen lo mismo y la columna no aporta nada. */}
-                  {filtro !== "pendientes" ? <th>Estatus</th> : null}
+                  <th>Estatus</th>
                   <th>{filtro === "archivadas" ? "Archivada" : "Recibida"}</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {gruposPagina.map((grupo) => (
-                  <Fragment key={grupo.clave}>
-                    <tr className="cr-grupo-proveedor">
-                      <td colSpan={filtro !== "pendientes" ? 8 : 7}>
-                        <strong>{grupo.proveedor}</strong> · {grupo.cardCode} · {grupo.filas.length}{" "}
-                        {grupo.filas.length === 1 ? "factura" : "facturas"}
-                        {grupo.vencido > 0
-                          ? ` · Total vencido ${money(String(grupo.vencido), grupo.moneda)}`
-                          : " · Sin saldo vencido"}
-                      </td>
-                    </tr>
-                    {grupo.filas.map((f) => (
+                {enPagina.map((f) => (
                   <tr key={f.folio} className="whitespace-nowrap">
                     {/* Una fila, una línea: el código del proveedor va INLINE
                         junto al nombre, no en un segundo renglón. */}
-                    <td className="min-w-0 truncate" title={f.proveedor}>
+                    <td className="min-w-0 truncate" title={f.proveedor} data-label="Proveedor">
                       {f.proveedor}{" "}
                       <span className="cr-mono text-[10px] text-[color:var(--cr-ink-3)]">
                         {f.cardCode}
                       </span>
                     </td>
-                    <td className="cr-mono">{f.folio}</td>
-                    <td className="cr-mono">
+                    <td className="cr-mono" data-label="Folio">{f.folio}</td>
+                    <td className="cr-mono" data-label="Orden">
                       {f.ordenCompra ? `OC ${f.ordenCompra}` : "—"}
-                      {f.entrada ? <span className="block text-[10px] text-[color:var(--cr-ink-3)]">Entrada {f.entrada}</span> : null}
                     </td>
-                    <td className="cr-num">{money(f.total, f.moneda)}</td>
-                    <td><Badge tono={f.credito.vencida ? "danger" : undefined}>{textoCredito(f.credito)}</Badge></td>
-                    {filtro !== "pendientes" ? (
-                      <td>
-                        <Badge tono={f.enEspera ? "warn" : TONO[f.estatus]}>
-                          {f.enEspera ? "En espera" : ETIQUETA[f.estatus] ?? f.estatus}
-                        </Badge>
-                      </td>
-                    ) : null}
+                    <td className="cr-mono" data-label="Entrada">{f.entrada ? `Entrada ${f.entrada}` : "—"}</td>
+                    <td className="cr-num" data-label="Importe">{money(f.total, f.moneda)}</td>
+                    <td data-label="Crédito"><Badge tono={f.credito.vencida ? "danger" : undefined}>{textoCredito(f.credito)}</Badge></td>
+                    <td data-label="Estatus">
+                      <Badge tono={f.enEspera ? "warn" : TONO[f.estatus]}>
+                        {f.enEspera ? "En espera" : ETIQUETA[f.estatus] ?? f.estatus}
+                      </Badge>
+                    </td>
                     <td
                       className="cr-mono"
+                      data-label={filtro === "archivadas" ? "Archivada" : "Recibida"}
                       title={f.motivoArchivo ? `Motivo: ${f.motivoArchivo}` : undefined}
                     >
                       {fecha(f.archivada ?? f.enviada)}
                     </td>
-                    <td>
+                    <td data-label="Acciones">
                       <div className="flex justify-end gap-1.5">
                         <button
                           type="button"
@@ -872,8 +827,6 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
                       </div>
                     </td>
                   </tr>
-                    ))}
-                  </Fragment>
                 ))}
               </tbody>
             </Tabla>
@@ -891,6 +844,7 @@ export function PeticionesAdmin({ esAdmin }: { esAdmin: boolean }) {
           />
         ) : null}
       </Panel>
+      </div>
 
       {/* Confirmación de archivado. Dice qué NO pasa —no se borra, se puede
           deshacer— porque el miedo a perder un CFDI es lo que hace que nadie

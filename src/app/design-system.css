@@ -1908,6 +1908,103 @@ button.cr-link { font: inherit; background: none; border: 0; padding: 0; cursor:
    decidiendo antes de cualquier dato fiscal. Va aquí y no en el componente
    porque el resto de estilos del dashboard viven en esta hoja. */
 
+/* La cabecera conserva el patrón canónico del listado: búsqueda, estados y una
+   sola puerta para las operaciones de lote. Estas acciones no compiten con el
+   filtro ni obligan a ensanchar la tabla. */
+.cr-peticiones > .cr-panel { overflow: visible; }
+.cr-peticiones__controles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.cr-peticiones__menu { position: relative; }
+.cr-peticiones__menu > summary { list-style: none; }
+.cr-peticiones__menu > summary::-webkit-details-marker { display: none; }
+.cr-peticiones__menu[open] > summary { background: var(--cr-surface-2); }
+.cr-peticiones__menu-lista {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  width: 206px;
+  padding: 4px;
+  background: var(--cr-surface);
+  border: 1px solid var(--cr-line-2);
+  border-radius: var(--cr-r-sm);
+  box-shadow: var(--cr-shadow-2);
+}
+.cr-peticiones__menu-lista button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--cr-r-xs);
+  background: transparent;
+  color: var(--cr-ink);
+  font: 400 12px/1.25 var(--cr-font);
+  text-align: left;
+  cursor: pointer;
+}
+.cr-peticiones__menu-lista button:hover:not(:disabled) { background: var(--cr-surface-2); }
+.cr-peticiones__menu-lista button:disabled { opacity: .42; cursor: default; }
+.cr-peticiones__menu-lista svg { width: 14px; height: 14px; color: var(--cr-ink-2); }
+
+@media (max-width: 760px) {
+  .cr-peticiones .cr-panel__head { align-items: flex-start; flex-wrap: wrap; }
+  .cr-peticiones .cr-panel__head > .min-w-0 { width: 100%; }
+  .cr-peticiones__controles { width: 100%; justify-content: flex-start; }
+  .cr-peticiones__controles > .relative { flex: 1 1 100%; }
+  .cr-peticiones__controles .cr-input { width: 100%; }
+  .cr-peticiones .cr-table { display: block; table-layout: auto; }
+  .cr-peticiones .cr-table colgroup,
+  .cr-peticiones .cr-table thead { display: none; }
+  .cr-peticiones .cr-table tbody { display: block; }
+  .cr-peticiones .cr-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px 12px;
+    gap: 8px 14px;
+    border-bottom: 1px solid var(--cr-line-soft);
+  }
+  .cr-peticiones .cr-table tbody td {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+    white-space: normal;
+    text-align: right;
+  }
+  .cr-peticiones .cr-table tbody td::before {
+    content: attr(data-label);
+    flex: none;
+    color: var(--cr-ink-3);
+    font: 500 8.5px/1 var(--cr-font-mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .cr-peticiones .cr-table tbody td:first-child,
+  .cr-peticiones .cr-table tbody td:last-child { grid-column: 1 / -1; }
+  .cr-peticiones .cr-table tbody td:first-child {
+    justify-content: flex-start;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--cr-line-soft);
+    font-weight: 600;
+    text-align: left;
+  }
+  .cr-peticiones .cr-table tbody td:first-child::before { display: none; }
+  .cr-peticiones .cr-table tbody td:last-child { justify-content: flex-end; padding-top: 2px; }
+  .cr-peticiones .cr-table tbody td:last-child::before { margin-right: auto; }
+  .cr-peticiones .cr-table tbody tr:hover td { background: transparent; }
+}
+
 .cr-callout {
   border: 1px solid var(--cr-line-2);
   border-left: 3px solid var(--cr-accent);
