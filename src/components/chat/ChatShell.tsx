@@ -5,17 +5,15 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { Markdown } from "@/components/chat/Markdown";
 import { ReporteCard } from "@/components/chat/ReporteCard";
+import { Cargando } from "@/components/ui/Cargando";
+import { Modal } from "@/components/ui/Modal";
 import { formatoUSD } from "@/lib/ai-modelos";
 import type { ResultadoReporte } from "@/lib/reportes/crear-reporte";
 import {
   ArrowUp,
   ChevronDown,
-  FileText,
-  Lightbulb,
-  Mail,
   MessageSquare,
   PanelLeft,
-  Percent,
   Plus,
   Search,
   Square,
@@ -44,10 +42,9 @@ interface MensajeGuardado {
 }
 
 const SUGERENCIAS = [
-  { icono: Mail, texto: "Redacta un correo profesional para un cliente" },
-  { icono: FileText, texto: "Resume estos puntos en un párrafo ejecutivo" },
-  { icono: Percent, texto: "Explícame qué es el fill rate y cómo se calcula" },
-  { icono: Lightbulb, texto: "Dame ideas para presentar un scorecard a un cliente" },
+  "¿Cuáles son los proveedores con mayor saldo pendiente?",
+  "Compara las ventas de los retailers en los últimos tres meses",
+  "Crea un reporte ejecutivo de ventas",
 ];
 
 // El transport lanza el cuerpo de la respuesta tal cual cuando el servidor
@@ -258,6 +255,36 @@ function RemitenteIA() {
   );
 }
 
+function InicioChat({ onElegir }: { onElegir: (texto: string) => void }) {
+  return (
+    <div className="cr-chat-empty">
+      <div className="cr-chat-greeting">
+        <span className="cr-chat-ai-label">KPS AI</span>
+        <h2 className="cr-chat-greeting__title">¿Qué quieres consultar hoy?</h2>
+        <p className="cr-body">
+          Consulta información de SAP y Retail, analiza resultados y crea reportes.
+        </p>
+      </div>
+      <div className="cr-chat-suggestions">
+        <p className="cr-label">Consultas frecuentes</p>
+        <div className="cr-chat-suggestions__list">
+          {SUGERENCIAS.map((texto) => (
+            <button
+              key={texto}
+              type="button"
+              className="cr-chat-suggestion"
+              onClick={() => onElegir(texto)}
+            >
+              <span>{texto}</span>
+              <ArrowUp size={14} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Conversacion({
   chatId,
   entradaInicial,
@@ -335,6 +362,7 @@ function Conversacion({
 
   const ultimoEsAssistantStreaming =
     status === "streaming" && messages[messages.length - 1]?.role === "assistant";
+  const conversacionVacia = !cargandoHistorial && messages.length === 0;
 
   // Acumulado de la conversación. Solo cuenta lo enviado en esta sesión: el
   // historial recargado de Mongo no trae la metadata de consumo.
@@ -356,41 +384,21 @@ function Conversacion({
 
   return (
     <>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 py-6">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto" aria-label="Conversación">
+        <div className="cr-chat-conversation">
           {cargandoHistorial ? (
-            <div className="cr-chat-loader">
-              <div className="cr-chat-loader__spinner" />
-              <p className="cr-chat-loader__label">Cargando conversación…</p>
+            <div className="cr-chat-history-loading">
+              <Cargando label="Cargando conversación…" />
             </div>
           ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10">
-              <div className="cr-chat-greeting mb-6 text-center">
-                <h2 className="cr-chat-greeting__title mb-2">KPS AI</h2>
-                <p className="cr-body mx-auto max-w-md">
-                  Asistente de Arcanum. Módulo independiente: no consulta los
-                  datos de Retail.
-                </p>
-              </div>
-              <div className="grid w-full max-w-lg grid-cols-1 gap-3 md:grid-cols-2">
-                {SUGERENCIAS.map((s) => (
-                  <button
-                    key={s.texto}
-                    type="button"
-                    className="cr-chat-suggestion"
-                    onClick={() => {
-                      setEntrada(s.texto);
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    <s.icono size={15} strokeWidth={1.75} />
-                    {s.texto}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <InicioChat
+              onElegir={(texto) => {
+                setEntrada(texto);
+                textareaRef.current?.focus();
+              }}
+            />
           ) : (
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-5" aria-live="polite">
               {messages.map((m, idx) =>
                 m.role === "user" ? (
                   <div key={m.id} className="cr-msg-block cr-msg-block--user">
@@ -446,7 +454,7 @@ function Conversacion({
                 </div>
               ) : null}
               {error ? (
-                <p className="cr-small" style={{ color: "var(--cr-danger)" }} role="alert">
+                <p className="cr-chat-error" role="alert">
                   {motivoDelError(error)}
                 </p>
               ) : null}
@@ -455,13 +463,15 @@ function Conversacion({
         </div>
       </div>
 
-      <div className="cr-chat-input-bar">
-        <div className="mx-auto max-w-3xl">
+      {!cargandoHistorial ? (
+      <div className={`cr-chat-input-bar${conversacionVacia ? " cr-chat-input-bar--empty" : ""}`}>
+        <div className="cr-chat-compose-wrap">
           <div className="cr-chat-input-compose">
             <div className="cr-chat-input-row">
               <textarea
                 ref={textareaRef}
                 rows={1}
+                aria-label="Mensaje para KPS AI"
                 placeholder="Escribe un mensaje…"
                 value={entrada}
                 maxLength={8000}
@@ -507,6 +517,7 @@ function Conversacion({
           </p>
         </div>
       </div>
+      ) : null}
     </>
   );
 }
@@ -514,11 +525,13 @@ function Conversacion({
 export function ChatShell() {
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
-  const [sidebarAbierto, setSidebarAbierto] = useState(true);
-  const [busquedaAbierta, setBusquedaAbierta] = useState(false);
+  const [sidebarAbierto, setSidebarAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [entradaInicial, setEntradaInicial] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [cargandoChats, setCargandoChats] = useState(true);
+  const [chatPorBorrar, setChatPorBorrar] = useState<ChatItem | null>(null);
+  const [borrando, setBorrando] = useState(false);
 
   useEffect(() => {
     // En móvil el sidebar arranca cerrado (overlay bajo la mobile nav).
@@ -533,6 +546,8 @@ export function ChatShell() {
       setChatId((actual) => actual ?? r.chats[0]?.id ?? null);
     } catch (e) {
       setError(e instanceof ClientApiError ? e.message : "No se pudieron cargar los chats");
+    } finally {
+      setCargandoChats(false);
     }
   }, []);
 
@@ -557,14 +572,19 @@ export function ChatShell() {
     }
   }
 
-  async function borrarChat(id: string) {
-    if (!window.confirm("¿Borrar esta conversación?")) return;
+  async function borrarChat() {
+    if (!chatPorBorrar) return;
+    const id = chatPorBorrar.id;
+    setBorrando(true);
     try {
       await api(`/api/ai/chats/${id}`, { method: "DELETE" });
       setChats((c) => c.filter((x) => x.id !== id));
       setChatId((actual) => (actual === id ? null : actual));
+      setChatPorBorrar(null);
     } catch (e) {
       setError(e instanceof ClientApiError ? e.message : "No se pudo borrar");
+    } finally {
+      setBorrando(false);
     }
   }
 
@@ -596,44 +616,39 @@ export function ChatShell() {
 
       <aside
         className={`cr-chat-sidebar ${sidebarAbierto ? "cr-chat-sidebar--open" : "cr-chat-sidebar--closed"}`}
+        aria-label="Historial de conversaciones"
       >
-        <div className="cr-chat-sidebar-toolbar" data-search-open={busquedaAbierta}>
+        <div className="cr-chat-sidebar-toolbar">
+          <div className="cr-chat-sidebar-heading">
+            <span>Conversaciones</span>
+            <span>{chats.length}</span>
+          </div>
           <button type="button" className="cr-chat-new-btn" onClick={() => nuevoChat()}>
             <Plus size={15} strokeWidth={2} />
             <span className="cr-chat-new-btn__label">Nueva conversación</span>
           </button>
-          <div className="cr-chat-search-slot">
-            <button
-              type="button"
-              className="cr-chat-search-toggle"
+          <div className="cr-chat-search-field">
+            <Search size={14} strokeWidth={1.75} />
+            <input
+              type="search"
               aria-label="Buscar conversaciones"
-              onClick={() => setBusquedaAbierta(true)}
-            >
-              <Search size={15} strokeWidth={1.75} />
-            </button>
-            <div className="cr-chat-search-field">
-              <Search size={14} strokeWidth={1.75} />
-              <input
-                placeholder="Buscar…"
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                autoFocus={busquedaAbierta}
-              />
+              placeholder="Buscar conversación…"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+            {busqueda ? (
               <button
                 type="button"
-                aria-label="Cerrar búsqueda"
-                onClick={() => {
-                  setBusquedaAbierta(false);
-                  setBusqueda("");
-                }}
+                aria-label="Limpiar búsqueda"
+                onClick={() => setBusqueda("")}
               >
                 <X size={14} strokeWidth={1.75} />
               </button>
-            </div>
+            ) : null}
           </div>
         </div>
 
-        <div className="cr-chat-sidebar__list">
+        <nav className="cr-chat-sidebar__list" aria-label="Conversaciones guardadas">
           {grupos.map((g) => (
             <div key={g.etiqueta}>
               <div className="cr-chat-group-label">{g.etiqueta}</div>
@@ -645,6 +660,7 @@ export function ChatShell() {
                   <button
                     type="button"
                     className="cr-chat-item__btn"
+                    aria-current={c.id === chatId ? "page" : undefined}
                     onClick={() => {
                       setEntradaInicial("");
                       setChatId(c.id);
@@ -657,8 +673,8 @@ export function ChatShell() {
                   <button
                     type="button"
                     className="cr-chat-item__delete"
-                    aria-label="Borrar conversación"
-                    onClick={() => borrarChat(c.id)}
+                    aria-label={`Borrar conversación: ${c.title}`}
+                    onClick={() => setChatPorBorrar(c)}
                   >
                     <Trash2 size={13} strokeWidth={1.75} />
                   </button>
@@ -671,10 +687,10 @@ export function ChatShell() {
               {busqueda ? "Sin resultados." : "Sin conversaciones todavía."}
             </p>
           ) : null}
-        </div>
+        </nav>
       </aside>
 
-      <div className="cr-chat-main">
+      <div className="cr-chat-main" data-loading={cargandoChats}>
         <div className="cr-chat-header">
           <div className="cr-chat-header__inner">
             <button
@@ -686,21 +702,25 @@ export function ChatShell() {
               <PanelLeft size={16} strokeWidth={1.75} />
             </button>
             <div>
-              <span className="cr-msg-sender__name--ai" style={{ fontSize: 14 }}>
+              <h1 className="cr-chat-header__title">
                 KPS AI
-              </span>
-              <p className="cr-small">Módulo independiente: no consulta los datos de Retail</p>
+              </h1>
+              <p className="cr-small">Consultas, análisis y reportes de SAP y Retail</p>
             </div>
           </div>
         </div>
 
         {error ? (
-          <p className="cr-small px-4 py-2" style={{ color: "var(--cr-danger)" }} role="alert">
+          <p className="cr-chat-error cr-chat-error--shell" role="alert">
             {error}
           </p>
         ) : null}
 
-        {chatId ? (
+        {cargandoChats ? (
+          <div className="cr-chat-shell-loading">
+            <Cargando label="Cargando conversaciones…" />
+          </div>
+        ) : chatId ? (
           <Conversacion
             key={chatId}
             chatId={chatId}
@@ -708,37 +728,33 @@ export function ChatShell() {
             onActualizado={cargarChats}
           />
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center px-4">
-            <div className="cr-chat-greeting mb-6 text-center">
-              <h2 className="cr-chat-greeting__title mb-2">KPS AI</h2>
-              <p className="cr-body mx-auto max-w-md">
-                Asistente de Arcanum. Crea una conversación para empezar.
-              </p>
-            </div>
-            <div className="grid w-full max-w-lg grid-cols-1 gap-3 md:grid-cols-2">
-              {SUGERENCIAS.map((s) => (
-                <button
-                  key={s.texto}
-                  type="button"
-                  className="cr-chat-suggestion"
-                  onClick={() => nuevoChat(s.texto)}
-                >
-                  <s.icono size={15} strokeWidth={1.75} />
-                  {s.texto}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="cr-btn cr-btn--ai mt-6"
-              onClick={() => nuevoChat()}
-            >
-              <Plus strokeWidth={1.75} />
-              Nueva conversación
-            </button>
+          <div className="cr-chat-start">
+            <InicioChat onElegir={(texto) => nuevoChat(texto)} />
           </div>
         )}
       </div>
+
+      {chatPorBorrar ? (
+        <Modal
+          titulo="Eliminar conversación"
+          subtitulo={chatPorBorrar.title}
+          onCerrar={() => !borrando && setChatPorBorrar(null)}
+          pie={
+            <>
+              <button className="cr-btn cr-btn--ghost" type="button" onClick={() => setChatPorBorrar(null)} disabled={borrando}>
+                Cancelar
+              </button>
+              <button className="cr-btn cr-btn--danger" type="button" onClick={borrarChat} disabled={borrando}>
+                {borrando ? "Eliminando…" : "Eliminar"}
+              </button>
+            </>
+          }
+        >
+          <p className="cr-body cr-chat-delete-confirm">
+            Esta conversación y su historial se eliminarán de forma permanente.
+          </p>
+        </Modal>
+      ) : null}
     </div>
   );
 }
