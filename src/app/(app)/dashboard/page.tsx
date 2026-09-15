@@ -1,9 +1,9 @@
-import type { CSSProperties } from "react";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { VentasNetasChart } from "@/components/dashboard/VentasNetasChart";
 import { Pagina } from "@/components/dashboard/Pagina";
 import { fmtFecha, fmtNum, fmtPct } from "@/components/lib/fmt";
-import { Kpi, Meter, Panel } from "@/components/ui/basicos";
+import { Kpi, Meter, Panel, Tabla } from "@/components/ui/basicos";
 import { getSessionUser } from "@/lib/auth/guards";
 import { formatearMoneda, formatearMonedaCompacta } from "@/lib/retail/analisis/formato";
 import { detalleRetailers, ventasNetasMensuales } from "@/lib/retail/stats";
@@ -14,14 +14,6 @@ import { detalleRetailers, ventasNetasMensuales } from "@/lib/retail/stats";
 // este mismo criterio de ranking se replica para ese dominio en vez de traer
 // aquí su propio resumen de unidades.
 //
-// Solo cuatro retailers y seis columnas cortas: a lo ancho de la pantalla la
-// tabla por defecto de .cr-table (13px, 12px·14px de padding) se ve dispersa,
-// con mucho hueco entre columnas. En vez de encoger la tabla, se agranda la
-// letra y el padding de esta tabla en particular —sin tocar design-system.css,
-// que comparten tablas con muchas más columnas.
-const ENCABEZADO: CSSProperties = { padding: "16px 20px", fontSize: 12 };
-const CELDA: CSSProperties = { padding: "18px 20px", fontSize: 14 };
-
 export default async function DashboardPage() {
   const usuario = await getSessionUser();
   if (!usuario) redirect("/login");
@@ -48,8 +40,9 @@ export default async function DashboardPage() {
   const periodo = desde && hasta ? `Acumulado ${fmtFecha(desde)} – ${fmtFecha(hasta)}` : "Acumulado histórico";
 
   return (
-    <Pagina title="Dashboard" description="Resumen Operativo de KPS">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <Pagina title="Dashboard" description="Resumen operativo de KPS">
+      <div className="cr-dashboard">
+        <section className="cr-dashboard__indicadores" aria-label="Indicadores de ventas">
           <Kpi
             label="Ventas totales"
             value={formatearMonedaCompacta(ventasTotales)}
@@ -65,7 +58,7 @@ export default async function DashboardPage() {
             value={fmtNum(articulosTotales)}
             detalle="Productos distintos vendidos, todos los retailers"
           />
-        </div>
+        </section>
 
         {/* La evolución antes del ranking: primero cómo va el año, después
             quién lo compone. El panel dice su año y el ranking dice su
@@ -74,45 +67,50 @@ export default async function DashboardPage() {
 
         <Panel
           title="Ranking de ventas por retailer"
-          acciones={<span className="cr-small">{periodo}</span>}
+          subtitulo={periodo}
+          acciones={
+            <Link href="/retail" className="cr-btn cr-btn--secondary cr-btn--sm">
+              Ver retailers
+            </Link>
+          }
           sinPadding
         >
-          <div className="cr-table-scroll">
-            <table className="cr-table">
+          <Tabla fija>
+              <colgroup>
+                <col className="cr-dashboard__rango" />
+                <col />
+                <col className="cr-dashboard__ventas" />
+                <col className="cr-dashboard__participacion" />
+                <col className="cr-dashboard__productos" />
+                <col className="cr-dashboard__fecha" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th style={ENCABEZADO}>#</th>
-                  <th style={ENCABEZADO}>Retailer</th>
-                  <th className="num" style={ENCABEZADO}>Ventas</th>
-                  <th style={ENCABEZADO}>Participación</th>
-                  <th className="num" style={ENCABEZADO}>Productos</th>
-                  <th style={ENCABEZADO}>Última venta</th>
+                  <th>#</th>
+                  <th>Retailer</th>
+                  <th className="num">Ventas</th>
+                  <th>Participación</th>
+                  <th className="num">Productos</th>
+                  <th>Última venta</th>
                 </tr>
               </thead>
               <tbody>
                 {ranking.map((r, i) => (
                   <tr key={r.id}>
-                    <td className="cr-mono" style={CELDA}>{i + 1}</td>
-                    <td style={CELDA}>
-                      <span style={{ fontSize: 15 }}>{r.nombre}</span>
-                    </td>
-                    <td className="num" style={{ ...CELDA, fontSize: 15 }}>
-                      {formatearMoneda(r.importe)}
-                    </td>
-                    <td style={CELDA}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-40">
+                    <td className="cr-mono">{i + 1}</td>
+                    <td><span className="cr-dashboard__nombre" title={r.nombre}>{r.nombre}</span></td>
+                    <td className="num">{formatearMoneda(r.importe)}</td>
+                    <td>
+                      <div className="cr-dashboard__meter">
+                        <div className="cr-dashboard__meter-barra">
                           <Meter value={r.participacion ?? 0} tono="ink" />
                         </div>
-                        <span className="cr-mono" style={{ fontSize: 13 }}>
-                          {fmtPct(r.participacion)}
-                        </span>
+                        <span className="cr-mono">{fmtPct(r.participacion)}</span>
                       </div>
                     </td>
-                    <td className="num" style={CELDA}>{fmtNum(r.articulos)}</td>
+                    <td className="num">{fmtNum(r.articulos)}</td>
                     <td
                       className="cr-mono"
-                      style={CELDA}
                       title={
                         r.ultimoReporte
                           ? `Último archivo cargado el ${fmtFecha(r.ultimoReporte)}${r.ultimoArchivo ? `: ${r.ultimoArchivo}` : ""}`
@@ -124,9 +122,9 @@ export default async function DashboardPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+          </Tabla>
         </Panel>
+      </div>
     </Pagina>
   );
 }
