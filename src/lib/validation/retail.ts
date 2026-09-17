@@ -122,3 +122,32 @@ export const filasAnalisisQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(FILAS_POR_PAGINA).default(FILAS_POR_PAGINA),
 });
+
+/**
+ * Los faltantes de un retailer (/api/retail/faltantes).
+ *
+ * `account` es OBLIGATORIO, al revés que en los esquemas del analizador: "los
+ * faltantes de nadie" no significa nada, y sin el enum un id mal escrito
+ * devolvería el catálogo entero marcado como faltante — el peor falso positivo
+ * posible en esta pantalla.
+ */
+export const faltantesQuerySchema = z.object({
+  account: z.enum(RETAILER_IDS, { error: "Selecciona un retailer válido" }),
+});
+
+/**
+ * Alta de un producto en un retailer (POST /api/retail/faltantes).
+ *
+ * El código va como TEXTO y sólo se le exige que no esté vacío: puede traer un
+ * cero a la izquierda o no ser numérico ("A-1004"), y rechazarlo sería negarse
+ * a guardar lo que la cadena de verdad usa (ver models/ProductMapping.ts).
+ */
+export const altaFaltanteSchema = z.object({
+  account: z.enum(RETAILER_IDS, { error: "Selecciona un retailer válido" }),
+  item: z.string().trim().min(1, "Falta el producto").max(60),
+  customerCode: z
+    .string()
+    .trim()
+    .min(1, "Escribe el código con el que la cadena da de alta el producto")
+    .max(60),
+});

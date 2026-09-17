@@ -66,6 +66,26 @@ export const CAMPOS_MAPEO = [
   "description",
 ] as const satisfies readonly (keyof FilaMapeo)[];
 
+/**
+ * Fila de la tabla de faltantes: un producto del catálogo que la cadena
+ * todavía no tiene dado de alta, o sea sin fila de mapeo para ese canal o con
+ * la celda del código vacía (ver models/ProductMapping.ts).
+ *
+ * Son las tres columnas que se muestran, y nada más: el alta se hace desde la
+ * propia fila, así que no hay ficha detrás a la que llevar más campos.
+ */
+export interface FilaFaltante {
+  item: string;
+  description: string;
+  status: string;
+}
+
+export const CAMPOS_FALTANTES = [
+  "item",
+  "description",
+  "status",
+] as const satisfies readonly (keyof FilaFaltante)[];
+
 /** Ventas agregadas de un producto en un canal. */
 export interface VentaCanal {
   unidades: number;

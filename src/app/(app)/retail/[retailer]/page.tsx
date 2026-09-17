@@ -26,5 +26,8 @@ export default async function RetailerPage({
   const ficha = (await detalleRetailers()).find((r) => r.id === retailer);
   if (!ficha) notFound();
 
-  return <RetailerDetalle ficha={ficha} />;
+  // El permiso se resuelve aquí porque la sesión ya está en la mano: no añade
+  // ninguna consulta y evita que la pestaña de faltantes ofrezca un enlace a
+  // /catalogo que acabaría en "acceso denegado".
+  return <RetailerDetalle ficha={ficha} puedeCatalogo={canAccess(usuario, "catalogo")} />;
 }

@@ -14,11 +14,13 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet } from "lucide-react";
 import { api } from "@/components/lib/api-client";
+import { aFilas } from "@/components/lib/filas";
 import { fmtFecha, fmtFechaHora, fmtNum } from "@/components/lib/fmt";
 import { AnalisisKpis, type EvolucionKpis } from "@/components/retail/AnalisisKpis";
 import { AnalisisTable } from "@/components/retail/AnalisisTable";
 import { AutorReporte, type UsuarioReporte } from "@/components/retail/AutorReporte";
 import { ReporteDetalle } from "@/components/retail/ReporteDetalle";
+import { RetailerFaltantes } from "@/components/retail/RetailerFaltantes";
 import {
   RetailerContenidoSkeleton,
   RetailerGraficasSkeleton,
@@ -46,6 +48,7 @@ import {
   type RangoISO,
 } from "@/lib/retail/analisis/periodos";
 import { columnasHistorico, plantillaPorId } from "@/lib/retail/analisis/plantillas";
+import { CAMPOS_FALTANTES, type FilaFaltante } from "@/lib/catalogo/tipos";
 import { colorRetailer } from "@/lib/retail/retailers";
 import type { DetalleRetailer } from "@/lib/retail/stats";
 import type {
@@ -76,7 +79,7 @@ const TOP_BARRA = 8;
 const TOP_COMPOSICION = 5;
 const PRODUCTOS_POR_PAGINA = 20;
 
-type Vista = "ventas" | "inventario" | "productos" | "reportes";
+type Vista = "ventas" | "inventario" | "productos" | "faltantes" | "reportes";
 
 /** Sentido del orden de la tabla de productos. */
 type Direccion = "asc" | "desc";
@@ -93,6 +96,9 @@ const VISTAS: { id: Vista; etiqueta: string }[] = [
   // sitio —entre Ventas y Productos— y de momento sólo dice que está pendiente.
   { id: "inventario", etiqueta: "Inventario" },
   { id: "productos", etiqueta: "Productos" },
+  // Justo después de Productos, que es su reverso: aquella enseña lo que el
+  // retailer sí vendió y ésta lo que del catálogo de KPS todavía no vende.
+  { id: "faltantes", etiqueta: "Faltantes" },
   { id: "reportes", etiqueta: "Reportes" },
 ];
 
@@ -112,6 +118,13 @@ interface Bundle {
   serie?: SerieAcumulada;
   totales?: GrupoAcumulado;
   rangoFechas?: { desde: string; hasta: string } | null;
+}
+
+/** Lo que devuelve /api/retail/faltantes: filas como arreglos, sin paginar. */
+interface RespuestaFaltantes {
+  catalogo: { finalizadaEl: string | null } | null;
+  filas: unknown[][];
+  total: number;
 }
 
 /** Una fila de "Reportes guardados". */
@@ -203,7 +216,15 @@ function derivar(
   };
 }
 
-export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
+export function RetailerDetalle({
+  ficha,
+  puedeCatalogo,
+}: {
+  ficha: DetalleRetailer;
+  /** Si esta persona puede entrar a /catalogo. Sólo decide si la pestaña de
+   *  faltantes ofrece el enlace: proponer un 403 es peor que no proponer nada. */
+  puedeCatalogo: boolean;
+}) {
   const router = useRouter();
   const [vista, setVista] = useState<Vista>("ventas");
   const [bundle, setBundle] = useState<Bundle | null>(null);
@@ -290,6 +311,57 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
     fichaPedida.current = ficha.id;
     void cargar();
   }, [cargar, ficha.id]);
+
+  // --- Faltantes -----------------------------------------------------------
+  // El estado vive AQUÍ y no en RetailerFaltantes porque el panel se monta
+  // dentro de un wrapper con `key={vista}`: cambiar de pestaña lo desmonta, y
+  // con el fetch dentro, cada regreso volvería a pedir y a enseñar esqueleto.
+  //
+  // Tampoco entra en la carga inicial de la ficha, que es lo caro de la ruta:
+  // se pide la primera vez que se abre la pestaña, y una sola vez por retailer.
+  const [faltantes, setFaltantes] = useState<FilaFaltante[] | null>(null);
+  const [hayCatalogo, setHayCatalogo] = useState(true);
+  const [errorFaltantes, setErrorFaltantes] = useState(false);
+  // Contador y no un `setVista("faltantes")`: al reintentar la pestaña YA es
+  // "faltantes", así que volver a ponerla no cambia nada y el efecto no se
+  // vuelve a ejecutar. Esto es lo que lo mueve.
+  const [reintentoFaltantes, setReintentoFaltantes] = useState(0);
+  const faltantesPedidos = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (vista !== "faltantes" || faltantesPedidos.current === ficha.id) return;
+    faltantesPedidos.current = ficha.id;
+    void (async () => {
+      try {
+        const d = await api<RespuestaFaltantes>(
+          `/api/retail/faltantes?account=${encodeURIComponent(ficha.id)}`
+        );
+        setHayCatalogo(d.catalogo !== null);
+        setFaltantes(aFilas<FilaFaltante>(CAMPOS_FALTANTES, d.filas));
+      } catch {
+        setErrorFaltantes(true);
+      }
+    })();
+  }, [vista, ficha.id, reintentoFaltantes]);
+
+  /**
+   * Un producto recién dado de alta deja de faltar.
+   *
+   * Se quita de la lista en memoria en vez de volver a pedirla: la respuesta del
+   * alta ya confirmó la escritura, y un refetch repintaría la tabla entera —y
+   * movería la página— por una fila.
+   */
+  const quitarFaltante = useCallback((item: string) => {
+    setFaltantes((f) => (f ? f.filter((x) => x.item !== item) : f));
+  }, []);
+
+  const reintentarFaltantes = useCallback(() => {
+    // Sin limpiar el guard, el reintento se bloquearía a sí mismo.
+    faltantesPedidos.current = null;
+    setErrorFaltantes(false);
+    setFaltantes(null);
+    setReintentoFaltantes((n) => n + 1);
+  }, []);
 
   // El rango CON DATOS del retailer: pone los topes de los inputs. Sale del
   // bundle del histórico y no del acotado, que se movería con cada elección.
@@ -837,7 +909,25 @@ export function RetailerDetalle({ ficha }: { ficha: DetalleRetailer }) {
           —el design system solo reconoce 20px y 32px— y hay que decidir a cuál
           se acerca en vez de dejarlo suelto. */}
       <div className="cr-page-content flex flex-col gap-6">
-        {sinDatos ? (
+        {/* Faltantes va ANTES del gate a propósito: es la única pestaña que no
+            mira SalesReport para existir. Su universo lo pone el catálogo, y un
+            retailer sin un solo reporte cargado es justo el caso en que TODO el
+            catálogo le falta, o sea cuando más tiene que decir. */}
+        {vista === "faltantes" ? (
+          <div key="faltantes" className="cr-vista">
+            <RetailerFaltantes
+              retailer={ficha.id}
+              nombre={ficha.nombre}
+              filas={faltantes}
+              cargando={faltantes === null && !errorFaltantes}
+              error={errorFaltantes}
+              hayCatalogo={hayCatalogo}
+              puedeCatalogo={puedeCatalogo}
+              onReintentar={reintentarFaltantes}
+              onAlta={quitarFaltante}
+            />
+          </div>
+        ) : sinDatos ? (
           <Panel>
             <EstadoVacio
               title={`Todavía no hay reportes de ${ficha.nombre}`}

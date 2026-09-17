@@ -9,6 +9,7 @@ import { FichaProducto } from "@/components/catalogo/FichaProducto";
 import { TablaCatalogo } from "@/components/catalogo/TablaCatalogo";
 import { TablaMapeo } from "@/components/catalogo/TablaMapeo";
 import { Pagina } from "@/components/dashboard/Pagina";
+import { aFilas } from "@/components/lib/filas";
 import { useFilasQueCaben } from "@/components/lib/useFilasQueCaben";
 import { Cargando } from "@/components/ui/Cargando";
 import { BarraSegmentada } from "@/components/ui/BarraSegmentada";
@@ -40,17 +41,6 @@ interface RespuestaTabla {
   carga: { loadId: string } | null;
   filas: unknown[][];
   total: number;
-}
-
-/** Reconstruye objetos a partir de los arreglos que manda el servidor. */
-function aFilas<T>(campos: readonly string[], filas: unknown[][]): T[] {
-  return filas.map((f) => {
-    const o: Record<string, unknown> = {};
-    campos.forEach((c, i) => {
-      o[c] = f[i];
-    });
-    return o as T;
-  });
 }
 
 /** Texto buscable de una fila, ya normalizado. */

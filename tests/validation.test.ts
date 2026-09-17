@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { loginSchema } from "@/lib/validation/auth";
 import { chatBodySchema } from "@/lib/validation/chat";
-import { guardarAnalisisSchema, resumenAnalisisQuerySchema } from "@/lib/validation/retail";
+import {
+  altaFaltanteSchema,
+  faltantesQuerySchema,
+  guardarAnalisisSchema,
+  resumenAnalisisQuerySchema,
+} from "@/lib/validation/retail";
 import { nombreRetailer, RETAILER_IDS, RETAILERS } from "@/lib/retail/retailers";
 
 // Los esquemas de carga por hojas fijas se fueron con ese flujo: sus
@@ -137,5 +142,50 @@ describe("chatBodySchema: topes por rol", () => {
     const msgs = Array.from({ length: 200 }, (_, i) => ({ role: (i % 2 ? "assistant" : "user") as "user" | "assistant", len: 10 }));
     expect(chatBodySchema.safeParse(body(msgs)).success).toBe(true);
     expect(chatBodySchema.safeParse(body([...msgs, { role: "user", len: 10 }])).success).toBe(false);
+  });
+});
+
+describe("faltantesQuerySchema", () => {
+  it("acepta un retailer de la lista", () => {
+    expect(faltantesQuerySchema.safeParse({ account: "walmart" }).success).toBe(true);
+  });
+
+  it("exige la cuenta: 'los faltantes de nadie' no significa nada", () => {
+    expect(faltantesQuerySchema.safeParse({}).success).toBe(false);
+  });
+
+  it("rechaza un id que no es de la lista", () => {
+    // Sin el enum, un id mal escrito no cruzaría con ningún mapeo y devolvería
+    // el catálogo ENTERO marcado como faltante: el peor falso positivo posible.
+    expect(faltantesQuerySchema.safeParse({ account: "walmarts" }).success).toBe(false);
+  });
+});
+
+describe("altaFaltanteSchema", () => {
+  const base = { account: "walmart", item: "PTAL001", customerCode: "1004" };
+
+  it("acepta un alta con código", () => {
+    expect(altaFaltanteSchema.safeParse(base).success).toBe(true);
+  });
+
+  it("rechaza el código vacío, que es el error que avisa el toast", () => {
+    expect(altaFaltanteSchema.safeParse({ ...base, customerCode: "" }).success).toBe(false);
+  });
+
+  it("rechaza un código de puros espacios: se recorta antes de medirlo", () => {
+    expect(altaFaltanteSchema.safeParse({ ...base, customerCode: "   " }).success).toBe(false);
+  });
+
+  it("acepta un código no numérico y uno con cero a la izquierda", () => {
+    // El código es el que usa la cadena, no un número: "A-1004" y "0075" son
+    // válidos y rechazarlos sería negarse a guardar lo que de verdad se usa.
+    expect(altaFaltanteSchema.safeParse({ ...base, customerCode: "A-1004" }).success).toBe(true);
+    const r = altaFaltanteSchema.safeParse({ ...base, customerCode: "0075" });
+    expect(r.success && r.data.customerCode).toBe("0075");
+  });
+
+  it("exige el producto y un retailer de la lista", () => {
+    expect(altaFaltanteSchema.safeParse({ ...base, item: "" }).success).toBe(false);
+    expect(altaFaltanteSchema.safeParse({ ...base, account: "walmarts" }).success).toBe(false);
   });
 });
