@@ -57,8 +57,10 @@ describe("productosSinAlta", () => {
   });
 
   it("acepta como alta un código que no es numérico", () => {
-    // "A-1004" no cruzaría con las ventas, pero aquí no se pregunta por ventas:
-    // la cadena le dio un código, así que el producto está listado.
+    // Asimetría deliberada con `altaFaltanteSchema`, que sólo deja ESCRIBIR
+    // dígitos: el Excel del catálogo sí admite "A-1004" y esas filas ya están
+    // en la base. Leerlas como alta es lo correcto —la cadena le dio un código,
+    // el producto está listado—; lo que no se hace es crear más.
     expect(faltantes([producto()], [mapeo({ customerCode: "A-1004" })])).toEqual([]);
   });
 

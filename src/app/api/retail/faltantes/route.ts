@@ -75,7 +75,12 @@ export async function GET(req: Request) {
     const filas = productosSinAlta(productos, mapeos);
 
     return ok({
-      catalogo: { finalizadaEl: carga.finalizedAt?.toISOString() ?? null },
+      catalogo: {
+        finalizadaEl: carga.finalizedAt?.toISOString() ?? null,
+        // Todos los productos de la carga, no sólo los vendibles: es el "de
+        // cuántos" contra el que el subtítulo de la tabla mide los faltantes.
+        productos: productos.length,
+      },
       campos: CAMPOS_FALTANTES,
       filas: filas.map((f) => CAMPOS_FALTANTES.map((c) => f[c])),
       total: filas.length,

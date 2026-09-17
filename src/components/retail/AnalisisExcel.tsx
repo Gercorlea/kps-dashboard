@@ -783,9 +783,6 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
   }, [esHistorico, kpis, resumen, campoMetrica, acumHistorico]);
 
   const filasVista = esHistorico ? filasHistorico : filasVisibles;
-  const totalFilasVista = esHistorico
-    ? (resumen?.archivo?.total ?? 0)
-    : (dataset?.totalFilas ?? 0);
   const totalFiltradasVista = esHistorico
     ? (paginaHistorico?.total ?? 0)
     : filasFiltradas.length;
@@ -981,7 +978,6 @@ export function AnalisisExcel({ retailer }: { retailer: string }) {
             titulo={esHistorico ? "Último reporte guardado" : "Datos"}
             columnas={columnasTabla}
             filasVisibles={filasVista}
-            totalFilas={totalFilasVista}
             totalFiltradas={totalFiltradasVista}
             totalColumnas={dataset.columnas.length}
             detalles={detallesTabla}

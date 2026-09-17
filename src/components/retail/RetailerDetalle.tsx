@@ -122,7 +122,8 @@ interface Bundle {
 
 /** Lo que devuelve /api/retail/faltantes: filas como arreglos, sin paginar. */
 interface RespuestaFaltantes {
-  catalogo: { finalizadaEl: string | null } | null;
+  /** null = nunca se ha cargado un catálogo. `productos` es la carga entera. */
+  catalogo: { finalizadaEl: string | null; productos: number } | null;
   filas: unknown[][];
   total: number;
 }
@@ -321,6 +322,8 @@ export function RetailerDetalle({
   // se pide la primera vez que se abre la pestaña, y una sola vez por retailer.
   const [faltantes, setFaltantes] = useState<FilaFaltante[] | null>(null);
   const [hayCatalogo, setHayCatalogo] = useState(true);
+  /** Productos de la carga activa, para el "de cuántos" del subtítulo. */
+  const [totalCatalogo, setTotalCatalogo] = useState(0);
   const [errorFaltantes, setErrorFaltantes] = useState(false);
   // Contador y no un `setVista("faltantes")`: al reintentar la pestaña YA es
   // "faltantes", así que volver a ponerla no cambia nada y el efecto no se
@@ -337,6 +340,7 @@ export function RetailerDetalle({
           `/api/retail/faltantes?account=${encodeURIComponent(ficha.id)}`
         );
         setHayCatalogo(d.catalogo !== null);
+        setTotalCatalogo(d.catalogo?.productos ?? 0);
         setFaltantes(aFilas<FilaFaltante>(CAMPOS_FALTANTES, d.filas));
       } catch {
         setErrorFaltantes(true);
@@ -922,6 +926,7 @@ export function RetailerDetalle({
               cargando={faltantes === null && !errorFaltantes}
               error={errorFaltantes}
               hayCatalogo={hayCatalogo}
+              totalCatalogo={totalCatalogo}
               puedeCatalogo={puedeCatalogo}
               onReintentar={reintentarFaltantes}
               onAlta={quitarFaltante}
@@ -1092,16 +1097,15 @@ export function RetailerDetalle({
                   titulo="Productos"
                   columnas={columnasProductos}
                   filasVisibles={productosVisibles}
-                  totalFilas={datos?.producto?.grupos.length ?? 0}
                   totalFiltradas={filasProductos.length}
                   totalColumnas={columnasProductos.length}
                   detalles={[
                     // El periodo primero: es lo que decide de qué hablan las
                     // cifras, y el orden es sólo cómo están puestas.
                     ...(periodo
-                      ? [`del ${fmtFecha(periodo.desde)} al ${fmtFecha(periodo.hasta)}`]
+                      ? [`Del ${fmtFecha(periodo.desde)} al ${fmtFecha(periodo.hasta)}`]
                       : []),
-                    `ordenado por ${columnasProductos[iOrden]?.nombre ?? "—"} ${etiquetaSentido(
+                    `Ordenado por ${columnasProductos[iOrden]?.nombre ?? "—"} ${etiquetaSentido(
                       ordenNumerico,
                       direccionEfectiva
                     )}`,

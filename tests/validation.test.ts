@@ -176,12 +176,26 @@ describe("altaFaltanteSchema", () => {
     expect(altaFaltanteSchema.safeParse({ ...base, customerCode: "   " }).success).toBe(false);
   });
 
-  it("acepta un código no numérico y uno con cero a la izquierda", () => {
-    // El código es el que usa la cadena, no un número: "A-1004" y "0075" son
-    // válidos y rechazarlos sería negarse a guardar lo que de verdad se usa.
-    expect(altaFaltanteSchema.safeParse({ ...base, customerCode: "A-1004" }).success).toBe(true);
+  it("rechaza cualquier código que no sea sólo dígitos", () => {
+    // Un código con letras o guiones no iguala nunca a SalesReport.itemNbr, que
+    // es Number: el alta quedaría guardada y el producto no cruzaría jamás con
+    // sus ventas, sin que nada lo delatara.
+    for (const codigo of ["A-1004", "1004.5", "100436765 / 2", "1004 ", "10 04"]) {
+      expect(altaFaltanteSchema.safeParse({ ...base, customerCode: codigo }).success).toBe(
+        // "1004 " sí pasa: el trim se aplica ANTES de mirar los dígitos.
+        codigo === "1004 "
+      );
+    }
+  });
+
+  it("conserva el cero a la izquierda, que es por lo que el código es texto", () => {
     const r = altaFaltanteSchema.safeParse({ ...base, customerCode: "0075" });
     expect(r.success && r.data.customerCode).toBe("0075");
+  });
+
+  it("rechaza más de 15 dígitos, el tope a partir del cual Number pierde precisión", () => {
+    expect(altaFaltanteSchema.safeParse({ ...base, customerCode: "1".repeat(15) }).success).toBe(true);
+    expect(altaFaltanteSchema.safeParse({ ...base, customerCode: "1".repeat(16) }).success).toBe(false);
   });
 
   it("exige el producto y un retailer de la lista", () => {

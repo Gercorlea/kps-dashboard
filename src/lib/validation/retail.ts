@@ -138,9 +138,17 @@ export const faltantesQuerySchema = z.object({
 /**
  * Alta de un producto en un retailer (POST /api/retail/faltantes).
  *
- * El código va como TEXTO y sólo se le exige que no esté vacío: puede traer un
- * cero a la izquierda o no ser numérico ("A-1004"), y rechazarlo sería negarse
- * a guardar lo que la cadena de verdad usa (ver models/ProductMapping.ts).
+ * El código va como TEXTO aunque sólo admita dígitos: es la única forma de
+ * conservar un cero a la izquierda ("0075"), que Number() se comería.
+ *
+ * Sólo dígitos, y no el texto libre que sí acepta el Excel del catálogo: un
+ * código no numérico nunca iguala a SalesReport.itemNbr, que es Number, así que
+ * el alta quedaría guardada pero el producto no cruzaría jamás con sus ventas
+ * (ver models/ProductMapping.ts). Mejor rechazarlo al escribirlo que dejar un
+ * alta que no sirve y que nadie va a detectar.
+ *
+ * El tope de 15 dígitos es el mismo de `codigoNumerico`: a partir de ahí Number
+ * pierde precisión (2^53).
  */
 export const altaFaltanteSchema = z.object({
   account: z.enum(RETAILER_IDS, { error: "Selecciona un retailer válido" }),
@@ -149,5 +157,6 @@ export const altaFaltanteSchema = z.object({
     .string()
     .trim()
     .min(1, "Escribe el código con el que la cadena da de alta el producto")
-    .max(60),
+    .max(15, "El código del cliente no puede pasar de 15 dígitos")
+    .regex(/^\d+$/, "El código del cliente sólo puede tener dígitos"),
 });

@@ -197,9 +197,7 @@ interface Props {
   columnas: MetaColumna[];
   /** Sólo las filas de la página actual, ya paginadas por el llamador. */
   filasVisibles: FilaCruda[];
-  /** Filas del archivo completo, antes de buscar. */
-  totalFilas: number;
-  /** Filas que coinciden con la búsqueda; igual a totalFilas si no hay. */
+  /** Filas que coinciden con la búsqueda; el pie de paginación las cuenta. */
   totalFiltradas: number;
   totalColumnas: number;
   titulo?: string;
@@ -229,7 +227,6 @@ interface Props {
 function AnalisisTableBase({
   columnas,
   filasVisibles,
-  totalFilas,
   totalFiltradas,
   totalColumnas,
   titulo = "Datos",
@@ -269,23 +266,7 @@ function AnalisisTableBase({
   const termino = busquedaAplicada.trim();
   const buscando = termino !== "";
 
-  // Con paginación la leyenda ya no dice "100 de 15,344": dice QUÉ 100. El
-  // rango se calcula de la página, no de un contador acumulado, para que sea
-  // correcto igual si las filas vienen de memoria o del servidor.
-  const desde = totalFiltradas === 0 ? 0 : (pagina - 1) * porPagina + 1;
-  const hasta = (pagina - 1) * porPagina + filasVisibles.length;
-  const rango = `Filas ${formatearEntero(desde)}–${formatearEntero(hasta)}`;
-
   const leyenda = [
-    totalFiltradas === 0
-      ? buscando
-        ? "Ninguna fila coincide"
-        : "Sin filas"
-      : buscando
-        ? // Se dicen los dos números: cuántas coinciden y sobre cuántas, para
-          // que no parezca que el reporte encogió.
-          `${rango} de ${formatearEntero(totalFiltradas)} coincidencias · ${formatearEntero(totalFilas)} en el archivo`
-        : `${rango} de ${formatearEntero(totalFilas)}`,
     ...detalles,
     omitidas > 0
       ? `${formatearEntero(omitidas)} columnas omitidas por constantes o vacías`

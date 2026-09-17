@@ -35,6 +35,7 @@ export function RetailerFaltantes({
   cargando,
   error,
   hayCatalogo,
+  totalCatalogo,
   puedeCatalogo,
   onReintentar,
   onAlta,
@@ -48,6 +49,8 @@ export function RetailerFaltantes({
   error: boolean;
   /** false = nunca se ha cargado un catálogo; no es un error. */
   hayCatalogo: boolean;
+  /** Productos de la carga activa: el "de cuántos" del subtítulo. */
+  totalCatalogo: number;
   /** Si esta persona puede entrar a /catalogo, para no ofrecerle un 403. */
   puedeCatalogo: boolean;
   onReintentar: () => void;
@@ -97,12 +100,29 @@ export function RetailerFaltantes({
   const darDeAlta = useCallback(
     async (f: FilaFaltante) => {
       const customerCode = (codigos[f.item] ?? "").trim();
-      // Se comprueba aquí y también en el servidor: el viaje para que conteste
-      // "falta el código" no aporta nada y el aviso llega más tarde.
+      // Las dos comprobaciones están también en el servidor (altaFaltanteSchema);
+      // aquí se repiten porque el viaje para que conteste "falta el código" no
+      // aporta nada y el aviso llegaría más tarde.
       if (!customerCode) {
         toast.error(
           "Falta el código del cliente",
           `Escribe el código con el que ${nombre} da de alta ${f.item}.`
+        );
+        return;
+      }
+      // Sólo dígitos: un código con letras o guiones no iguala nunca al itemNbr
+      // de los reportes de venta, así que el alta quedaría sin cruzar.
+      if (!/^\d+$/.test(customerCode)) {
+        toast.error(
+          "El código del cliente sólo puede tener dígitos",
+          `«${customerCode}» tiene caracteres que no son números.`
+        );
+        return;
+      }
+      if (customerCode.length > 15) {
+        toast.error(
+          "El código del cliente es demasiado largo",
+          "No puede pasar de 15 dígitos."
         );
         return;
       }
@@ -198,10 +218,11 @@ export function RetailerFaltantes({
       <header className="cr-panel__head flex-wrap gap-3">
         <div className="flex flex-col gap-1">
           <h3 className="cr-h3">Productos sin dar de alta en {nombre}</h3>
+          {/* El segundo número es el catálogo ENTERO, no los faltantes: la
+              frase dice contra qué se está midiendo. Al buscar, el primero pasa
+              a ser lo que queda en pantalla. */}
           <span className="cr-small cr-ink-3">
-            {termino
-              ? `${fmtNum(filtradas.length)} de ${fmtNum(todas.length)} productos`
-              : `${fmtNum(todas.length)} productos`}
+            {`${fmtNum(filtradas.length)} productos de ${fmtNum(totalCatalogo)} registrados en el catálogo de KPS`}
           </span>
         </div>
         <BuscadorTabla
@@ -266,12 +287,16 @@ export function RetailerFaltantes({
                     <td>
                       <input
                         className="cr-input cr-input--sm"
-                        // `text` y no `number`: el código puede traer un cero a
-                        // la izquierda o no ser numérico ("A-1004"), y un input
-                        // numérico se comería las dos cosas.
+                        // `text` y no `number` aunque sólo se admitan dígitos:
+                        // un input numérico se comería el cero a la izquierda de
+                        // "0075" y además dejaría teclear notación exponencial.
+                        // Lo que no es un dígito se avisa al dar de alta, en vez
+                        // de descartarlo mientras se escribe: un carácter que
+                        // desaparece solo parece que el teclado falla.
                         type="text"
+                        inputMode="numeric"
                         value={codigos[f.item] ?? ""}
-                        placeholder="Código en la cadena"
+                        placeholder="Solo dígitos"
                         onChange={(e) =>
                           setCodigos((c) => ({ ...c, [f.item]: e.target.value }))
                         }
